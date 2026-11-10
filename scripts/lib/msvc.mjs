@@ -175,19 +175,34 @@ export function scanVsDirs() {
       'C:\\Program Files (x86)\\Microsoft Visual Studio',
     );
   }
+  /*
+   * این نام‌ها **نصب Visual Studio نیستند** — پوشه‌های خودِ نصب‌کننده‌اند:
+   *   …\Microsoft Visual Studio\Installer\{Assets,cs,de,…}
+   *   …\Microsoft Visual Studio\Shared\{GitHubProtocolHandler,…}
+   * نسخه‌ی قبلی همه‌ی این‌ها را «نصب» حساب می‌کرد و در گزارش کاربر
+   * ۲۰ خط «کامپوننت MSVC نصب نشده» بی‌ربط چاپ شد.
+   */
+  const NOT_A_PRODUCT = /^(installer|shared|common7|packages|licenses|setup)$/i;
+
   for (const base of bases) {
     if (!isDir(base)) continue;
     let versions = [];
     try { versions = fs.readdirSync(base); } catch { continue; }
     for (const v of versions) {
-      /* نام پوشه‌ی نسخه: «2022»، «18»، «2019» … — به عدد بودنش تکیه نمی‌کنیم */
       const versionDir = path.join(base, v);
       if (!isDir(versionDir)) continue;
+      /* فقط پوشه‌هایی که «مثل نسخه» هستند: 18، 2022، 2019 … */
+      if (!/^\d+(\.\d+)*$/.test(v)) continue;
+
       let products = [];
       try { products = fs.readdirSync(versionDir); } catch { continue; }
       for (const prod of products) {
+        if (NOT_A_PRODUCT.test(prod)) continue;
         const p = path.join(versionDir, prod);
-        if (isDir(p)) found.push({ path: p, displayName: `${prod} ${v}`, version: v, isComplete: true, source: 'پیمایش پوشه' });
+        /* فقط چیزی که واقعاً یک نصب VS است (پوشه‌ی VC یا Common7 دارد) */
+        if (isDir(p) && (isDir(path.join(p, 'VC')) || isDir(path.join(p, 'Common7')))) {
+          found.push({ path: p, displayName: `${prod} ${v}`, version: v, isComplete: true, source: 'پیمایش پوشه' });
+        }
       }
       /* گاهی خودِ پوشه‌ی نسخه، ریشه‌ی نصب است */
       if (isDir(path.join(versionDir, 'VC'))) {
@@ -202,26 +217,81 @@ export function scanVsDirs() {
 /* جست‌وجوی واقعی لینکر                                                */
 /* ------------------------------------------------------------------ */
 
+/**
+ * حل مسیر بدون حساسیت به حرف بزرگ/کوچک.
+ *
+ * چرا لازم است: ویندوز فایل‌سیستمش case-insensitive است، ولی Node که
+ * `statSync` می‌زند باید نام دقیق را بداند. در نصب واقعی کاربر پوشه
+ * `Hostx64` به شکل `HostX64` بود — ساختن مسیر با حروف ثابت («Hostx64»)
+ * در محیط‌های دیگر (یا با ابزارهای تست) می‌شکند.
+ *
+ * `resolveCi('C:\\…\\MSVC\\14.44.35207', 'bin', 'Hostx64', 'x64', 'link.exe')`
+ */
+export function resolveCi(base, ...segments) {
+  let cur = base;
+  for (const seg of segments) {
+    let entries = [];
+    try { entries = fs.readdirSync(cur); } catch { return ''; }
+    const hit = entries.find((e) => e.toLowerCase() === seg.toLowerCase());
+    if (!hit) return '';
+    cur = path.join(cur, hit);
+    /* آخرین بخش می‌تواند فایل **یا** پوشه باشد (مثلاً resolveCi(root,'VC','Tools','MSVC')) */
+    if (!fs.existsSync(cur)) return '';
+  }
+  return cur;
+}
+
+/** همه‌ی نسخه‌های MSVC نصب‌شده، از جدید به قدیم */
+export function msvcVersions(root) {
+  const msvcRoot = resolveCi(root, 'VC', 'Tools', 'MSVC');
+  if (!msvcRoot) return [];
+  try {
+    return fs.readdirSync(msvcRoot).filter((v) => /^\d+\./.test(v)).sort(newerVersion).reverse();
+  } catch { return []; }
+}
+
+/**
+ * اولین نسخه‌ی MSVC که **واقعاً link.exe دارد** را برمی‌گرداند.
+ *
+ * درس دور چهاردهم (نصب واقعی کاربر): دو نسخه نصب بود —
+ *   • 14.51.36231  (جدیدتر، ولی پوشه‌ی bin\Hostx64\x64\link.exe نداشت)
+ *   • 14.44.35207  (قدیمی‌تر، سالم)
+ * نسخه‌ی قبلی فقط «جدیدترین» را می‌گرفت و چون link.exe نداشت، کل نصب را
+ * رد می‌کرد. حالا از جدید به قدیم می‌گردیم و اولین سالم را برمی‌داریم.
+ */
+export function pickMsvc(root) {
+  const msvcRoot = resolveCi(root, 'VC', 'Tools', 'MSVC');
+  if (!msvcRoot) return { linkExe: '', msvcVersion: '', complete: [] };
+  const complete = [];
+  for (const ver of msvcVersions(root)) {
+    const linkExe = resolveCi(path.join(msvcRoot, ver), 'bin', 'Hostx64', 'x64', 'link.exe');
+    if (linkExe) {
+      complete.push(ver);
+      if (!complete.first) complete.first = ver;
+      return { linkExe, msvcVersion: ver, complete };
+    }
+  }
+  return { linkExe: '', msvcVersion: '', complete };
+}
+
+/**
+ * مسیریابی vcvars.
+ *
+ * نکته‌ی واقعی: در نصب VS 2026 کاربر، `vcvars64.bat` **نبود** ولی
+ * `vcvarsall.bat` بود. نسخه‌ی قبلی در جست‌وجوی عمیق فقط `vcvars64.bat`
+ * را می‌گشت و در نتیجه LIB/INCLUDE دستی ساخته می‌شد. `vcvarsall.bat x64`
+ * همان کار `vcvars64.bat` را می‌کند، پس هر دو پذیرفته می‌شوند.
+ */
+function findVcvars(root) {
+  return resolveCi(root, 'VC', 'Auxiliary', 'Build', 'vcvars64.bat')
+    || resolveCi(root, 'VC', 'Auxiliary', 'Build', 'vcvarsall.bat');
+}
+
 /** مسیرهای استاندارد داخل یک نصب VS */
 function standardPaths(root) {
-  const vcvars = [
-    path.join(root, 'VC', 'Auxiliary', 'Build', 'vcvars64.bat'),
-    path.join(root, 'VC', 'Auxiliary', 'Build', 'vcvarsall.bat'),
-  ].find(isFile) || '';
-
-  let msvcVersion = '';
-  const msvcRoot = path.join(root, 'VC', 'Tools', 'MSVC');
-  if (isDir(msvcRoot)) {
-    try {
-      msvcVersion = fs.readdirSync(msvcRoot)
-        .filter((v) => /^\d+\./.test(v))
-        .sort(newerVersion).pop() || '';
-    } catch { /* ignore */ }
-  }
-  const linkExe = msvcVersion
-    ? path.join(msvcRoot, msvcVersion, 'bin', 'Hostx64', 'x64', 'link.exe')
-    : '';
-  return { vcvars, msvcVersion, linkExe: isFile(linkExe) ? linkExe : '' };
+  const vcvars = findVcvars(root);
+  const picked = pickMsvc(root);
+  return { vcvars, msvcVersion: picked.msvcVersion, linkExe: picked.linkExe };
 }
 
 /**
@@ -258,19 +328,21 @@ export function resolveMsvcRoot(root) {
   if (std.linkExe && std.vcvars) return { ...std, how: 'مسیر استاندارد' };
   if (std.linkExe && !std.vcvars) {
     /* vcvars نیست → در همان نصب دنبالش بگرد */
-    const base = isDir(path.join(root, 'VC')) ? path.join(root, 'VC') : root;
-    const vcvars = searchFile(base, 'vcvars64.bat', 5) || searchFile(root, 'vcvars64.bat', 5);
+    const vcvars = findVcvars(root);
     return { ...std, vcvars, how: vcvars ? 'جست‌وجو در نصب' : 'لینکر بدون vcvars' };
   }
   /* چیدمان ناشناخته: خودِ link.exe را بگرد */
-  const linkExe = searchFile(isDir(path.join(root, 'VC')) ? path.join(root, 'VC') : root, 'link.exe', 6);
+  const vcDir = resolveCi(root, 'VC') || root;
+  const linkExe = searchFile(vcDir, 'link.exe', 8);
   if (linkExe) {
     /* مسیر: …\VC\Tools\MSVC\<ver>\bin\Hostx64\x64\link.exe */
     const parts = linkExe.split(/[\\/]/);
     const i = parts.findIndex((p) => /^MSVC$/i.test(p));
     const msvcVersion = i >= 0 ? parts[i + 1] || '' : '';
-    const base2 = isDir(path.join(root, 'VC')) ? path.join(root, 'VC') : root;
-    const vcvars = searchFile(base2, 'vcvars64.bat', 5) || searchFile(root, 'vcvars64.bat', 5);
+    const vcvars = searchFile(vcDir, 'vcvars64.bat', 6)
+      || searchFile(root, 'vcvars64.bat', 6)
+      || searchFile(vcDir, 'vcvarsall.bat', 6)
+      || searchFile(root, 'vcvarsall.bat', 6);
     return { linkExe, vcvars, msvcVersion, how: 'جست‌وجوی عمیق' };
   }
   return { linkExe: '', vcvars: '', msvcVersion: '', how: '' };
@@ -401,7 +473,9 @@ export function msvcEnv(msvc) {
   if (!msvc || !msvc.found) return { env: {}, how: 'MSVC پیدا نشد' };
 
   if (msvc.vcvars) {
-    const cmd = `call "${msvc.vcvars}" x64 >nul 2>&1 && set`;
+    /* vcvars64.bat خودش x64 است؛ vcvarsall.bat نیاز به آرگومان x64 دارد */
+    const isAll = /vcvarsall\.bat$/i.test(msvc.vcvars);
+    const cmd = `call "${msvc.vcvars}"${isAll ? ' x64' : ''} >nul 2>&1 && set`;
     const r = spawnSync('cmd.exe', ['/d', '/s', '/c', cmd], {
       encoding: 'utf8',
       maxBuffer: 16 * 1024 * 1024,
@@ -415,7 +489,7 @@ export function msvcEnv(msvc) {
       const key = line.slice(0, i).trim();
       if (ENV_KEYS.test(key)) env[key] = line.slice(i + 1);
     }
-    if (env.PATH) return { env, how: 'vcvars64' };
+    if (env.PATH) return { env, how: isAll ? 'vcvarsall x64' : 'vcvars64' };
   }
 
   /* پشتیبان: ساخت دستی LIB/INCLUDE از مسیرهایی که می‌شناسیم */
@@ -438,10 +512,10 @@ export function manualEnv(msvc) {
 
   const libs = [];
   const incs = [];
-  const msvcLib = path.join(msvcDir, 'lib', 'x64');
-  const msvcInc = path.join(msvcDir, 'include');
-  if (isDir(msvcLib)) libs.push(msvcLib);
-  if (isDir(msvcInc)) incs.push(msvcInc);
+  const msvcLib = resolveCi(msvcDir, 'lib', 'x64');
+  const msvcInc = resolveCi(msvcDir, 'include');
+  if (msvcLib) libs.push(msvcLib);
+  if (msvcInc) incs.push(msvcInc);
 
   for (const sdk of sdkLibRoots()) {
     for (const sub of ['ucrt', 'um']) {

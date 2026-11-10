@@ -403,7 +403,9 @@ if (isWin) {
     console.log(`     ${C.dim(`منبع: ${msvc.source}${msvc.how ? ' · ' + msvc.how : ''}`)}`);
     const { how } = msvcEnv();
     if (how === 'vcvars64') console.log(`     ${C.dim('محیط vcvars64 خودکار تنظیم شد (PATH + LIB + INCLUDE)')}`);
-    else if (how === 'ساخت دستی LIB/INCLUDE') console.log(`     ${C.warn('⚠ vcvars64 نبود — LIB/INCLUDE دستی ساخته شد')}`);
+    else if (how === 'vcvarsall x64') console.log(`     ${C.dim('محیط vcvarsall x64 خودکار تنظیم شد (PATH + LIB + INCLUDE)')}`);
+    else if (how === 'ساخت دستی LIB/INCLUDE') console.log(`     ${C.warn('⚠ vcvars نبود — LIB/INCLUDE دستی ساخته شد')}`);
+    else if (how === 'link.exe از قبل در PATH') console.log(`     ${C.dim('link.exe از قبل در PATH بود (Developer Command Prompt)')}`);
     else if (how === 'ناموفق') console.log(`     ${C.bad('✘ محیط کامپایل تنظیم نشد — ساخت احتمالاً شکست می‌خورد')}`);
   } else {
     console.log(`  ${C.bad('✘')} لینکر C++ (link.exe): پیدا نشد — ساخت شکست می‌خورد`);

@@ -22,6 +22,7 @@ import path from 'node:path';
 import {
   findMsvc, enumerateVsInstances, scanVsDirs, vswherePath, isFile, isDir,
   inPath, sdkLibRoots, searchFile, newestWindowsSdk, isWin,
+  msvcVersions, pickMsvc, resolveCi,
 } from './lib/msvc.mjs';
 
 const C = {
@@ -111,24 +112,33 @@ for (const root of allRoots) {
   console.log(`\n  ${C.bold(root)}`);
   if (!isDir(root)) { console.log(`    ${C.bad('✘')} پوشه وجود ندارد`); continue; }
 
-  const msvcRoot = path.join(root, 'VC', 'Tools', 'MSVC');
-  if (isDir(msvcRoot)) {
-    let versions = [];
-    try { versions = fs.readdirSync(msvcRoot); } catch { /* ignore */ }
-    console.log(`    ${C.ok('✔')} VC\\Tools\\MSVC موجود است: ${versions.join(', ') || '(خالی)'}`);
+  const versions = msvcVersions(root);
+  if (versions.length) {
+    const picked = pickMsvc(root);
+    console.log(`    ${C.ok('✔')} VC\\Tools\\MSVC → نسخه‌ها: ${versions.join(', ')}`);
     for (const v of versions) {
-      const link = path.join(msvcRoot, v, 'bin', 'Hostx64', 'x64', 'link.exe');
-      const exists = isFile(link);
-      console.log(`      ${exists ? C.ok('✔') : C.bad('✘')} ${v}\\bin\\Hostx64\\x64\\link.exe`);
-      if (exists) anyLink = anyLink || link;
+      const msvcRoot = resolveCi(root, 'VC', 'Tools', 'MSVC');
+      const link = resolveCi(path.join(msvcRoot, v), 'bin', 'Hostx64', 'x64', 'link.exe');
+      const used = picked.msvcVersion === v;
+      if (link) {
+        console.log(`      ${C.ok('✔')} ${v}: link.exe موجود است${used ? C.dim('  ← استفاده می‌شود') : ''}`);
+        if (used) anyLink = link;
+      } else {
+        /* نسخه‌ی ناقص — پیام دقیق، به‌جای «کامپوننت نصب نشده» */
+        console.log(`      ${C.warn('⚠')} ${v}: link.exe ندارد (این نسخه ناقص است — نسخه‌ی دیگر استفاده می‌شود)`);
+      }
     }
+    if (!picked.linkExe) console.log(`    ${C.bad('✘')} هیچ نسخه‌ای از MSVC فایل link.exe ندارد`);
   } else {
     console.log(`    ${C.bad('✘')} پوشه‌ی VC\\Tools\\MSVC نیست — کامپوننت «MSVC v143 …» نصب نشده`);
   }
 
-  for (const rel of [['VC', 'Auxiliary', 'Build', 'vcvars64.bat'], ['VC', 'Auxiliary', 'Build', 'vcvarsall.bat']]) {
-    const p = path.join(root, ...rel);
-    console.log(`    ${isFile(p) ? C.ok('✔') : C.warn('⚠')} ${rel.join('\\')}`);
+  const vcvars64 = resolveCi(root, 'VC', 'Auxiliary', 'Build', 'vcvars64.bat');
+  const vcvarsall = resolveCi(root, 'VC', 'Auxiliary', 'Build', 'vcvarsall.bat');
+  console.log(`    ${vcvars64 ? C.ok('✔') : C.dim('•')} VC\\Auxiliary\\Build\\vcvars64.bat${vcvars64 ? '' : ' (نیست)'}`);
+  console.log(`    ${vcvarsall ? C.ok('✔') : C.dim('•')} VC\\Auxiliary\\Build\\vcvarsall.bat${vcvarsall ? C.dim('  ← برای x64 استفاده می‌شود') : ' (نیست)'}`);
+  if (!vcvars64 && !vcvarsall) {
+    console.log(`    ${C.warn('⚠')} هیچ vcvars ای نیست — LIB/INCLUDE دستی ساخته می‌شود`);
   }
 
   /* چیدمان ناشناخته: جست‌وجوی محدود */
@@ -158,9 +168,12 @@ if (msvc.found) {
   console.log(`${C.ok('✔')} لینکر پیدا شد:`);
   console.log(`   ${msvc.linkExe}`);
   console.log(`   منبع: ${msvc.source} · روش: ${msvc.how}`);
-  console.log(`   MSVC ${msvc.msvcVersion || '?'} · SDK ${msvc.sdkVersion || '?'}`);
-  if (msvc.vcvars) console.log(`   vcvars: ${msvc.vcvars}`);
-  else console.log(`   ${C.warn('⚠')} vcvars64.bat نیست — اسکریپت LIB/INCLUDE را دستی می‌سازد`);
+  console.log(`   MSVC ${msvc.msvcVersion || '?'} · SDK ${msvc.sdkVersion || 'پیدا نشد (بند ۵)'}`);
+  if (msvc.vcvars) {
+    const isAll = /vcvarsall\.bat$/i.test(msvc.vcvars);
+    console.log(`   vcvars: ${msvc.vcvars}${isAll ? ' (با آرگومان x64 اجرا می‌شود)' : ''}`);
+  }
+  else console.log(`   ${C.warn('⚠')} هیچ vcvars ای نیست — اسکریپت LIB/INCLUDE را دستی می‌سازد`);
   console.log(`\n${C.ok('مرحله بعد:')} npm run desktop:build`);
   process.exit(0);
 }

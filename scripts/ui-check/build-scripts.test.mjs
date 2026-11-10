@@ -121,7 +121,7 @@ ok('doctor خطای لینکر را در راه‌حل ذکر می‌کند', /l
 console.log('\n— کشف MSVC: چیدمان‌های غیر ۲۰۲۲ (درس دور سیزدهم) —');
 /* کاربر همه‌ی کامپوننت‌ها را داشت ولی نسخه‌ی قبلی فقط …\\2019\\… و …\\2022\\… را می‌گشت */
 ok('پوشه‌های VS دیگر هارد‌کد ۲۰۲۲/۲۰۱۹ نیستند', /scanVsDirs/.test(msvcLib) && !/Visual Studio\\\\2022\\\\BuildTools/.test(msvcLib));
-ok('هر نام نسخه‌ای پیمایش می‌شود (نه فقط ۲۰۲۲)', /نسخه: «2022»، «18»/.test(msvcLib) || /به عدد بودنش تکیه نمی‌کنیم/.test(msvcLib));
+ok('هر نام نسخه‌ای پیمایش می‌شود (نه فقط ۲۰۲۲)', /NOT_A_PRODUCT/.test(msvcLib) && /مثل نسخه/.test(msvcLib));
 ok('vswhere با -all همه‌ی نصب‌ها را می‌گیرد (نه فقط -latest)', /'-all', '-products', '\*', '-format', 'json'/.test(msvcLib));
 ok('vswhere -find برای پیدا کردن link.exe مستقل از چیدمان', /'-find', pat/.test(msvcLib) || /-find/.test(msvcLib));
 ok('جست‌وجوی محدود (BFS) داخل نصب وجود دارد', /function searchFile/.test(msvcLib));
@@ -137,6 +137,21 @@ ok('پیام «پیدا نشد» مسیرهای بررسی‌شده را چاپ 
 ok('پیام «پیدا نشد» دیگر ادعای قطعی «کامپوننت ندارد» نمی‌کند', /این لزوماً یعنی نصب ناقص نیست/.test(build));
 ok('find-msvc پنج بخش تشخیص دارد', /۱\) آیا link\.exe در PATH/.test(findMsvc) && /۵\) Windows SDK/.test(findMsvc));
 ok('find-msvc دستور FD_MSVC_ROOT را آماده چاپ می‌کند', /set FD_MSVC_ROOT=/.test(findMsvc));
+
+console.log('\n— سه باگ واقعی از گزارش کاربر (VS 2026 / دو نسخه MSVC / HostX64) —');
+/* گزارش واقعی: …\\Microsoft Visual Studio\\18\\BuildTools با
+   MSVC 14.51.36231 (بدون link.exe) و 14.44.35207 (سالم) */
+ok('اولین نسخه‌ی MSVC که link.exe دارد انتخاب می‌شود (نه صرفاً جدیدترین)', /function pickMsvc/.test(msvcLib));
+ok('نسخه‌های بدون link.exe رد می‌شوند و بعدی امتحان می‌شود', /for \(const ver of msvcVersions\(root\)\)/.test(msvcLib));
+ok('نام پوشه بدون حساسیت به حرف بزرگ/کوچک حل می‌شود (HostX64)', /function resolveCi/.test(msvcLib));
+ok('Hostx64/HostX64 هارد‌کد نشده (resolveCi استفاده می‌شود)', /resolveCi\(path\.join\(msvcRoot, ver\), 'bin', 'Hostx64', 'x64', 'link\.exe'\)/.test(msvcLib));
+ok('vcvarsall.bat هم پذیرفته می‌شود (نه فقط vcvars64)', /function findVcvars/.test(msvcLib) && /vcvarsall\.bat/.test(msvcLib));
+ok('vcvarsall با آرگومان x64 اجرا می‌شود', /isAll \? ' x64' : ''/.test(msvcLib));
+ok('پوشه‌های Installer/Shared به‌عنوان نصب VS حساب نمی‌شوند', /NOT_A_PRODUCT/.test(msvcLib) && /installer\|shared/.test(msvcLib));
+ok('فقط پوشه‌های عددی (18 / 2022) به‌عنوان نسخه پیمایش می‌شوند',
+  /if \(!\/\^\\d\+\(\\\.\\d\+\)\*\$\/\.test\(v\)\) continue;/.test(msvcLib));
+ok('گزارش per-version می‌گوید «این نسخه link.exe ندارد» نه «کامپوننت نصب نشده»', /link\.exe ندارد \(این نسخه ناقص است/.test(findMsvc));
+ok('گزارش نشان می‌دهد کدام نسخه استفاده می‌شود', /← استفاده می‌شود/.test(findMsvc));
 
 console.log('\n— doctor —');
 ok('حالت «cargo روی دیسک ولی نه در PATH» تشخیص داده می‌شود', /cargoOnDisk/.test(doctor));
