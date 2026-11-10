@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
-import { useToast, Field, Text, Modal, Table, Spinner, Select } from '../components/ui';
+import { useToast, Field, Text, Modal, Table, Spinner, Select, ListHead, SummaryBar, K } from '../components/ui';
 
 export default function UsersPage() {
   const { user } = useSession();
@@ -34,11 +34,19 @@ export default function UsersPage() {
 
   return (
     <div className="col" style={{ gap: 14 }}>
-      <div className="row between wrap">
-        <p className="small muted">مدیر: دسترسی کامل (حذف، تنظیمات، پشتیبان). کارمند: ثبت و ویرایش بدون حذف.</p>
-        <button className="btn primary" onClick={() => setF({ username: '', fullName: '', password: '', role: 'employee', active: true })}>＋ کاربر نو</button>
-      </div>
-
+      <div className="card">
+        <ListHead actions={
+          <button className="btn primary" onClick={() => setF({ username: '', fullName: '', password: '', role: 'employee', active: true })}>＋ کاربر نو</button>
+        }>
+          <SummaryBar>
+            <K label="کاربران" value={(rows || []).length} />
+            <span className="sep" />
+            <K label="مدیر" value={(rows || []).filter((r: any) => r.role === 'manager').length} />
+            <span className="sep" />
+            <span className="muted">مدیر: دسترسی کامل — کارمند: ثبت و ویرایش بدون حذف</span>
+          </SummaryBar>
+        </ListHead>
+        <div className="card-b tight">
       {!rows ? <Spinner /> : (
         <Table head={['#', 'نام کاربری', 'نام کامل', 'سطح دسترسی', 'وضعیت', 'آخرین ورود', '']}>
           {rows.map((r, i) => (
@@ -48,8 +56,8 @@ export default function UsersPage() {
               <td>{r.fullName}</td>
               <td><span className={`badge ${r.role === 'manager' ? 'info' : 'muted'}`}>{r.role === 'manager' ? 'مدیر' : 'کارمند'}</span></td>
               <td><span className={`badge ${r.active ? 'ok' : 'bad'}`}>{r.active ? 'فعال' : 'غیر فعال'}</span></td>
-              <td className="mono small">{r.lastLoginAt ? new Date(r.lastLoginAt).toLocaleString('fa-IR') : '—'}</td>
-              <td><div className="actions">
+              <td className="mono small hide-sm">{r.lastLoginAt ? new Date(r.lastLoginAt).toLocaleString('fa-IR') : '—'}</td>
+              <td><div className="actions hover-actions">
                 <button className="btn sm" onClick={() => setF({ ...r, password: '' })}>ویرایش</button>
                 {r.id !== user?.id ? <button className="btn sm danger" onClick={() => remove(r)}>حذف</button> : null}
               </div></td>
@@ -57,6 +65,8 @@ export default function UsersPage() {
           ))}
         </Table>
       )}
+        </div>
+      </div>
 
       {f ? (
         <Modal title={f.id ? 'ویرایش کاربر' : 'کاربر نو'} onClose={() => setF(null)} size="sm" footer={

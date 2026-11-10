@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
-import { useToast, Text, Table, Spinner, Field, Modal } from '../components/ui';
+import { useToast, Text, Table, Spinner, Field, ListHead, SearchBox, SummaryBar, K } from '../components/ui';
 import { LOOKUP_META } from './lookupMeta';
 
 export default function LookupsPage() {
@@ -117,23 +117,33 @@ export default function LookupsPage() {
         <Link className="btn" to="/settings">← تنظیمات</Link>
       </div>
 
-      <div className="row between wrap">
-        <div className="row wrap" style={{ gap: 8 }}>
-          <input className="input" style={{ width: 220 }} placeholder="جستجو در نام‌ها…" value={q} onChange={(e) => setQ(e.target.value)} />
-          <div className="pill-tabs">
-            {([['all', 'همه'], ['active', 'فعال'], ['inactive', 'غیر فعال'], ['used', 'استفاده‌شده']] as const).map(([k, l]) => (
-              <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k as any)}>{l} ({counts[k as keyof typeof counts]})</button>
-            ))}
+      <div className="card">
+        <ListHead actions={
+          Object.keys(dirty).length ? (
+            <>
+              <span className="badge warn">{Object.keys(dirty).length} تغییر ذخیره‌نشده</span>
+              <button className="btn" onClick={() => setDirty({})}>لغو</button>
+              <button className="btn primary" onClick={saveAll} disabled={busy}>{busy ? 'ذخیره…' : 'ذخیره تغییرات'}</button>
+            </>
+          ) : (
+            <SummaryBar>
+              <K label="ردیف" value={counts.all} />
+              <span className="sep" />
+              <K label="فعال" value={counts.active} tone="ok" />
+              <span className="sep" />
+              <K label="استفاده‌شده" value={counts.used} />
+            </SummaryBar>
+          )
+        }>
+          <SearchBox value={q} onChange={setQ} placeholder="جستجو در نام‌ها…" width={240} />
+          <div className="filters">
+            <div className="pill-tabs">
+              {([['all', 'همه'], ['active', 'فعال'], ['inactive', 'غیر فعال'], ['used', 'استفاده‌شده']] as const).map(([k, l]) => (
+                <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k as any)}>{l} ({counts[k as keyof typeof counts]})</button>
+              ))}
+            </div>
           </div>
-        </div>
-        {Object.keys(dirty).length ? (
-          <div className="row">
-            <span className="badge warn">{Object.keys(dirty).length} تغییر ذخیره‌نشده</span>
-            <button className="btn" onClick={() => setDirty({})}>لغو</button>
-            <button className="btn primary" onClick={saveAll} disabled={busy}>{busy ? 'ذخیره…' : 'ذخیره تغییرات'}</button>
-          </div>
-        ) : null}
-      </div>
+        </ListHead>
 
       {isManager ? (
         <div className="card"><div className="card-b">
@@ -146,6 +156,7 @@ export default function LookupsPage() {
         </div></div>
       ) : null}
 
+        <div className="card-b tight">
       <Table head={['ترتیب', 'نام', meta.extraLabel, 'استفاده در اسناد', 'فعال', '']}>
         {rows.map((r: any) => (
           <tr key={r.id} style={{ opacity: r.active ? 1 : .55 }}>
@@ -166,6 +177,8 @@ export default function LookupsPage() {
           </tr>
         ))}
       </Table>
+        </div>
+      </div>
 
       <p className="small muted">
         ردیف غیر فعال در کشوی شیت‌ها دیده نمی‌شود اما در اسناد قدیمی محفوظ می‌ماند.

@@ -40,17 +40,25 @@ export default function ReportsDaily() {
 
       {!d ? <Spinner /> : (<>
         <div className="grid c4">
-          <Stat label="فروشات نقده" value={money(d.totals.cashSales)} kind="ok" />
-          <Stat label="فروشات قرضه" value={money(d.totals.creditSales)} kind="warn" />
-          <Stat label="رسیدات" value={money(d.totals.receipts)} />
-          <Stat label="مجموع موجودی دخل دوره" value={money(d.totals.cashBalance)} kind={d.totals.cashBalance >= 0 ? 'ok' : 'bad'} />
+          <Stat label="فروشات نقده" value={money(d.totals.cashSales)} kind="ok" foot="پول نقد وارد شده" />
+          <Stat label="فروشات قرضه" value={money(d.totals.creditSales)} kind="warn" foot="در بدهی مشتری" />
+          <Stat label="رسیدات" value={money(d.totals.receipts)} foot="دریافت از مشتریان" />
+          <Stat label="مجموع صادره دوره" value={money(d.totals.totalExpenses)} kind="bad" foot={`مصارف ${money(d.totals.expensesAfn)} + معاشات ${money(d.totals.salaries)}`} />
+        </div>
+        <div className="grid c3">
+          <Stat label="داخل دخل (دوره)" value={money(d.totals.cashIn ?? 0)} kind="ok" foot="فروش نقده + رسیدات دخل" />
+          <Stat label="خارج دخل (دوره)" value={money(d.totals.cashOut ?? 0)} kind="bad" foot="مصارف + معاشات نقدی" />
+          {(() => {
+            const acc = (d.rows || []).reduce((a: number, r: any) => a + Number(r.cashBalance), 0);
+            return <Stat label="موجودی متحرک دخل" value={money(acc)} kind={acc >= 0 ? 'ok' : 'bad'} foot={`حالت ${d.mode === 'accurate' ? 'دقیق' : 'ساده'}`} />;
+          })()}
         </div>
 
         <div className="card">
           <div className="card-h"><h3>راپور روزانه</h3><div style={{ flex: 1 }} />
             <span className="small muted">{d.rows.length} روز</span></div>
           <div className="card-b tight">
-            <Table head={['تاریخ', 'فروشات نقده', 'فروشات قرضه', 'رسیدات', 'مصارف', 'معاشات', 'مجموع مصارف', 'موجودی دخل روز', 'موجودی متحرک']}
+            <Table head={['تاریخ', 'فروش نقده', 'فروش قرضه', 'رسیدات', 'مصارف', 'معاشات', 'مجموع مصارف', 'موجودی دخل روز', 'متحرک دخل']}
               foot={<tr>
                 <td>مجموع دوره</td>
                 <td className="num">{money(d.totals.cashSales)}</td>
@@ -59,7 +67,7 @@ export default function ReportsDaily() {
                 <td className="num">{money(d.totals.expensesAfn)}</td>
                 <td className="num">{money(d.totals.salaries)}</td>
                 <td className="num">{money(d.totals.totalExpenses)}</td>
-                <td className="num">{money(d.totals.cashBalance)}</td>
+                <td className="num">{money(d.totals.cashIn ?? 0)}</td>
                 <td />
               </tr>}>
               {d.rows.map((r: any) => (
@@ -71,7 +79,7 @@ export default function ReportsDaily() {
                   <td className="num">{money(r.expensesAfn)}{r.expensesUsd ? <span className="badge warn" style={{ marginInlineStart: 4 }}>${money(r.expensesUsd)}</span> : null}</td>
                   <td className="num">{money(r.salaries)}</td>
                   <td className="num">{money(r.totalExpenses)}</td>
-                  <td className="num" style={{ fontWeight: 700, color: r.cashBalance >= 0 ? 'var(--ok)' : 'var(--danger)' }}>{money(r.cashBalance)}</td>
+                  <td className="num" style={{ fontWeight: 700, color: r.cashBalance >= 0 ? 'var(--ok)' : 'var(--danger)' }} title={`داخل ${money(r.cashIn)} − خارج ${money(r.cashOut)}`}>{money(r.cashBalance)}</td>
                   <td className="num muted">{money(r.runningCash)}</td>
                 </tr>
               ))}

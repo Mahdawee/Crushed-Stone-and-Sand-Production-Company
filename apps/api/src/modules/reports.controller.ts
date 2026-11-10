@@ -32,7 +32,11 @@ export class ReportsController {
        FROM "Sale" WHERE "date"=?`, dateISO);
     const receipts: any[] = await p.$queryRawUnsafe(
       `SELECT COALESCE(SUM("amount"),0) AS total,
-        COALESCE(SUM(CASE WHEN COALESCE("sourceName",'')='امانت' THEN "amount" ELSE 0 END),0) AS trust
+        COALESCE(SUM(CASE WHEN COALESCE("sourceName",'')='امانت' THEN "amount" ELSE 0 END),0) AS trust,
+        /* در حالت دقیق: فقط پولی که نزد دخل آمده (نه امانت، نه بانک) */
+        COALESCE(SUM(CASE WHEN COALESCE("sourceName",'')<>'امانت'
+                          AND (COALESCE("receivedBy",'')='' OR "receivedBy"='دخل')
+                     THEN "amount" ELSE 0 END),0) AS cashToBox
        FROM "Receipt" WHERE "date"=?`, dateISO);
     const expenses: any[] = await p.$queryRawUnsafe(
       `SELECT COALESCE(SUM("amountAfn"),0) AS afn, COALESCE(SUM("amountUsd"),0) AS usd,
@@ -102,8 +106,9 @@ export class ReportsController {
     const totals = rows.reduce<Row>((a, r: any) => {
       a.creditSales += r.creditSales; a.cashSales += r.cashSales; a.receipts += r.receipts;
       a.expensesAfn += r.expensesAfn; a.salaries += r.salaries; a.totalExpenses += r.totalExpenses;
+      a.cashIn += r.cashIn; a.cashOut += r.cashOut;
       a.cashBalance += r.cashBalance; return a;
-    }, { creditSales: 0, cashSales: 0, receipts: 0, expensesAfn: 0, salaries: 0, totalExpenses: 0, cashBalance: 0 });
+    }, { creditSales: 0, cashSales: 0, receipts: 0, expensesAfn: 0, salaries: 0, totalExpenses: 0, cashBalance: 0, cashIn: 0, cashOut: 0 });
     return { from: start, to: end, calendar: mode, rows, totals, mode };
   }
 
