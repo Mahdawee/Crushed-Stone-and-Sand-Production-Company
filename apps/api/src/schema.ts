@@ -267,17 +267,44 @@ const UPGRADES: { table: string; column: string; ddl: string }[] = [
 
 let schemaPromise: Promise<void> | null = null;
 
+/**
+ * آخرین دیتابیسی که ساختارش کامل بررسی شده — به‌همراه نسخه‌ی مهر.
+ *
+ * باگ کارایی (بازبینی): نسخه‌ی قبلی `ensureSchemaAsync` در **هر درخواست**
+ * برای هر ۹ ستون اختیاری یک `PRAGMA table_info` می‌زد — یعنی ۹ رفت‌وبرگشت
+ * اضافه قبل از هر کار.ثبت بل فروش (سریع‌ترین حالت) از ~۹ms به چند برابر
+ * می‌رسید و با هزاران ثبت روزانه محسوس بود.
+ *
+ * حالا مهر `PRAGMA user_version` نگه‌دارنده‌ی نسخه‌ی ساختار است: اگر ساختار
+ * همین کد روی همین فایل یک بار بررسی شده باشد، دیگر تکرار نمی‌شود. مهر در
+ * خود دیتابیس است، پس بعد از ری‌استارت هم دوباره کامل بررسی می‌شود اگر
+ * نسخه‌ی برنامه تغییر کرده باشد.
+ */
+const SCHEMA_VERSION = 2;
+let schemaReadyFor: string | null = null;
+let schemaReadyVersion = -1;
+
 async function runSchema() {
   const p = db();
   await p.$executeRawUnsafe('PRAGMA journal_mode = WAL;');
   await p.$executeRawUnsafe('PRAGMA foreign_keys = ON;');
+  /*
+   * `synchronous=NORMAL` در حالت WAL امن است (داده از دست نمی‌رود، فقط در
+   * قطع برق ممکن است آخرین تراکنش برگردد) و هر ثبت را چند برابر سریع‌تر
+   * می‌کند. پیش‌فرض FULL یعنی fsync برای هر نوشتن.
+   */
+  await p.$executeRawUnsafe('PRAGMA synchronous = NORMAL;');
   for (const t of TABLES) await p.$executeRawUnsafe(t.sql);
   for (const sql of INDEXES) await p.$executeRawUnsafe(sql);
 }
 
 /** Kick off (or reuse) the schema creation — every request awaits it. */
 function kickSchema(force = false) {
-  if (force) schemaPromise = null;
+  if (force) {
+    schemaPromise = null;
+    schemaReadyFor = null;
+    schemaReadyVersion = -1;
+  }
   if (!schemaPromise) schemaPromise = runSchema();
 }
 
@@ -285,13 +312,31 @@ function kickSchema(force = false) {
 export async function ensureSchemaAsync(force = false) {
   kickSchema(force);
   await schemaPromise;
+
+  /* شناسه‌ی فایل دیتابیس — اگر مسیر عوض شد (تست/بازگردانی) بررسی دوباره */
+  const file = process.env.FD_DB_FILE || `${process.env.FD_DATA_DIR || 'default'}`;
+  if (!force && schemaReadyFor === file && schemaReadyVersion === SCHEMA_VERSION) return true;
+
   const p = db();
-  for (const u of UPGRADES) {
-    const cols: any[] = await p.$queryRawUnsafe(`PRAGMA table_info("${u.table}")`);
-    if (!cols.some((c) => c.name === u.column)) {
-      await p.$executeRawUnsafe(`ALTER TABLE "${u.table}" ADD COLUMN "${u.column}" ${u.ddl}`);
+  /* مهر نسخه در خود دیتابیس — بعد از آپدیت برنامه، بررسی دوباره انجام می‌شود */
+  let dbVersion = 0;
+  try {
+    const v: any[] = await p.$queryRawUnsafe('PRAGMA user_version');
+    dbVersion = Number(v?.[0]?.user_version ?? 0);
+  } catch { /* ignore */ }
+
+  if (dbVersion !== SCHEMA_VERSION) {
+    for (const u of UPGRADES) {
+      const cols: any[] = await p.$queryRawUnsafe(`PRAGMA table_info("${u.table}")`);
+      if (!cols.some((c) => c.name === u.column)) {
+        await p.$executeRawUnsafe(`ALTER TABLE "${u.table}" ADD COLUMN "${u.column}" ${u.ddl}`);
+      }
     }
+    await p.$executeRawUnsafe(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   }
+
+  schemaReadyFor = file;
+  schemaReadyVersion = SCHEMA_VERSION;
   return true;
 }
 

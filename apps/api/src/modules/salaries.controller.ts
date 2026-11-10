@@ -54,11 +54,21 @@ export class SalariesController {
     const absMap = Object.fromEntries(absences.map((o) => [o.employeeId, Number(o.c) || 0]));
     const deductMap = Object.fromEntries(absDayRows.map((o: any) => [o.employeeId, Number(o.c) || 0]));
     const hours = Number(await settingsService.get('attendanceWorkHours')) || 8;
+    /*
+     * باگ منطقی (پیدا شده در بازبینی): تنظیم «نرخ اضافه‌کاری» (پیش‌فرض ۱.۲۵)
+     * در صفحه‌ی تنظیمات بود ولی **هیچ‌جا استفاده نمی‌شد**؛ مبلغ اضافه‌کاری
+     * همیشه با نرخ ۱ حساب می‌شد. یعنی مدیر ۱.۲۵ تنظیم می‌کرد و معاش کارمند
+     * کمتر از حقش بسته می‌شد (بی‌صدا). حالا نرخ واقعاً اثر دارد.
+     */
+    const otRateRaw = Number(await settingsService.get('overtimeRate'));
+    const otRate = Number.isFinite(otRateRaw) && otRateRaw >= 0 ? otRateRaw : 1.25;
+    const WORK_DAYS = 26; // روزهای کاری مبنا برای نرخ ساعت (قابل تغییر در آینده)
     const rows = employees.map((e) => {
       const ex = byEmp[e.id];
       const base = Number(ex?.baseSalary ?? e.baseSalary) || 0;
       const otHours = otMap[e.id] || 0;
-      const otAmount = ex?.overtimeAmount ?? Math.round((otHours * (base / (26 * hours))) * 100) / 100;
+      const hourly = base / (WORK_DAYS * hours);
+      const otAmount = ex?.overtimeAmount ?? Math.round(otHours * hourly * otRate * 100) / 100;
       return {
         salaryId: ex?.id ?? null,
         employeeId: e.id,
@@ -193,6 +203,9 @@ export class SalariesController {
   @Delete(':id')
   @ManagerOnly()
   async remove(@Param('id') id: string) {
+    const rows: any[] = await db().$queryRawUnsafe(`SELECT "no" FROM "Salary" WHERE "id"=?`, Number(id));
+    /* باگ: حذف شناسه‌ی ناموجود ۲۰۰ و ردیف ساختگی در «فعالیت‌ها» */
+    if (!rows?.length) throw new HttpException('سند معاش پیدا نشد.', 404);
     await db().$executeRawUnsafe(`DELETE FROM "Salary" WHERE "id"=?`, Number(id));
     await logActivity({ action: 'delete', entity: 'Salary', entityId: Number(id) });
     return { ok: true };

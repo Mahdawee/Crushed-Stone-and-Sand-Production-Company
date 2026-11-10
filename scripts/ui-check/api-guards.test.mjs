@@ -113,6 +113,40 @@ const company = fs.readFileSync(path.join(modDir, 'company.controller.ts'), 'utf
 ok('PUT /settings پیش از ذخیره اعتبارسنجی می‌کند و ۴۰۰ می‌دهد',
   /SettingsService\.validate\(k, v\)[\s\S]{0,160}HttpException\(err, 400\)/.test(company));
 
+console.log('\n— یکتایی منبع حقیقت و محافظ‌های ثبت —');
+
+const sales = fs.readFileSync(path.join(modDir, 'sales.controller.ts'), 'utf8');
+ok('جمع کرایه فقط از متراژ × کرایه فی متر (یک منبع حقیقت)',
+  /volume \* unitPrice \+ freightTotal/.test(sales) && !/sentFreight/.test(sales));
+ok('ویرایش فروش، وجود مشتری را بررسی می‌کند', /UPDATE \"Sale\"[\s\S]{0,200}/.test(sales) && /مشتری پیدا نشد/.test(sales));
+const delGuards = ['sales.controller.ts', 'receipts.controller.ts', 'expenses.controller.ts', 'salaries.controller.ts']
+  .map((f) => [f, fs.readFileSync(path.join(modDir, f), 'utf8')]);
+for (const [f, src] of delGuards) {
+  /* حذف شناسه‌ی ناموجود باید ۴۰۴ بدهد، نه ۲۰۰ و یک ردیف ساختگی در فعالیت‌ها */
+  const deleteBlock = src.slice(src.indexOf("@Delete(':id')"));
+  ok(`${f}: حذف شناسه‌ی ناموجود ۴۰۴ می‌دهد`, /if \(!rows\?\.length\) throw new HttpException/.test(deleteBlock));
+}
+
+console.log('\n— کارایی (بدون بازگشت به مسیرهای کند) —');
+const reportsSrc = fs.readFileSync(path.join(modDir, 'reports.controller.ts'), 'utf8');
+ok('راپور روزانه با کوئری گروهی است (نه ۶ کوئری برای هر روز)',
+  /private async rangeRows/.test(reportsSrc) && !/for \(const d of \[...days\]\.reverse\(\)\)/.test(reportsSrc));
+ok('داشبورد نمودار ۱۴ روزه را با کوئری گروهی می‌سازد', /GROUP BY \"date\"/.test(reportsSrc));
+const schemaSrc = fs.readFileSync(path.join(root, 'apps/api/src/schema.ts'), 'utf8');
+ok('بررسی ستون‌ها در هر درخواست تکرار نمی‌شود (کش نسخه‌ی ساختار)',
+  /schemaReadyFor/.test(schemaSrc) && /user_version/.test(schemaSrc));
+ok('SQLite روی synchronous=NORMAL (نوشتن سریع‌تر، در WAL امن)', /PRAGMA synchronous = NORMAL/.test(schemaSrc));
+const settingsFile = fs.readFileSync(path.join(commonDir, 'settings.ts'), 'utf8');
+ok('تنظیمات کش می‌شوند و با set پاک می‌شوند',
+  /private cache/.test(settingsFile) && /clearCache\(\)/.test(settingsFile));
+ok('نرخ اضافه‌کاری در محاسبه معاش واقعاً اعمال می‌شود',
+  /overtimeRate/.test(fs.readFileSync(path.join(modDir, 'salaries.controller.ts'), 'utf8')) &&
+  /otHours \* hourly \* otRate/.test(fs.readFileSync(path.join(modDir, 'salaries.controller.ts'), 'utf8')));
+const appTsx = fs.readFileSync(path.join(root, 'apps/web/src/App.tsx'), 'utf8');
+ok('صفحه‌ها lazy بارگذاری می‌شوند (باندل اولیه سبک)',
+  /lazy\(\(\) => import/.test(appTsx) && /Suspense/.test(appTsx));
+ok('recharts در چانک جداگانه است', /'charts'/.test(fs.readFileSync(path.join(root, 'apps/web/vite.config.mts'), 'utf8')));
+
 console.log('\n— محافظ حذف کارمند (پاک‌شدن خاموش سابقه‌ی حضور) —');
 const emp = fs.readFileSync(path.join(modDir, 'employees.controller.ts'), 'utf8');
 ok('حذف کارمند با سابقه‌ی حضور مسدود می‌شود', /Attendance/.test(emp) && /سابقه حضور/.test(emp));

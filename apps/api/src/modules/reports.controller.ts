@@ -98,6 +98,107 @@ export class ReportsController {
     };
   }
 
+
+  /**
+   * همان اعداد `dayFigures` برای یک بازه — با ۶ کوئری گروهی به‌جای
+   * ۶ کوئری برای هر روز.
+   *
+   * خروجی دقیقاً همان شکل `dayFigures` است (به‌علاوه‌ی runningCash)، چون
+   * صفحه‌ی «راپور روزانه» ستون‌های آن را مستقیم نشان می‌دهد.
+   */
+  private async rangeRows(start: string, end: string, daysDesc: string[], mode: CalendarMode) {
+    const p = db();
+    const cashMode = await settingsService.get('cashMode');
+    const accurate = cashMode === 'accurate';
+    const q = (sql: string) => p.$queryRawUnsafe(sql, start, end) as Promise<any[]>;
+
+    const [sales, receipts, expenses, salaries] = await Promise.all([
+      q(
+        `SELECT "date" d,
+           COALESCE(SUM(CASE WHEN "paymentType"='cash' THEN "total" ELSE 0 END),0) cash,
+           COALESCE(SUM(CASE WHEN "paymentType"='credit' THEN "total" ELSE 0 END),0) credit,
+           COALESCE(SUM("total"),0) allS,
+           COALESCE(SUM("volume"),0) volume
+         FROM "Sale" WHERE "date">=? AND "date"<=? GROUP BY "date"`,
+      ),
+      q(
+        `SELECT "date" d,
+           COALESCE(SUM("amount"),0) total,
+           COALESCE(SUM(CASE WHEN COALESCE("sourceName",'')='امانت' THEN "amount" ELSE 0 END),0) trust,
+           COALESCE(SUM(CASE WHEN COALESCE("sourceName",'')<>'امانت'
+                             AND (COALESCE("receivedBy",'')='' OR "receivedBy"='دخل')
+                        THEN "amount" ELSE 0 END),0) toBox
+         FROM "Receipt" WHERE "date">=? AND "date"<=? GROUP BY "date"`,
+      ),
+      q(
+        `SELECT "date" d, COALESCE(SUM("amountAfn"),0) afn, COALESCE(SUM("amountUsd"),0) usd,
+           COALESCE(SUM(CASE WHEN "paymentType"='cash' AND "payerName"='دخل' THEN "amountAfn" ELSE 0 END),0) fromBox
+         FROM "Expense" WHERE "date">=? AND "date"<=? GROUP BY "date"`,
+      ),
+      q(
+        `SELECT "payDate" d, COALESCE(SUM("total"),0) total,
+           COALESCE(SUM(CASE WHEN "paymentType"='cash' AND "payerName"='دخل' THEN "total" ELSE 0 END),0) fromBox
+         FROM "Salary" WHERE "payDate">=? AND "payDate"<=? GROUP BY "payDate"`,
+      ),
+    ]);
+
+    const map = (rows: any[]) => {
+      const m = new Map<string, any>();
+      for (const r of rows || []) m.set(String(r.d), r);
+      return m;
+    };
+    const sm = map(sales);
+    const rm = map(receipts);
+    const em = map(expenses);
+    const sam = map(salaries);
+
+    /* قدیمی‌ترین روز اول، تا موجودی دخل تجمعی درست باشد */
+    const ascending = [...daysDesc].reverse();
+    let running = 0;
+    const out: any[] = [];
+    for (const d of ascending) {
+      const s0 = sm.get(d) || {};
+      const r0 = rm.get(d) || {};
+      const e0 = em.get(d) || {};
+      const sa0 = sam.get(d) || {};
+
+      const cashSales = num(s0.cash);
+      const creditSales = num(s0.credit);
+      const receiptTotal = num(r0.total);
+      const receiptTrust = num(r0.trust);
+      const expenseAfn = num(e0.afn);
+      const salaryTotal = num(sa0.total);
+      const cashIn = accurate ? cashSales + num(r0.toBox) : cashSales + (receiptTotal - receiptTrust);
+      const cashOut = accurate ? num(e0.fromBox) + num(sa0.fromBox) : expenseAfn + salaryTotal;
+      const cashBalance = r2(cashIn - cashOut);
+      running += cashBalance;
+
+      out.push({
+        date: d,
+        dateDisplay: formatDate(d, mode),
+        calendar: mode,
+        cashMode,
+        cashSales: r2(cashSales),
+        creditSales: r2(creditSales),
+        allSales: r2(num(s0.allS)),
+        volume: r2(num(s0.volume)),
+        receipts: r2(receiptTotal),
+        receiptsTrust: r2(receiptTrust),
+        receiptsToBox: r2(num(r0.toBox)),
+        expensesAfn: r2(expenseAfn),
+        expensesUsd: r2(num(e0.usd)),
+        salaries: r2(salaryTotal),
+        totalExpenses: r2(expenseAfn + salaryTotal),
+        cashBalance,
+        cashIn: r2(cashIn),
+        cashOut: r2(cashOut),
+        runningCash: r2(running),
+      });
+    }
+    /* نمایش: جدیدترین روز اول (همان ترتیب قبلی) */
+    return out.reverse();
+  }
+
   @Get('daily')
   async daily(@Query('from') from?: string, @Query('to') to?: string) {
     await ensureSchemaAsync();
@@ -117,15 +218,13 @@ export class ReportsController {
       assertRange(start, end);
     } catch (e: any) { throw new HttpException(e.message, 400); }
     const days = daysBetween(start, end).reverse(); // newest first
-    const rows = [];
-    let running = 0;
-    // running cash starts at the beginning of the range
-    for (const d of [...days].reverse()) {
-      const f = await this.dayFigures(d);
-      running += f.cashBalance;
-      rows.push({ ...f, runningCash: r2(running) });
-    }
-    rows.reverse();
+    /*
+     * کارایی: نسخه‌ی قبلی برای **هر روز** `dayFigures` را صدا می‌زد؛ هر روز
+     * ۴ کوئری + ۲ خواندن تنظیمات. یک بازه‌ی ۳۰۰ روزه یعنی ~۱۸۰۰ رفت‌وبرگشت
+     * و ۱۰–۲۰ ثانیه معطلی روی کمپیوتر معمولی. حالا همان محاسبات با ۶ کوئری
+     * گروهی (`GROUP BY date`) انجام می‌شود و نتیجه عدد‌به‌عدد یکسان است.
+     */
+    const rows = await this.rangeRows(start, end, days, mode);
     const totals = rows.reduce<Row>((a, r: any) => {
       a.creditSales += r.creditSales; a.cashSales += r.cashSales; a.receipts += r.receipts;
       a.expensesAfn += r.expensesAfn; a.salaries += r.salaries; a.totalExpenses += r.totalExpenses;
@@ -399,12 +498,63 @@ export class ReportsController {
       `SELECT COUNT(*) c FROM "Salary" WHERE "periodStart"=?`, mStart);
     const recent: any[] = await p.$queryRawUnsafe(
       `SELECT "no","date","customerName","materialName","volume","total","paymentType" FROM "Sale" ORDER BY "id" DESC LIMIT 7`);
-    const chart = [];
-    for (let i = 13; i >= 0; i--) {
-      const d = addDays(today, -i);
-      const f = await this.dayFigures(d);
-      chart.push({ date: d, label: f.dateDisplay, cash: f.cashSales, credit: f.creditSales, expenses: f.totalExpenses });
-    }
+    /*
+     * کارایی: قبلاً برای هر یک از ۱۴ روز، `dayFigures` صدا زده می‌شد و هر
+     * بار **۴ کوئری + ۲ کوئری تنظیمات** اجرا می‌شد — یعنی ۸۴ رفت‌وبرگشت به
+     * دیتابیس برای یک نمودار. حالا همان ۱۴ روز با ۴ کوئری گروهی خوانده
+     * می‌شوند (روی ماشین کند/دیسک قدیمی تفاوت کاملاً محسوس است).
+     */
+    const chartDays: string[] = [];
+    for (let i = 13; i >= 0; i--) chartDays.push(addDays(today, -i));
+    const chartStart = chartDays[0];
+    const q = (sql: string, ...args: any[]) => p.$queryRawUnsafe(sql, ...args);
+    const [sellRows, rcptRows, expRows, salRows] = await Promise.all([
+      q(
+        `SELECT "date" d,
+           COALESCE(SUM(CASE WHEN "paymentType"='cash' THEN "total" ELSE 0 END),0) cash,
+           COALESCE(SUM(CASE WHEN "paymentType"='credit' THEN "total" ELSE 0 END),0) credit
+         FROM "Sale" WHERE "date">=? AND "date"<=? GROUP BY "date"`,
+        chartStart, today,
+      ) as Promise<any[]>,
+      q(
+        `SELECT "date" d, COALESCE(SUM(CASE WHEN COALESCE("sourceName",'')='امانت' THEN 0 ELSE "amount" END),0) t
+         FROM "Receipt" WHERE "date">=? AND "date"<=? GROUP BY "date"`,
+        chartStart, today,
+      ) as Promise<any[]>,
+      q(
+        `SELECT "date" d, COALESCE(SUM("amountAfn"),0) t
+         FROM "Expense" WHERE "date">=? AND "date"<=? GROUP BY "date"`,
+        chartStart, today,
+      ) as Promise<any[]>,
+      q(
+        `SELECT "payDate" d, COALESCE(SUM("total"),0) t
+         FROM "Salary" WHERE "payDate">=? AND "payDate"<=? GROUP BY "payDate"`,
+        chartStart, today,
+      ) as Promise<any[]>,
+    ]);
+    const byDate = (rows: any[]) => {
+      const m = new Map<string, number>();
+      for (const r of rows || []) m.set(String(r.d), num(r.t));
+      return m;
+    };
+    const sellMap = new Map<string, any>();
+    for (const r of sellRows || []) sellMap.set(String(r.d), r);
+    /* رسیدات در نمودار ۱۴ روزه نمایش داده نمی‌شود (ستون‌های cash/credit/expenses) */
+    void rcptRows;
+    const expMap = byDate(expRows);
+    const salMap = byDate(salRows);
+
+    const chart = chartDays.map((d) => {
+      const s1 = sellMap.get(d);
+      return {
+        date: d,
+        label: formatDate(d, mode, true),
+        cash: r2(num(s1?.cash)),
+        credit: r2(num(s1?.credit)),
+        /* همان تعریف «مصارف روز» در dayFigures: مصرف + معاش (بدون امانت) */
+        expenses: r2((expMap.get(d) ?? 0) + (salMap.get(d) ?? 0)),
+      };
+    });
     return {
       calendar: mode,
       today: { ...t, label: formatDate(today, mode, true) },

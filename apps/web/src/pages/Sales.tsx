@@ -44,7 +44,8 @@ export default function SalesPage() {
   useEffect(() => { load(page).catch((e) => toast.error('بارگذاری نشد', e.message)); }, [page, dq, filters.from, filters.to, filters.paymentType, filters.material]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     api.get('/lookups').then((r) => setLookups(r.items)).catch(() => {});
-    api.get('/customers').then(setCustomers).catch(() => {});
+    /* light=1: فقط کد/نام/موجودی — نه تمام ستون‌ها (فورم سریع‌تر باز می‌شود) */
+    api.get('/customers?light=1').then(setCustomers).catch(() => {});
   }, []);
   useEffect(() => {
     if (sp.get('new') === '1') { setSp({}, { replace: true }); openNew(); }

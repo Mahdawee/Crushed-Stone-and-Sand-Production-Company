@@ -56,8 +56,24 @@ export const isSettingError = (r: string | null): r is string => !!r && r !== SK
 const PREFIX_KEYS = ['docPrefixSale', 'docPrefixExpense', 'docPrefixReceipt', 'docPrefixSalary'];
 
 export class SettingsService {
+  /**
+   * کش تنظیمات در حافظه.
+   *
+   * باگ کارایی (بازبینی): `get()` هر بار `all()` را صدا می‌زد و `all()` هم
+   * اول `ensureDefaults()` (۱۹ درج/به‌روزرسانی) و بعد یک `SELECT` می‌زد.
+   * هر ثبت فروش ۲–۳ تنظیم می‌خواند → ۶–۹ رفت‌وبرگشت اضافه برای هر کلیک.
+   * حالا یک کش با مهلت ۱۵ ثانیه + پاک‌سازی فوری هنگام `set`.
+   */
+  private cache: { at: number; data: Record<string, string> } | null = null;
+  private static TTL = 15_000;
+
+  clearCache() {
+    this.cache = null;
+  }
+
   async ensureDefaults() {
     await ensureSchemaAsync();
+    if (this.cache && Date.now() - this.cache.at < SettingsService.TTL) return;
     const p = db();
     for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
       await p.$executeRawUnsafe(
@@ -69,10 +85,12 @@ export class SettingsService {
   }
 
   async all(): Promise<Record<string, string>> {
+    if (this.cache && Date.now() - this.cache.at < SettingsService.TTL) return this.cache.data;
     await this.ensureDefaults();
     const rows: any[] = await db().$queryRawUnsafe(`SELECT "key","value" FROM "Setting"`);
     const out: Record<string, string> = { ...DEFAULT_SETTINGS };
     for (const r of rows) out[r.key] = r.value;
+    this.cache = { at: Date.now(), data: out };
     return out;
   }
 
@@ -91,6 +109,7 @@ export class SettingsService {
       String(key),
       String(value ?? ''),
     );
+    this.clearCache();
     return { ok: true };
   }
 

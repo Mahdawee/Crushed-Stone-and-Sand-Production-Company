@@ -122,6 +122,8 @@ export class ExpensesController {
   @ManagerOnly()
   async remove(@Param('id') id: string) {
     const rows: any[] = await db().$queryRawUnsafe(`SELECT "no" FROM "Expense" WHERE "id"=?`, Number(id));
+    /* باگ: حذف شناسه‌ی ناموجود ۲۰۰ و ردیف ساختگی در «فعالیت‌ها» */
+    if (!rows?.length) throw new HttpException('سند مصرف پیدا نشد.', 404);
     await db().$executeRawUnsafe(`DELETE FROM "Expense" WHERE "id"=?`, Number(id));
     await logActivity({ action: 'delete', entity: 'Expense', entityId: Number(id), detail: rows?.[0]?.no || '' });
     return { ok: true };

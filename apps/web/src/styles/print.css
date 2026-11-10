@@ -11,7 +11,7 @@
 .doc-meta { display: flex; flex-wrap: wrap; gap: 6px 26px; margin-top: 12px; font-size: .82rem; }
 .doc-meta span { color: #666; }
 .doc-table { width: 100%; border-collapse: collapse; font-size: .84rem; margin-top: 6px; }
-.doc-table th, .doc-table td { border: 1px solid #bbb; padding: 7px 9px; text-align: right; }
+.doc-table th, .doc-table td { border: 1px solid #bbb; padding: 7px 9px; text-align: right; overflow-wrap: anywhere; }
 .doc-table th { background: #f0f3f5; font-size: .78rem; }
 .doc-table .num { text-align: left; font-variant-numeric: tabular-nums; }
 .doc-total { margin-top: 14px; display: flex; justify-content: flex-start; gap: 10px; align-items: center; }
@@ -23,6 +23,9 @@
 .doc-toolbar { display: flex; gap: 8px; justify-content: center; padding: 14px; background: #eef1f3; }
 @media print {
   body { background: #fff !important; }
+  /* چاپ: سایدبار/نوار بالا/دکمه‌ها نباید کاغذ را شلوغ کنند
+     (قاعده‌ی مشترک در app.css هم هست؛ این‌جا فقط برای ورق سند تکرار شده) */
+  .sidebar, .topbar, .toasts { display: none !important; }
   .doc-toolbar { display: none !important; }
   .doc-page { padding: 6mm 10mm; max-width: none; }
   @page { size: A4; margin: 10mm; }

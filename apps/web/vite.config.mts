@@ -20,6 +20,24 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     chunkSizeWarningLimit: 1500,
+    /*
+     * تفکیک وابستگی‌های سنگین از کد برنامه.
+     *
+     * recharts (و d3 زیرش) فقط در دو صفحه‌ی گزارش لازم است؛ با جدا کردنش،
+     * باز شدن صفحه‌ی ورود/داشبورد منتظر ~۴۰۰KB نمودار نمی‌ماند. react هم
+     * جدا می‌شود تا در آپدیت‌های بعدی کش آن بماند.
+     */
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('recharts') || id.includes('d3-') || id.includes('victory')) return 'charts';
+          if (id.includes('react-router')) return 'router';
+          if (id.includes('react-dom') || id.includes('/react/')) return 'react';
+          return undefined;
+        },
+      },
+    },
   },
   base: './',
 });

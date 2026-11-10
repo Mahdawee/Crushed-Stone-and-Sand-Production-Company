@@ -1,33 +1,42 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { SessionProvider, useSession } from './lib/session';
 import { ToastProvider, Spinner } from './components/ui';
 import Layout from './components/Layout';
 import LoginPage from './pages/Login';
 import Dashboard from './pages/Dashboard';
-import CompanyPage from './pages/Company';
-import EmployeesPage from './pages/Employees';
-import EmployeeProfile from './pages/EmployeeProfile';
-import AttendancePage from './pages/Attendance';
-import SalesPage from './pages/Sales';
-import CustomersPage from './pages/Customers';
-import CustomerStatement from './pages/CustomerStatement';
-import ReceiptsPage from './pages/Receipts';
-import ExpensesPage from './pages/Expenses';
-import SalariesPage from './pages/Salaries';
-import ReportsDaily from './pages/ReportsDaily';
-import ReportsMonthly from './pages/ReportsMonthly';
-import ReportsYearly from './pages/ReportsYearly';
-import ReportsDetail from './pages/ReportsDetail';
-import CashbookPage from './pages/Cashbook';
-import SettingsPage from './pages/Settings';
-import LookupsPage from './pages/Lookups';
-import UsersPage from './pages/Users';
-import BackupPage from './pages/Backup';
-import ActivityPage from './pages/Activity';
-import HelpPage from './pages/Help';
-import PrintSale from './pages/PrintSale';
-import PrintSalary from './pages/PrintSalary';
+
+/*
+ * کارایی: قبلاً **همه‌ی** صفحه‌ها (و کتابخانه‌ی نمودار recharts با ~۴۰۰KB) در
+ * یک باندل بود؛ پنجره باید همه را دانلود/تجزیه می‌کرد تا صفحه‌ی ورود باز شود.
+ * روی لپ‌تاپ قدیمی این یعنی چند ثانیه پنجره‌ی خالی.
+ *
+ * حالا هر صفحه فقط وقتی باز شود بارگذاری می‌شود (`lazy` + `Suspense`). داشبورد
+ * و ورود در باندل اصلی می‌مانند تا اولین صفحه فوری بیاید.
+ */
+const CompanyPage = lazy(() => import('./pages/Company'));
+const EmployeesPage = lazy(() => import('./pages/Employees'));
+const EmployeeProfile = lazy(() => import('./pages/EmployeeProfile'));
+const AttendancePage = lazy(() => import('./pages/Attendance'));
+const SalesPage = lazy(() => import('./pages/Sales'));
+const CustomersPage = lazy(() => import('./pages/Customers'));
+const CustomerStatement = lazy(() => import('./pages/CustomerStatement'));
+const ReceiptsPage = lazy(() => import('./pages/Receipts'));
+const ExpensesPage = lazy(() => import('./pages/Expenses'));
+const SalariesPage = lazy(() => import('./pages/Salaries'));
+const ReportsDaily = lazy(() => import('./pages/ReportsDaily'));
+const ReportsMonthly = lazy(() => import('./pages/ReportsMonthly'));
+const ReportsYearly = lazy(() => import('./pages/ReportsYearly'));
+const ReportsDetail = lazy(() => import('./pages/ReportsDetail'));
+const CashbookPage = lazy(() => import('./pages/Cashbook'));
+const SettingsPage = lazy(() => import('./pages/Settings'));
+const LookupsPage = lazy(() => import('./pages/Lookups'));
+const UsersPage = lazy(() => import('./pages/Users'));
+const BackupPage = lazy(() => import('./pages/Backup'));
+const ActivityPage = lazy(() => import('./pages/Activity'));
+const HelpPage = lazy(() => import('./pages/Help'));
+const PrintSale = lazy(() => import('./pages/PrintSale'));
+const PrintSalary = lazy(() => import('./pages/PrintSalary'));
 
 function Guard({ children, managerOnly }: { children: React.ReactNode; managerOnly?: boolean }) {
   const { user, ready, isManager } = useSession();
@@ -41,6 +50,7 @@ function Shell() {
   const { ready } = useSession();
   if (!ready) return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}><Spinner label="آماده‌سازی سیستم…" /></div>;
   return (
+    <Suspense fallback={<div style={{ padding: 24 }}><Spinner label="بارگذاری صفحه…" /></div>}>
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/print/sale/:id" element={<PrintSale />} />
@@ -71,6 +81,7 @@ function Shell() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
+    </Suspense>
   );
 }
 

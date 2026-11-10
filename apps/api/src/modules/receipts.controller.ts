@@ -93,7 +93,13 @@ export class ReceiptsController {
     /* ویرایش هم نباید مبلغ صفر/منفی بسازد (ثبت، چنین چیزی را رد می‌کند) */
     const amount = Number(body.amount) || 0;
     if (amount <= 0) throw new HttpException('مبلغ رسید باید بزرگتر از صفر باشد.', 400);
+    /*
+     * باگ: در ویرایش، مشتری ناموجود بررسی نمی‌شد؛ `customerId` به ردیفی اشاره
+     * می‌کرد که وجود ندارد و نامِ قدیمی روی رسید می‌ماند (کارت حساب خراب).
+     */
+    if (!body?.customerId) throw new HttpException('مشتری را انتخاب کنید.', 400);
     const cust: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Customer" WHERE "id"=?`, Number(body.customerId));
+    if (!cust?.length) throw new HttpException('مشتری پیدا نشد.', 400);
     await db().$executeRawUnsafe(
       `UPDATE "Receipt" SET "date"=?, "customerId"=?, "customerName"=?, "amount"=?, "relatedBillNo"=?,
        "sourceId"=?, "sourceName"=?, "receivedBy"=?, "note"=? WHERE "id"=?`,
@@ -109,6 +115,8 @@ export class ReceiptsController {
   @ManagerOnly()
   async remove(@Param('id') id: string) {
     const rows: any[] = await db().$queryRawUnsafe(`SELECT "no" FROM "Receipt" WHERE "id"=?`, Number(id));
+    /* باگ: حذف شناسه‌ی ناموجود ۲۰۰ و یک ردیف ساختگی در «فعالیت‌ها» */
+    if (!rows?.length) throw new HttpException('رسید پیدا نشد.', 404);
     await db().$executeRawUnsafe(`DELETE FROM "Receipt" WHERE "id"=?`, Number(id));
     await logActivity({ action: 'delete', entity: 'Receipt', entityId: Number(id), detail: rows?.[0]?.no || '' });
     return { ok: true };

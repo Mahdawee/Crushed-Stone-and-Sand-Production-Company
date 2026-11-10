@@ -156,7 +156,14 @@ export class SystemController {
      */
     await resetDb();
     fs.copyFileSync(full, target);
-    await ensureSchemaAsync();
+    /*
+     * پس از بازگردانی، فایل دیتابیس عوض شده؛ کش «ساختار بررسی شد» هم باید
+     * پاک شود وگرنه برنامه به فایل تازه اعتماد می‌کند بدون بررسی ستون‌ها
+     * (نسخه‌های قدیمی‌تر پشتیبان).
+     */
+    await ensureSchemaAsync(true);
+    /* کش تنظیمات مربوط به فایل قبلی است — پاک شود */
+    settingsService.clearCache();
     await logActivity({ action: 'restore', entity: 'System', detail: name });
     return { ok: true, restored: name, safetyCopy: path.basename(safety), restartRequired: false };
   }

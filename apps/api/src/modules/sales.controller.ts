@@ -28,6 +28,12 @@ function readNumbers(body: any) {
   if (unitPrice < 0) throw new HttpException('قیمت واحد نمی‌تواند منفی باشد.', 400);
   if (freightPerUnit < 0) throw new HttpException('کرایه فی واحد نمی‌تواند منفی باشد.', 400);
   const freightTotal = Math.round(volume * freightPerUnit * 100) / 100;
+  /*
+   * جمع کرایه همیشه «کرایه فی متر × متراژ» است — همان چیزی که کاربر در فورم
+   * می‌بیند (کادر «مجموع کرایه» فقط‌خواندنی است). قبلاً اگر کلاینت عددی در
+   * `freightTotal` می‌فرستاد، ذخیره می‌شد و می‌توانست با جمعِ نمایش‌داده‌شده
+   * فرق کند (دو منبع حقیقت). حالا یک منبع: متراژ × کرایه فی متر.
+   */
   const total = Math.round((volume * unitPrice + freightTotal) * 100) / 100;
   return { volume, unitPrice, freightPerUnit, freightTotal, total };
 }
@@ -140,7 +146,14 @@ export class SalesController {
     catch (e: any) { throw new HttpException(e.message, 400); }
     if (!date) throw new HttpException('تاریخ بل را وارد کنید.', 400);
     const { volume, unitPrice, freightPerUnit, freightTotal, total } = readNumbers(body);
+    if (!body?.customerId) throw new HttpException('مشتری را انتخاب کنید.', 400);
+    /*
+     * باگ: در ویرایش، مشتری ناموجود فقط باعث می‌شد نام قدیمی حفظ شود و
+     * `customerId` به عددی اشاره کند که چنین مشتری‌ای وجود ندارد (بل یتیم،
+     * بدهی گم‌شده). همان بررسی «ثبت» اینجا هم لازم است.
+     */
     const cust: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Customer" WHERE "id"=?`, Number(body.customerId));
+    if (!cust?.length) throw new HttpException('مشتری پیدا نشد.', 400);
     try {
       await db().$executeRawUnsafe(
         `UPDATE "Sale" SET "date"=?, "customerId"=?, "customerName"=?, "driverName"=?, "truckPlate"=?, "destination"=?,
@@ -163,6 +176,8 @@ export class SalesController {
   @ManagerOnly()
   async remove(@Param('id') id: string) {
     const rows: any[] = await db().$queryRawUnsafe(`SELECT "no" FROM "Sale" WHERE "id"=?`, Number(id));
+    /* باگ: حذف شناسه‌ی ناموجود ۲۰۰ برمی‌گرداند و در «فعالیت‌ها» ثبت می‌شد */
+    if (!rows?.length) throw new HttpException('بل فروش پیدا نشد.', 404);
     await db().$executeRawUnsafe(`DELETE FROM "Sale" WHERE "id"=?`, Number(id));
     await logActivity({ action: 'delete', entity: 'Sale', entityId: Number(id), detail: rows?.[0]?.no || '' });
     return { ok: true };

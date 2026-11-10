@@ -42,7 +42,8 @@ export default function ReceiptsPage() {
   };
   useEffect(() => { load(page).catch((e) => toast.error('بارگذاری نشد', e.message)); }, [page, dq, filters.from, filters.to, filters.source]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    api.get('/customers').then(setCustomers).catch(() => {});
+    /* light=1: فقط کد/نام/موجودی — نه تمام ستون‌ها (فورم سریع‌تر باز می‌شود) */
+    api.get('/customers?light=1').then(setCustomers).catch(() => {});
     api.get('/lookups').then((r) => setSources(r.items.receipt_source || [])).catch(() => {});
   }, []);
   useEffect(() => { if (sp.get('new') === '1') { setSp({}, { replace: true }); openNew(); } }, [sp]); // eslint-disable-line react-hooks/exhaustive-deps

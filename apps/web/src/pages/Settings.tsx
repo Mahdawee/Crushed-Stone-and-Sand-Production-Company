@@ -142,7 +142,7 @@ export default function SettingsPage() {
             <Field label="پیشوند سند معاش" hint={`نمونه: ${s.docPrefixSalary || 'P'}-1405-0001`}>
               <input className="input" value={s.docPrefixSalary ?? ''} placeholder="P"
                 onChange={(e) => setS({ ...s, docPrefixSalary: e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) })} /></Field>
-            <Field label="سهم اضافه کاری" hint="نرخ هر ساعت اضافه کاری نسبت به ساعت عادی">
+            <Field label="سهم اضافه کاری" hint="نرخ هر ساعت اضافه کاری نسبت به ساعت عادی — در محاسبه ورق معاش اثر دارد">
               <input className="input input-num" value={s.overtimeRate ?? ''} placeholder="1.25"
                 inputMode="decimal"
                 onChange={(e) => setS({ ...s, overtimeRate: e.target.value })} /></Field>

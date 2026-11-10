@@ -7,9 +7,16 @@ import { logActivity } from '../common/activity';
 @UseGuards(AuthGuard)
 @Controller('customers')
 export class CustomersController {
-  /** Debt = opening + credit sales − receipts that reduce debt. */
+  /**
+   * Debt = opening + credit sales − receipts that reduce debt.
+   *
+   * `light=1` فقط کد/نام/موجودی را می‌دهد — برای فهرست‌های کشویی (فورم
+   * رسید/فروش/مصرف) که تمام مشتریان را یک‌جا می‌خواهند. قبلاً همه‌ی ستون‌ها
+   * (آدرس، تلفن، یادداشت و …) هم فرستاده می‌شد؛ با ۵۰۰ مشتری این پاسخ چند
+   * صد کیلوبایت بود و باز شدن فورم کند می‌شد.
+   */
   @Get()
-  async list(@Query('q') q?: string) {
+  async list(@Query('q') q?: string, @Query('light') light?: string) {
     await ensureSchemaAsync();
     const args: any[] = [];
     let where = '';
@@ -17,8 +24,14 @@ export class CustomersController {
       where = `WHERE c."name" LIKE ? OR c."code" LIKE ? OR c."phone" LIKE ? OR c."contactPerson" LIKE ?`;
       args.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
     }
+    const lightMode = light === '1' || light === 'true';
     const rows: any[] = await db().$queryRawUnsafe(
-      `SELECT c.*,
+      lightMode
+        ? `SELECT c."id", c."code", c."name", c."phone", c."openingBalance",
+        (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND s."paymentType"='credit') AS creditSales,
+        (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE r."customerId"=c."id" AND COALESCE(r."sourceName",'') <> 'امانت') AS receipts
+       FROM "Customer" c ${where} ORDER BY c."name"`
+        : `SELECT c.*,
         (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND s."paymentType"='credit') AS creditSales,
         (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id") AS allSales,
         (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE r."customerId"=c."id" AND COALESCE(r."sourceName",'') <> 'امانت') AS receipts
