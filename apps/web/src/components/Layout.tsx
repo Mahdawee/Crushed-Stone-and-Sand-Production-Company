@@ -143,11 +143,13 @@ export default function Layout() {
   useEffect(() => { localStorage.setItem(CLOSED_KEY, JSON.stringify(closed)); }, [closed]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key !== 'Escape' || !open) return;
+      setOpen(false);
+      menuBtnRef.current?.focus();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [open]);
 
   const toggleTheme = async () => {
     const next = { ...settings, theme: dark ? 'light' : 'dark' };
@@ -175,6 +177,8 @@ export default function Layout() {
   const groupRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [hoverGroup, setHoverGroup] = useState('');
 
+  /** کشو: با Esc بسته می‌شود و فوکوس به دکمه منو برمی‌گردد */
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
   const openPanel = (id: string) => {
     const el = groupRefs.current[id];
     if (!el) return;
@@ -205,7 +209,7 @@ export default function Layout() {
           </button>
         </div>
 
-        <nav className="nav">
+        <nav className="nav" onMouseLeave={popoverMode ? () => setHoverGroup('') : undefined}>
           {groups.map((g) => {
             const isActiveGroup = activeGroup === g.id;
             /* در حالت ریل همه آیتم‌ها در پنل شناور دیده می‌شوند */
@@ -279,6 +283,7 @@ export default function Layout() {
         <header className="topbar no-print">
           <button
             className="btn ghost icon drawer-btn" onClick={() => setOpen((v) => !v)}
+            ref={menuBtnRef}
             title="نمایش / پنهان کردن منو" aria-label="نمایش یا پنهان کردن منو" aria-expanded={open}
           ><IconMenu size={18} /></button>
           <span className="topbar-sep" />
