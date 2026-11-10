@@ -96,7 +96,39 @@ if (isWin && fs.existsSync(pkg) && !fs.existsSync(path.join(root, 'src-tauri/api
   warn('node.exe داخل بسته نیست — کمپیوتر مقصد باید Node.js داشته باشد (package:api با انترنت آن را دانلود می‌کند)');
 }
 
-console.log('\n— ۸) ابزار Tauri CLI —');
+console.log('\n— ۸) تنظیمات نصب‌کننده ویندوز (NSIS) —');
+/* این بررسی از خطای واقعیِ ساخت نصب‌کننده می‌آید:
+   «Can't open language file - ...\Persian.nlf» — یعنی نام زبان در
+   tauri.conf.json با نام فایل زبانِ NSIS یکی نبود. */
+if (isWin) {
+  try {
+    const conf = JSON.parse(fs.readFileSync(path.join(root, 'src-tauri/tauri.conf.json'), 'utf8'));
+    const nsis = conf?.bundle?.windows?.nsis || {};
+    const langs = nsis.languages || ['English'];
+    /* NSIS زبان فارسی را «Farsi» می‌شناسد؛ «Persian» فایل .nlf ندارد */
+    const badNames = langs.filter((l) => /^persian$/i.test(l));
+    if (badNames.length) {
+      bad(`نام زبان «${badNames.join(', ')}» در NSIS وجود ندارد`,
+        'در src-tauri/tauri.conf.json مقدار languages را از Persian به Farsi تغییر دهید (Contrib\\Language files\\Farsi.nlf)');
+    } else {
+      ok(`زبان‌های نصب‌کننده: ${langs.join(', ')}`);
+    }
+    for (const [lang, rel] of Object.entries(nsis.customLanguageFiles || {})) {
+      const abs = path.resolve(root, 'src-tauri', rel);
+      if (fs.existsSync(abs)) ok(`پیام‌های فارسی ${rel} موجود است`);
+      else bad(`فایل پیام زبان «${lang}» پیدا نشد (${rel})`, 'npm run setup را اجرا کنید یا فایل را از مخزن بگیرید');
+    }
+    if (langs.some((l) => /^farsi$/i.test(l)) && !(nsis.customLanguageFiles || {}).Farsi && !(nsis.customLanguageFiles || {}).farsi) {
+      warn('برای Farsi فایل پیام سفارشی تعریف نشده — متن دکمه‌های نصب‌کننده انگلیسی می‌ماند (ساخت موفق است)');
+    }
+  } catch (e) {
+    bad('tauri.conf.json خوانده نشد', e.message);
+  }
+} else {
+  warn('ساخت نصب‌کننده NSIS فقط روی ویندوز انجام می‌شود');
+}
+
+console.log('\n— ۹) ابزار Tauri CLI —');
 const cli = run('npx --no-install tauri --version') || run('npx --no-install @tauri-apps/cli --version');
 if (cli) ok(cli);
 else { warn('نصب نشده — یک بار: npm run desktop:setup'); todos.push('npm run desktop:setup'); }

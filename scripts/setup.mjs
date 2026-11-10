@@ -90,7 +90,17 @@ else {
   done('ساخته شد');
 }
 
-/* ۵) جمع‌بندی */
+/* ۵) تنظیمات نصب‌کننده (بدون build) — خطای زبان NSIS را زودتر بگیرد */
+step(5, 'تنظیمات نصب‌کننده ویندوز');
+try {
+  execSync('node scripts/ui-check/nsis-langs.test.mjs', { cwd: root, stdio: 'pipe' });
+  done('تنظیمات NSIS درست است (زبان‌ها و پیام‌های فارسی)');
+} catch (e) {
+  console.log('   ⚠ تنظیمات نصب‌کننده ایراد دارد — قبل از desktop:build این را ببینید:');
+  console.log(String(e.stdout || '').split('\n').filter((l) => l.includes('✘')).join('\n'));
+}
+
+/* ۶) جمع‌بندی */
 console.log('\n✅ آماده است.\n');
 console.log('   اجرای برنامه در مرورگر:   npm start        →  http://127.0.0.1:4317');
 console.log('   حالت توسعه (hot reload):  npm run dev      →  http://localhost:5173');

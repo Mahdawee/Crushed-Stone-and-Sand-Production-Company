@@ -38,9 +38,13 @@
       "nsis": {
         "installMode": "currentUser",
         "languages": [
-          "Persian",
+          "Farsi",
           "English"
-        ]
+        ],
+        "displayLanguageSelector": false,
+        "customLanguageFiles": {
+          "Farsi": "nsis/Farsi.nsh"
+        }
       }
     },
     "shortDescription": "مدیریت فروشات، مصارف، معاشات و راپورهای شرکت",

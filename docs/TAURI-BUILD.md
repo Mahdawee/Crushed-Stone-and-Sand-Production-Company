@@ -198,6 +198,9 @@ npx tauri build --offline
 | `'unzip' is not recognized` | ویندوز به‌صورت پیش‌فرض `unzip` ندارد (نسخه‌های قبل از این اصلاح) | `git pull` — حالا خود اسکریپت ZIP را باز می‌کند، بدون unzip |
 | `glob pattern binaries/* path not found` | `tauri.conf.json` پوشه `binaries/` را منبع اعلام کرده بود ولی ساخته نمی‌شد | `git pull` (این پوشه حالا خودکار ساخته می‌شود و از `resources` برداشته شد) |
 | پنجره سفید در نسخه نصب‌شده | API هنوز بالا نیامده / آدرس اشتباه | `git pull` — پنجره حالا بعد از آماده شدن API ساخته می‌شود و همیشه `127.0.0.1:4317` را باز می‌کند |
+| `Can't open language file - "...\NSIS\Contrib\Language files\Persian.nlf"!` | در `tauri.conf.json` نام زبان `Persian` بود؛ NSIS3 زبان فارسی را **`Farsi`** می‌نامد (فایل `Farsi.nlf`) و `Persian.nlf` وجود ندارد | `git pull` — حالا `languages: ["Farsi","English"]` است و پیام‌های فارسی در `src-tauri/nsis/Farsi.nsh` تعریف شده‌اند. بررسی سریع: `npm run test:nsis` |
+| `Error in macro MUI_LANGUAGEEX on macroline 13` | همان خطای بالا (نتیجه‌ی آن) | همان راه‌حل بالا |
+| `failed to bundle project: Failed to bundle app with makensis` | هر خطای makensis؛ خط واقعی چند خط بالاتر است | همان چند خط بالا را بخوانید؛ یا `npm run doctor` بخش ۸ |
 
 ## ۱۱) بررسی سلامت نسخه نصب‌شده
 
@@ -225,8 +228,13 @@ npm start          # → http://127.0.0.1:4317
 ```powershell
 git pull
 npm run setup
+npm run test:nsis       # ۲ ثانیه؛ خطای زبان نصب‌کننده را قبل از build می‌گیرد
 npm run desktop:build
 ```
+
+> اگر ساخت نصب‌کننده با خطای **`Persian.nlf`** یا `MUI_LANGUAGEEX` شکست خورد، یعنی
+> نسخه‌ی قدیمی کد را دارید: `git pull` و دوباره `npm run desktop:build`.
+> (NSIS زبان فارسی را `Farsi` می‌شناسد؛ در `tauri.conf.json` هم همین نوشته شده.)
 
 ### ج) چه وقت لازم است `npm install` جداگانه بزنم؟
 فقط اگر این فایل‌ها عوض شده باشند (چیزی در `package.json`):
@@ -251,6 +259,8 @@ npm run desktop:build
 | `npm run desktop:dev` | پنجره دسکتاپ در حالت توسعه | آزمایش پنجره بدون ساخت نصب‌کننده |
 | `npm run package:api` | فقط بسته API/`src-tauri/api` را آماده می‌کند | به‌ندرت؛ داخل `desktop:build` هست |
 | `npm run test:api` | ۵۳ تست رفتاری API | بعد از تغییرات بک‌اند |
+| `npm run test:ui` | ۶۰ تست واقعی رابط (سایدبار، DatePicker) در DOM | بعد از تغییر ظاهر |
+| `npm run test:nsis` | تنظیمات زبان نصب‌کننده را چک می‌کند (خطای `Persian.nlf`) | قبل از `desktop:build` |
 
 > **قانون طلایی:** پس از `pull`، اگر فقط می‌خواهید ببینید → `npm run setup && npm start`.
 > اگر می‌خواهید نصب‌کننده بدهید → `npm run setup && npm run desktop:build`.
