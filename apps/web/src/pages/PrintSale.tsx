@@ -12,7 +12,24 @@ export default function PrintSale() {
   const nav = useNavigate();
   const { calendar } = useSession();
   const [s, setS] = useState<any>(null);
-  useEffect(() => { api.get(`/sales/${id}`).then(setS).catch(() => {}); }, [id]);
+  /*
+   * بارگذاری سند چاپی با حالت خطا.
+   *
+   * باگ: خطا بی‌صدا بلعیده می‌شد و صفحه برای همیشه «در حال آماده‌سازی…»
+   * می‌ماند — کاربر فکر می‌کرد برنامه هنگ کرده. حالا پیام روشن با دکمه‌ی
+   * بازگشت نشان داده می‌شود.
+   */
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    setLoading(true); setErr('');
+    api.get(`/sales/${id}`)
+      .then((r) => { if (alive) setS(r); })
+      .catch((e: any) => { if (alive) setErr(e?.message || 'سند پیدا نشد.'); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [id]);
   const [printed, setPrinted] = useState(false);
   useEffect(() => {
     /* در پنجره دسکتاپ چاپ خودکار مزاحم است — فقط در حالت مرورگر یک بار چاپ می‌شود */
@@ -20,7 +37,16 @@ export default function PrintSale() {
     const t = setTimeout(() => { window.print(); setPrinted(true); }, 400);
     return () => clearTimeout(t);
   }, [s, printed]);
-  if (!s) return <div style={{ padding: 30 }}>در حال آماده‌سازی…</div>;
+  if (err) {
+    return (
+      <div style={{ padding: 30, maxWidth: 520 }}>
+        <h3 style={{ marginBottom: 8 }}>سند باز نشد</h3>
+        <p className="small" style={{ color: 'var(--text-2)', marginBottom: 16 }}>{err}</p>
+        <button className="btn" onClick={() => nav(-1)}>بازگشت</button>
+      </div>
+    );
+  }
+  if (loading || !s) return <div style={{ padding: 30 }}>در حال آماده‌سازی…</div>;
 
   const rows = [
     ['شماره بل', s.no],

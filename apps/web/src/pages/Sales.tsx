@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { api, downloadCsv } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useDebounced } from '../lib/useDebounced';
+import { useLatestRequest } from '../lib/useLatestRequest';
 import {
   useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, Pager,
   ListHead, SearchBox, FilterButton, FilterPanel, FilterChip, InlineStat,
@@ -28,6 +29,7 @@ export default function SalesPage() {
   const [busy, setBusy] = useState(false);
   const [fOpen, setFOpen] = useState(false);
 
+  const latest = useLatestRequest();
   const load = async (p = page) => {
     const qs = new URLSearchParams({ page: String(p), pageSize: '25' });
     if (dq) qs.set('q', dq);
@@ -35,7 +37,9 @@ export default function SalesPage() {
     if (filters.to) qs.set('to', filters.to);
     if (filters.paymentType) qs.set('paymentType', filters.paymentType);
     if (filters.material) qs.set('material', filters.material);
-    setData(await api.get(`/sales?${qs.toString()}`));
+    /* فقط آخرین پاسخ روی جدول می‌نشیند — وگرنه پاسخ کندِ جستجوی قبلی
+       می‌تواند نتیجه‌ی تازه را بازنویسی کند. */
+    await latest(() => api.get(`/sales?${qs.toString()}`), setData);
   };
   useEffect(() => { load(page).catch((e) => toast.error('بارگذاری نشد', e.message)); }, [page, dq, filters.from, filters.to, filters.paymentType, filters.material]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -185,7 +189,7 @@ export default function SalesPage() {
       </div>
 
       {form ? (
-        <Modal title={form.id ? `ویرایش بل ${form.no}` : 'بل فروش نو'} onClose={() => setForm(null)} footer={
+        <Modal title={form.id ? `ویرایش بل ${form.no}` : 'بل فروش نو'} onClose={() => setForm(null)} onEnter={save} footer={
           <>
             <button className="btn primary" onClick={save} disabled={busy}>{busy ? 'ذخیره…' : 'ذخیره بل فروش'}</button>
             <button className="btn" onClick={() => setForm(null)}>انصراف</button>

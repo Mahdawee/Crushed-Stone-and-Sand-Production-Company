@@ -109,8 +109,20 @@ ok('گروه دارای شاخه فعال هم بسته می‌شود', !openGro
    نشانه‌ی بسته بودن، نبودن کلاس expanded است. */
 const generalItems = document.querySelectorAll('.nav-group')[0].querySelector('.nav-items');
 ok('بستن گروه، کلاس expanded را برمی‌دارد', !generalItems.classList.contains('expanded'));
-ok('پنل گروه بسته با CSS جمع می‌شود (0fr)', /\.nav-items \{\s*display: grid; grid-template-rows: 0fr/.test(
-  fs.readFileSync(path.join(root, 'apps/web/src/styles/app.css'), 'utf8')));
+/* جمع شدن نباید به ترفندهای مرورگرهای تازه وابسته باشد: max-height در همه‌ی
+   موتورها کار می‌کند، ولی grid-template-rows:0fr در WebView2 قدیمی بی‌اثر است
+   (همان چیزی که باعث می‌شد کلیک روی سرگروه «هیچ کاری نکند»). */
+const css = fs.readFileSync(path.join(root, 'apps/web/src/styles/app.css'), 'utf8');
+ok('سایدبار در پنجره کوتاه قابل اسکرول است (فهرست، نه کل صفحه)',
+  /\.sidebar \{[^}]*height: 100vh[^}]*overflow: hidden/.test(css) &&
+  /\.sidebar \.nav \{[^}]*overflow-y: auto/.test(css));
+ok('لوگو و دکمه پایین از اسکرول بیرون‌اند', /\.sidebar \.brand \{[^}]*flex: 0 0 auto/.test(css) &&
+  /\.sidebar \.nav-foot \{[^}]*flex: 0 0 auto/.test(css));
+ok('پنل شناور ریل بریده نمی‌شود', /\.app\.rail \.sidebar \{ overflow: visible/.test(css));
+ok('پنل گروه بسته با CSS جمع می‌شود (max-height: 0)', /\.nav-items \{\s*max-height: 0;/.test(css));
+ok('حالت باز با max-height باز می‌شود', /\.nav-items\.expanded \{[^}]*max-height: (?!0)/.test(css));
+ok('باز/بسته به grid-template-rows وابسته نیست', !/\.nav-items[^{]*\{[^}]*grid-template-rows/.test(css));
+ok('آیتم‌های بسته با Tab قابل دسترسی نیستند', /\.nav-items \{[^}]*visibility: hidden/.test(css));
 ok('بستن گروه، صفحه‌ی جاری را عوض نمی‌کند', host.textContent.includes('صفحه آزمایشی'));
 
 /* بستن دوباره همان گروه */

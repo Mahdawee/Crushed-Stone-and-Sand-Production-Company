@@ -76,24 +76,83 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 }
 
 /* ================================ modal =============================== */
-export function Modal({ title, onClose, children, footer, size = '' }: {
-  title: React.ReactNode; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; size?: '' | 'sm' | 'md';
+/**
+ * فرم مودال.
+ *
+ * باگ جدی (گزارش کاربر: «با وارد کردن یک عدد یا حرف، فیلد دیگر تایپ نمی‌شود
+ * تا دوباره کلیک کنی»):
+ *   افکت زیر هم `addEventListener` را می‌ساخت و هم `boxRef.current.focus()` را
+ *   صدا می‌زد، و در لیست وابستگی‌ها `onClose` بود. در همه‌ی صفحه‌ها `onClose`
+ *   به‌صورت `() => setForm(null)` نوشته می‌شود — یعنی یک تابع تازه در هر رندر.
+ *   پس با هر بار تایپ، state فرم عوض می‌شد → رندر → `onClose` تازه → افکت
+ *   دوباره اجرا → فوکوس از کادر ورودی دزدیده می‌شد و به بدنه‌ی فرم می‌رفت.
+ *   برای همین فقط بار اول می‌شد تایپ کرد.
+ *
+ * حل: افکت فقط یک بار (در باز شدن) اجرا می‌شود:
+ *   • شنونده‌ها یک بار وصل می‌شوند و `onClose` را از ref می‌خوانند؛
+ *   • فوکوس فقط در باز شدن و تنها اگر داخل فرم فوکوسی نباشد انجام می‌شود.
+ */
+export function Modal({ title, onClose, children, footer, size = '', onEnter }: {
+  title: React.ReactNode; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode;
+  size?: '' | 'sm' | 'md';
+  /** Enter داخل هر کادر متنی — معمولاً همان ذخیره کردن (اختیاری) */
+  onEnter?: () => void;
 }) {
   const boxRef = React.useRef<HTMLDivElement>(null);
+  /* تازه‌ترین onClose بدون نیاز به اجرای دوباره‌ی افکت */
+  const closeRef = React.useRef(onClose);
+  closeRef.current = onClose;
+  const enterRef = React.useRef(onEnter);
+  enterRef.current = onEnter;
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       /* Esc: اول تقویم باز را می‌بندد، بعد فرم را */
-      if (e.key === 'Escape' && !document.querySelector('.dp-pop')) onClose();
+      if (e.key === 'Escape' && !document.querySelector('.dp-pop')) closeRef.current();
     };
     window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    /* فوکوس روی خود فرم می‌رود تا تایپ/تب از همان‌جا شروع شود */
-    boxRef.current?.focus();
-    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = ''; };
-  }, [onClose]);
+    /* فوکوس فقط اگر کاربر هنوز داخل فرم نرفته باشد (هرگز دزدیده نشود) */
+    const box = boxRef.current;
+    if (box && !box.contains(document.activeElement)) box.focus({ preventScroll: true });
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return (
-    <div className="modal-back no-print" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className={`modal ${size}`} ref={boxRef} tabIndex={-1} role="dialog" aria-modal="true">
+    <div
+      className="modal-back no-print"
+      /*
+       * بستن با کلیک روی پس‌زمینه — فقط اگر هم فشار دادن و هم رها کردن روی
+       * پس‌زمینه باشد.
+       *
+       * باگ: قبلاً فقط `onMouseDown` بود. اگر کاربر داخل یک کادر متن، متن را
+       * با ماوس انتخاب می‌کرد و ماوس را کمی بیرون از فرم رها می‌کرد، فشار اول
+       * داخل فرم بود ولی رها کردن بیرون — و چون رویداد به پس‌زمینه می‌رسید،
+       * فرم **بسته می‌شد و همه‌ی داده‌های وارد‌شده از دست می‌رفت**.
+       */
+      onMouseDown={(e) => { (e.currentTarget as any).__pressedBg = e.target === e.currentTarget; }}
+      onClick={(e) => {
+        const pressed = (e.currentTarget as any).__pressedBg;
+        (e.currentTarget as any).__pressedBg = false;
+        if (pressed && e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+      className={`modal ${size}`} ref={boxRef} tabIndex={-1} role="dialog" aria-modal="true"
+      onKeyDown={(e) => {
+        /* Enter در کادرهای متنی = همان دکمه‌ی اصلی فرم (اگر داده شده باشد) */
+        if (e.key !== 'Enter' || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+        const t = e.target as HTMLElement;
+        if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'BUTTON' || t.tagName === 'SELECT')) return;
+        if (!enterRef.current) return;
+        e.preventDefault();
+        enterRef.current();
+      }}
+    >
         <div className="modal-h"><h3>{title}</h3><div style={{ flex: 1 }} />
           <button className="btn ghost icon" onClick={onClose} title="بستن"><IconClose size={16} /></button>
         </div>
@@ -117,6 +176,13 @@ export function Field({ label, children, hint, span, required }: {
   );
 }
 
+/**
+ * ورودی متنی.
+ *
+ * Enter داخل یک `Modal` = همان دکمه‌ی ذخیره (کاربر لازم نیست ماوس را بردارد)؛
+ * این را خود `Modal` از طریق `onEnter` مدیریت می‌کند.
+ * `onEnter` روی خودِ کادر برای حالت‌های خاص (مثل افزودن سریع در فهرست‌ها) است.
+ */
 export function Text({
   value, onChange, placeholder, type = 'text', readOnly, className = '', onEnter, autoFocus, dir,
 }: {
@@ -128,7 +194,11 @@ export function Text({
       className={`input ${className}`} type={type} value={value ?? ''} readOnly={readOnly} dir={dir}
       placeholder={placeholder} autoFocus={autoFocus}
       onChange={(e) => onChange?.(e.target.value)}
-      onKeyDown={(e) => { if (e.key === 'Enter' && onEnter) onEnter(); }}
+      onKeyDown={(e) => {
+        /* Enter: فقط اگر خودِ کادر onEnter داشته باشد. ذخیره‌ی فرم با Enter را
+           خودِ Modal مدیریت می‌کند (یک نقطه، نه چند مسیر موازی). */
+        if (e.key === 'Enter' && onEnter && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) onEnter();
+      }}
     />
   );
 }
@@ -144,10 +214,17 @@ export function Num({ value, onChange, placeholder, readOnly, className = '', al
   value: any; onChange?: (v: number) => void; placeholder?: string; readOnly?: boolean;
   className?: string; allowNegative?: boolean; max?: number;
 }) {
-  const [raw, setRaw] = useState(String(value ?? ''));
+  /*
+   * باگ ظاهری: مقدار ۰ به‌صورت متن «0» در کادر نشان داده می‌شد، پس کاربر مجبور
+   * بود اول آن را پاک کند و «0» جزء عدد بعدی می‌شد (مثلاً «01234»). حالا صفر و
+   * خالی هر دو یک چیز نمایش داده می‌شوند: کادر خالی.
+   */
+  const isEmptyValue = (v: any) => v === 0 || v === '' || v === null || v === undefined;
+  const [raw, setRaw] = useState(() => (isEmptyValue(value) ? '' : String(value)));
   useEffect(() => {
     const norm = (s: string) => String(s ?? '').replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/,/g, '');
-    if (Number(norm(raw)) !== Number(value ?? 0)) setRaw(value === 0 || value === '' || value == null ? '' : String(value));
+    if (isEmptyValue(value)) { if (raw !== '') setRaw(''); }
+    else if (Number(norm(raw)) !== Number(value)) setRaw(String(value));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
   return (
@@ -290,20 +367,24 @@ export function FilterPanel({ open, children, footer, onClose }: {
   open: boolean; children: React.ReactNode; footer?: React.ReactNode; onClose?: () => void;
 }) {
   const ref = React.useRef<HTMLDivElement>(null);
+  /* مثل Modal: onClose در صفحه‌ها تابع تازه است، پس از ref خوانده می‌شود تا
+     شنونده‌ها با هر رندر از نو ساخته/حذف نشوند (و کلیک وسط این چرخه گم نشود). */
+  const closeRef = React.useRef(onClose);
+  closeRef.current = onClose;
   React.useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose?.(); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); closeRef.current?.(); } };
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
       if (ref.current?.contains(t)) return;
       /* کلیک روی خود دکمه فیلتر، خودش پنل را می‌بندد */
       if ((t as HTMLElement).closest?.('.tb-filter')) return;
-      onClose?.();
+      closeRef.current?.();
     };
     document.addEventListener('keydown', onKey);
     document.addEventListener('mousedown', onDown);
     return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onDown); };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return (
     <div className="tb-panel" ref={ref}>

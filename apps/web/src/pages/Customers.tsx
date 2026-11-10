@@ -5,6 +5,8 @@ import { api, downloadCsv } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, ListHead, SearchBox, InlineStat } from '../components/ui';
 import { money } from '../lib/calendar';
+import { useDebounced } from '../lib/useDebounced';
+import { useLatestRequest } from '../lib/useLatestRequest';
 
 export default function CustomersPage() {
   const { isManager } = useSession();
@@ -14,8 +16,18 @@ export default function CustomersPage() {
   const [form, setForm] = useState<any>(null);
   const [busy, setBusy] = useState(false);
 
-  const load = async () => setRows(await api.get(`/customers?q=${encodeURIComponent(q)}`));
-  useEffect(() => { load().catch((e) => toast.error('بارگذاری نشد', e.message)); }, [q]);
+  /*
+   * جستجو با تأخیر (debounce).
+   *
+   * باگ: با هر حرف یک درخواست می‌رفت و پاسخ‌ها بی‌ترتیب برمی‌گشتند؛ در فهرست
+   * مشتریان — که هر ردیفش مانده‌ی بدهی را هم حساب می‌کند — تایپ کند و پریدنی
+   * می‌شد و نتیجه‌ی آخر ممکن بود نتیجه‌ی حرف‌های قبلی باشد.
+   */
+  const dq = useDebounced(q);
+  const latest = useLatestRequest();
+  /* فقط نتیجه‌ی آخرین جستجو روی جدول می‌نشیند (پاسخ‌های کهنه دور ریخته می‌شوند) */
+  const load = () => latest(() => api.get(`/customers?q=${encodeURIComponent(dq)}`), setRows);
+  useEffect(() => { load().catch((e) => toast.error('بارگذاری نشد', e.message)); }, [dq]);
 
   const openNew = async () => {
     const { code } = await api.get('/customers/next-code');
@@ -91,7 +103,7 @@ export default function CustomersPage() {
       </div>
 
       {form ? (
-        <Modal title={form.id ? 'ویرایش مشتری' : 'مشتری نو'} onClose={() => setForm(null)} size="md" footer={
+        <Modal title={form.id ? 'ویرایش مشتری' : 'مشتری نو'} onClose={() => setForm(null)} onEnter={save} size="md" footer={
           <><button className="btn primary" onClick={save} disabled={busy}>{busy ? 'ذخیره…' : 'ذخیره'}</button>
             <button className="btn" onClick={() => setForm(null)}>انصراف</button></>}>
           <div className="form-grid c2">

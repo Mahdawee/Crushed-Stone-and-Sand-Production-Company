@@ -40,7 +40,14 @@ export default function SettingsPage() {
 
   const save = async () => {
     setBusy(true);
-    try { await saveSettings(s); toast.success('تنظیمات ذخیره شد'); }
+    try {
+      /* کادر خالی = پیش‌فرض سرور (نه رشته‌ی خالی که محاسبات را خراب کند) */
+      const clean = { ...s };
+      if (String(clean.attendanceWorkHours ?? '').trim() === '') clean.attendanceWorkHours = '8';
+      if (String(clean.overtimeRate ?? '').trim() === '') clean.overtimeRate = '1.25';
+      await saveSettings(clean);
+      toast.success('تنظیمات ذخیره شد');
+    }
     catch (e: any) { toast.error('ذخیره نشد', e.message); }
     finally { setBusy(false); }
   };
@@ -113,19 +120,31 @@ export default function SettingsPage() {
               <Select value={s.cashMode} onChange={(v) => setS({ ...s, cashMode: v })}
                 options={[{ value: 'simple', label: 'ساده (پیش‌فرض)' }, { value: 'accurate', label: 'دقیق' }]} />
             </Field>
+            {/*
+              * باگ: مقدار پیش‌فرض داخل `value` نوشته شده بود (`|| '8'`). وقتی
+              * کاربر کادر را پاک می‌کرد، همان لحظه «8» برمی‌گشت و تایپ عدد نو
+              * ممکن نبود. حالا پیش‌فرض فقط «جای‌نگهدار» است و کادر واقعاً خالی
+              * می‌شود؛ هنگام ذخیره هم مقدار خالی به پیش‌فرض سرور می‌رسد.
+              */}
             <Field label="ساعت کاری روزانه" hint="برای محاسبه اضافه کاری">
-              <input className="input input-num" value={s.attendanceWorkHours || '8'}
+              <input className="input input-num" value={s.attendanceWorkHours ?? ''} placeholder="8"
+                inputMode="decimal"
                 onChange={(e) => setS({ ...s, attendanceWorkHours: e.target.value })} /></Field>
             <Field label="پیشوند بل فروش" hint={`نمونه: ${s.docPrefixSale || 'S'}-1405-0001`}>
-              <input className="input" value={s.docPrefixSale || 'S'} onChange={(e) => setS({ ...s, docPrefixSale: e.target.value.toUpperCase().slice(0, 3) })} /></Field>
+              <input className="input" value={s.docPrefixSale ?? ''} placeholder="S"
+                onChange={(e) => setS({ ...s, docPrefixSale: e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) })} /></Field>
             <Field label="پیشوند سند مصرف" hint={`نمونه: ${s.docPrefixExpense || 'E'}-1405-0001`}>
-              <input className="input" value={s.docPrefixExpense || 'E'} onChange={(e) => setS({ ...s, docPrefixExpense: e.target.value.toUpperCase().slice(0, 3) })} /></Field>
+              <input className="input" value={s.docPrefixExpense ?? ''} placeholder="E"
+                onChange={(e) => setS({ ...s, docPrefixExpense: e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) })} /></Field>
             <Field label="پیشوند رسید" hint={`نمونه: ${s.docPrefixReceipt || 'R'}-1405-0001`}>
-              <input className="input" value={s.docPrefixReceipt || 'R'} onChange={(e) => setS({ ...s, docPrefixReceipt: e.target.value.toUpperCase().slice(0, 3) })} /></Field>
+              <input className="input" value={s.docPrefixReceipt ?? ''} placeholder="R"
+                onChange={(e) => setS({ ...s, docPrefixReceipt: e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) })} /></Field>
             <Field label="پیشوند سند معاش" hint={`نمونه: ${s.docPrefixSalary || 'P'}-1405-0001`}>
-              <input className="input" value={s.docPrefixSalary || 'P'} onChange={(e) => setS({ ...s, docPrefixSalary: e.target.value.toUpperCase().slice(0, 3) })} /></Field>
+              <input className="input" value={s.docPrefixSalary ?? ''} placeholder="P"
+                onChange={(e) => setS({ ...s, docPrefixSalary: e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) })} /></Field>
             <Field label="سهم اضافه کاری" hint="نرخ هر ساعت اضافه کاری نسبت به ساعت عادی">
-              <input className="input input-num" value={s.overtimeRate || '1.25'}
+              <input className="input input-num" value={s.overtimeRate ?? ''} placeholder="1.25"
+                inputMode="decimal"
                 onChange={(e) => setS({ ...s, overtimeRate: e.target.value })} /></Field>
           </div>
 

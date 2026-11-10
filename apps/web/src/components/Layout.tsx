@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useSession, applyThemeToDocument } from '../lib/session';
 import { formatDate, todayISO } from '../lib/calendar';
@@ -227,12 +227,16 @@ export default function Layout() {
   };
 
   /**
-   * باز/بسته کردن یک سرگروه — کاملاً مستقل.
+   * باز/بسته کردن یک سرگروه — کاملاً مستقل و بر اساس وضعیت **خودِ همان گروه**.
+   *
+   * قبلاً مقدار «باز بودن» از بیرون به این تابع داده می‌شد؛ در حالت ریل همان
+   * مقدار به `hoverGroup` وصل بود و کلیک روی سرگروه می‌توانست بی‌اثر یا
+   * متناقض شود. حالا همیشه از نقشه‌ی `openGroups` خوانده می‌شود.
    * بقیه‌ی گروه‌ها دست نمی‌خورند، و گروهی که شاخه‌ی فعال دارد هم بسته می‌شود.
    */
-  const toggleGroup = (id: string, isOpen: boolean) => {
-    setOpenGroups((prev) => ({ ...prev, [id]: !isOpen }));
-  };
+  const toggleGroup = useCallback((id: string) => {
+    setOpenGroups((prev) => ({ ...prev, [id]: !prev[id] }));
+  }, []);
 
   /** موقعیت پنل شناور ریل: کنار همان گروه */
   const openPanel = (id: string) => {
@@ -280,8 +284,11 @@ export default function Layout() {
         <nav className="nav" onMouseLeave={railActive ? () => setHoverGroup('') : undefined}>
           {groups.map((g) => {
             const isActiveGroup = activeGroup === g.id;
-            /* در ریل: گروه فقط با هاور/کلیک باز می‌شود؛ در حالت عادی: آکاردئون */
+            /* در حالت ریل آیتم‌ها در پنل شناور دیده می‌شوند؛ در حالت عادی
+               هر گروه مستقل باز/بسته می‌شود (آکاردئون نیست). */
             const isOpen = railActive ? hoverGroup === g.id : !!openGroups[g.id];
+            /* وضعیت ذخیره‌شده‌ی گروه — برای فلش و aria در حالت غیر ریل */
+            const storedOpen = !!openGroups[g.id];
             const GIcon = g.icon;
             return (
               <div
@@ -296,17 +303,17 @@ export default function Layout() {
                 <button
                   type="button"
                   ref={(el) => { groupRefs.current[g.id] = el; }}
-                  className={`nav-group-head ${isActiveGroup ? 'has-active' : ''} ${isOpen ? 'open' : ''}`}
-                  onClick={() => (railActive ? openPanel(g.id) : toggleGroup(g.id, isOpen))}
-                  title={railActive ? g.title : (isOpen ? `بستن «${g.title}»` : `باز کردن «${g.title}»`)}
-                  aria-expanded={isOpen}
+                  className={`nav-group-head ${isActiveGroup ? 'has-active' : ''} ${(railActive ? isOpen : storedOpen) ? 'open' : ''}`}
+                  onClick={() => (railActive ? openPanel(g.id) : toggleGroup(g.id))}
+                  title={railActive ? g.title : (storedOpen ? `بستن «${g.title}»` : `باز کردن «${g.title}»`)}
+                  aria-expanded={railActive ? isOpen : storedOpen}
                   aria-controls={`nav-items-${g.id}`}
                   data-group={g.id}
                 >
                   <GIcon size={15} />
                   <span className="nav-group-title">{g.title}</span>
                   {railActive ? null : (
-                    <span className={`nav-group-chev ${isOpen ? 'up' : ''}`} aria-hidden="true">
+                    <span className={`nav-group-chev ${storedOpen ? 'up' : ''}`} aria-hidden="true">
                       <IconChevron dir="down" size={13} />
                     </span>
                   )}

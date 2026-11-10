@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
-import { useToast, Spinner, Select, Table } from '../components/ui';
+import { useToast, Spinner, Select, Table, Num } from '../components/ui';
 import { DatePicker, MonthPicker } from '../components/DatePicker';
 import { monthKey, formatDate, pad2, toCalendar, todayISO, weekdayIndex, WEEKDAYS } from '../lib/calendar';
 
@@ -14,7 +14,44 @@ const STATUSES = [
   { value: 'official_holiday', label: 'رخصتی رسمی', short: 'ع', color: 'muted' },
   { value: 'friday', label: 'جمعه', short: 'ج', color: 'muted' },
 ];
-const NEXT: Record<string, string> = { present: 'absent', absent: 'leave', leave: 'sick', sick: 'official_holiday', official_holiday: 'friday', friday: 'present' };
+/*
+ * چرخه‌ی کلیک روی هر خانه: … → جمعه → **پاک (ثبت‌نشده)** → حاضر.
+ *
+ * باگ: قبلاً چرخه برگشتی به حالت «ثبت‌نشده» نداشت، پس اگر اشتباهی روی یک روز
+ * کلیک می‌شد راهی برای پاک کردنش نبود. حالا با یک کلیک اضافه پاک می‌شود و در
+ * ورق روزانه هم دکمه‌ی «پاک کردن» هست.
+ */
+const NEXT: Record<string, string> = {
+  present: 'absent', absent: 'leave', leave: 'sick', sick: 'official_holiday',
+  official_holiday: 'friday', friday: '',
+};
+const CLEARED = '__cleared__';
+
+/**
+ * ساعت ورود/خروج — متن آزاد با قالب «۰۸:۳۰».
+ *
+ * عمداً یک <input> ساده است (نه کامپوننت داخل بدنه‌ی صفحه) تا با هر رندر
+ * دوباره ساخته نشود و فوکوس کاربر نپرد.
+ */
+function TimeText({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [raw, setRaw] = React.useState(value);
+  React.useEffect(() => { setRaw(value); }, [value]);
+  return (
+    <input
+      className="input mono" style={{ width: 78, textAlign: 'center' }} placeholder="۰۸:۳۰"
+      dir="ltr" value={raw}
+      onChange={(e) => {
+        let v = e.target.value
+          .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+          .replace(/[^0-9:]/g, '');
+        if (v.length === 2 && !v.includes(':') && raw.length < v.length) v += ':';
+        setRaw(v.slice(0, 5));
+      }}
+      onBlur={() => onChange(raw.slice(0, 5))}
+      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onChange(raw.slice(0, 5)); } }}
+    />
+  );
+}
 
 export default function AttendancePage() {
   const { calendar } = useSession();
@@ -46,17 +83,19 @@ export default function AttendancePage() {
 
   const cellVal = (empId: number, dateISO: string, status: string) => {
     const key = `${empId}|${dateISO}`;
-    if (dirty[key]) return dirty[key].status;
+    if (dirty[key]) return dirty[key].status === CLEARED ? '' : dirty[key].status;
     return status || '';
   };
 
   const cycle = (empId: number, dateISO: string, cur: string) => {
-    const next = NEXT[cur || ''] || 'present';
+    const next = NEXT[cur || ''] ?? 'present';
     setDirty((p) => ({ ...p, [`${empId}|${dateISO}`]: { employeeId: empId, date: dateISO, status: next } }));
   };
 
   const saveMonth = async () => {
-    const items = Object.values(dirty);
+    const items = Object.values(dirty).map((it: any) => (
+      it.status === CLEARED ? { ...it, status: '', remove: true } : it
+    ));
     if (!items.length) { toast.info('تغییری ثبت نشده است.'); return; }
     setBusy(true);
     try {
@@ -75,6 +114,22 @@ export default function AttendancePage() {
       await load();
       toast.success('ثبت گروهی انجام شد', `${ids.length} کارمند برای ${formatDate(bulkDate, calendar)} — ${STATUSES.find((s) => s.value === bulkStatus)?.label}`);
     } catch (e: any) { toast.error('ثبت گروهی انجام نشد', e.message); }
+  };
+
+  /** ذخیره‌ی یک سطر ورق روزانه (بدون رفرش کل جدول تا فوکوس نپرد) */
+  const saveDayCell = async (employeeId: number, patch: any) => {
+    if (!dayData) return;
+    try {
+      await api.post('/attendance/bulk', {
+        items: [{ employeeId, date: dayData.date, ...patch }],
+      });
+      setDayData((prev: any) => prev ? {
+        ...prev,
+        rows: prev.rows.some((r: any) => r.employeeId === employeeId)
+          ? prev.rows.map((r: any) => (r.employeeId === employeeId ? { ...r, ...patch } : r))
+          : [...prev.rows, { employeeId, date: prev.date, ...patch }],
+      } : prev);
+    } catch (e: any) { toast.error('ثبت نشد', e.message); }
   };
 
   const matrix = useMemo(() => {
@@ -120,7 +175,7 @@ export default function AttendancePage() {
                 <i style={{ background: `var(--${x.color}-soft)`, color: `var(--${x.color})` }}>{x.short}</i>{x.label}
               </span>
             ))}
-            <span className="muted">— روی هر خانه کلیک کنید تا وضعیت عوض شود</span>
+            <span className="muted">— روی هر خانه کلیک کنید تا وضعیت عوض شود؛ کلیک آخر پاک می‌کند</span>
           </div>
         ) : null}
         <div className="card-b tight">
@@ -216,9 +271,11 @@ export default function AttendancePage() {
                             await loadDay();
                           }} />
                       </td>
-                      <td className="mono">{row?.checkIn || '—'}</td>
-                      <td className="mono">{row?.checkOut || '—'}</td>
-                      <td className="num">{row?.overtime || 0}</td>
+                      {/* روزانه: ساعت ورود/خروج و اضافه‌کاری قابل ویرایش‌اند و
+                          چون اضافه‌کاری ماه از همین‌جا جمع می‌شود، باید واردشدنی باشد. */}
+                      <td><TimeText value={row?.checkIn || ''} onChange={(v) => saveDayCell(e.id, { checkIn: v, checkOut: row?.checkOut, overtime: row?.overtime, status: row?.status || 'present' })} /></td>
+                      <td><TimeText value={row?.checkOut || ''} onChange={(v) => saveDayCell(e.id, { checkIn: row?.checkIn, checkOut: v, overtime: row?.overtime, status: row?.status || 'present' })} /></td>
+                      <td style={{ width: 96 }}><Num value={row?.overtime ?? 0} onChange={(v) => saveDayCell(e.id, { checkIn: row?.checkIn, checkOut: row?.checkOut, overtime: v, status: row?.status || 'present' })} /></td>
                     </tr>
                   );
                 })}

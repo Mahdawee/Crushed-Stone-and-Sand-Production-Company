@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api, downloadCsv } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useDebounced } from '../lib/useDebounced';
+import { useLatestRequest } from '../lib/useLatestRequest';
 import {
   useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, Pager,
   ListHead, SearchBox, FilterButton, FilterPanel, FilterChip, InlineStat,
@@ -27,6 +28,7 @@ export default function ExpensesPage() {
   const [busy, setBusy] = useState(false);
   const [fOpen, setFOpen] = useState(false);
 
+  const latest = useLatestRequest();
   const load = async (p = page) => {
     const qs = new URLSearchParams({ page: String(p), pageSize: '25' });
     if (dq) qs.set('q', dq);
@@ -35,7 +37,9 @@ export default function ExpensesPage() {
     if (filters.category) qs.set('category', filters.category);
     if (filters.payer) qs.set('payer', filters.payer);
     if (filters.paymentType) qs.set('paymentType', filters.paymentType);
-    setData(await api.get(`/expenses?${qs.toString()}`));
+    /* فقط آخرین پاسخ روی جدول می‌نشیند — وگرنه پاسخ کندِ جستجوی قبلی
+       می‌تواند نتیجه‌ی تازه را بازنویسی کند. */
+    await latest(() => api.get(`/expenses?${qs.toString()}`), setData);
   };
   useEffect(() => { load(page).catch((e) => toast.error('بارگذاری نشد', e.message)); }, [page, dq, filters.from, filters.to, filters.category, filters.payer, filters.paymentType]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { api.get('/lookups').then((r) => setLk(r.items)).catch(() => {}); }, []);
@@ -167,7 +171,7 @@ export default function ExpensesPage() {
       </div>
 
       {form ? (
-        <Modal title={form.id ? `ویرایش مصرف ${form.no}` : 'مصرف نو'} onClose={() => setForm(null)} footer={
+        <Modal title={form.id ? `ویرایش مصرف ${form.no}` : 'مصرف نو'} onClose={() => setForm(null)} onEnter={save} footer={
           <><button className="btn primary" onClick={save} disabled={busy}>{busy ? 'ذخیره…' : 'ذخیره مصرف'}</button>
             <button className="btn" onClick={() => setForm(null)}>انصراف</button></>}>
           <div className="form-grid">

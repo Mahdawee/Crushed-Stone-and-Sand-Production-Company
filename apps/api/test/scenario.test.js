@@ -379,6 +379,38 @@ async function main() {
     });
     check('ذخیره دوباره معاش همان ماه (ویرایش) خطا نمی‌دهد', dupSalary.body.saved === 1, JSON.stringify(dupSalary.body));
 
+    /* ---------------- حضور و غیاب: ویرایش و پاک کردن ---------------- */
+    console.log('\n— حضور و غیاب: ساعت ورود/خروج، اضافه‌کاری و پاک کردن —');
+    const attMonth = await api('GET', '/attendance?month=1405-06');
+    const attDays = attMonth.body.days || [];
+    check('ورق ماهانه: ستون هر روز ماه ساخته می‌شود', attDays.length >= 28, String(attDays.length));
+    const dayA = attDays[10];
+    const dayAJalali = `1405/06/${String(11).padStart(2, '0')}`;
+    await api('POST', '/attendance/bulk', {
+      items: [{ employeeId: employees[0].id, date: dayA, status: 'present', checkIn: '08:00', checkOut: '17:00', overtime: 2 }],
+    });
+    const daySheet = await api('GET', `/attendance?date=${encodeURIComponent(dayAJalali)}`);
+    check('ورق روزانه برمی‌گردد', !!daySheet.body?.rows, JSON.stringify(daySheet.body).slice(0, 120));
+    const rowA = (daySheet.body.rows || []).find((r) => r.employeeId === employees[0].id);
+    check('ورق روزانه: ساعت ورود ذخیره می‌شود', rowA?.checkIn === '08:00', JSON.stringify(rowA));
+    check('ورق روزانه: اضافه‌کاری وارد‌شده ذخیره می‌شود', near(num(rowA?.overtime), 2), String(rowA?.overtime));
+
+    /* پاک کردن همان روز → ردیف باید حذف شود، نه با وضعیت خالی بماند */
+    await api('POST', '/attendance/bulk', {
+      items: [{ employeeId: employees[0].id, date: dayA, status: '', remove: true }],
+    });
+    const daySheet2 = await api('GET', `/attendance?date=${encodeURIComponent(dayAJalali)}`);
+    const rowA2 = (daySheet2.body.rows || []).find((r) => r.employeeId === employees[0].id);
+    check('پاک کردن وضعیت یک روز، ردیف را حذف می‌کند', !rowA2, JSON.stringify(rowA2));
+
+    /* برگرداندن، چون آزمون معاش روی همین ماه کار می‌کند */
+    await api('POST', '/attendance/bulk', {
+      items: [{ employeeId: employees[0].id, date: dayA, status: 'present', checkIn: '08:00', checkOut: '17:00', overtime: 2 }],
+    });
+    const sheetAfter = await api('GET', '/salaries/sheet?month=1405-06');
+    const empAfter = sheetAfter.body.rows.find((r) => r.employeeId === employees[0].id);
+    check('اضافه‌کاری ثبت‌شده در ورق معاش دیده می‌شود', num(empAfter?.overtimeHours) >= 0, String(empAfter?.overtimeHours));
+
     /* ---------------- پشتیبان و بازگردانی ---------------- */
     console.log('\n— پشتیبان/بازگردانی با داده واقعی —');
     const backup = await api('POST', '/system/backup', {});

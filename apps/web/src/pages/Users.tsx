@@ -70,7 +70,7 @@ export default function UsersPage() {
       </div>
 
       {f ? (
-        <Modal title={f.id ? 'ویرایش کاربر' : 'کاربر نو'} onClose={() => setF(null)} size="sm" footer={
+        <Modal title={f.id ? 'ویرایش کاربر' : 'کاربر نو'} onClose={() => setF(null)} onEnter={save} size="sm" footer={
           <><button className="btn primary" onClick={save} disabled={busy}>ذخیره</button><button className="btn" onClick={() => setF(null)}>انصراف</button></>}>
           <div className="form-grid c1">
             <Field label="نام کاربری" required><Text value={f.username} onChange={(v) => setF({ ...f, username: v })} readOnly={!!f.id} /></Field>

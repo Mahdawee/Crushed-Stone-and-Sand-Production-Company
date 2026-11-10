@@ -41,6 +41,116 @@ export class EmployeesController {
     return { rows: enriched, calendar: mode };
   }
 
+  /*
+   * مسیرهای حضور و غیاب آگاهانه قبل از مسیرهای پارامتری (`employees/:id`)
+   * ثبت می‌شوند. الان تعارضی وجود ندارد (چون این مسیرها با «employees/» شروع
+   * نمی‌شوند)، ولی این ترتیب از این پس هر ویرایشی را ایمن می‌کند: در NestJS
+   * اولین مسیر منطبق برنده است و یک مسیر پارامتری که زودتر ثبت شود می‌تواند
+   * مسیرهای ثابت خواهر را بی‌صدا ببلعد (۴۰۴ گمراه‌کننده).
+   * نگهبان خودکار: `npm run test:routes`.
+   */
+  @Get('attendance')
+  async attendance(@Query('month') month: string, @Query('date') date: string) {
+    await ensureSchemaAsync();
+    const mode = await this.cal();
+    const employees: any[] = await db().$queryRawUnsafe(
+      `SELECT * FROM "Employee" WHERE "status"='active' ORDER BY "code"`,
+    );
+    if (date) {
+      let iso = '';
+      try { iso = parseUserDate(date, mode); }
+      catch (e: any) { throw new HttpException(e.message, 400); }
+      const rows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Attendance" WHERE "date"=?`, iso);
+      return { mode, date: iso, employees, rows };
+    }
+    // month = "1404-08" in the active calendar
+    const m = String(month || '').match(/^(\d{4})[\/\-](\d{1,2})$/);
+    const today = todayISO();
+    let ref = today;
+    if (m) {
+      const y = Number(m[1]);
+      const mo = Number(m[2]);
+      const { fromCalendar } = await import('../common/calendar');
+      ref = fromCalendar(y, mo, 1, mode);
+    }
+    const bucket = monthBucket(ref, mode);
+    let days: string[] = [];
+    try { days = daysBetween(bucket.start, bucket.end); }
+    catch (e: any) { throw new HttpException(e.message, 400); }
+    const rows: any[] = await db().$queryRawUnsafe(
+      `SELECT * FROM "Attendance" WHERE "date" >= ? AND "date" <= ? ORDER BY "date"`,
+      bucket.start,
+      bucket.end,
+    );
+    const salaries: any[] = await db().$queryRawUnsafe(
+      `SELECT * FROM "Salary" WHERE "periodStart" = ?`,
+      bucket.start,
+    );
+    return {
+      mode,
+      month: `${bucket.year}-${String(bucket.month).padStart(2, '0')}`,
+      label: bucket.label,
+      start: bucket.start,
+      end: bucket.end,
+      days,
+      employees,
+      rows,
+      salariesThen: salaries.length,
+    };
+  }
+
+  /** Bulk save of a day sheet / month cell. */
+  @Post('attendance/bulk')
+  async saveAttendance(@Body() body: { items: any[] }) {
+    await ensureSchemaAsync();
+    const mode = await this.cal();
+    const p = db();
+    let saved = 0;
+    for (const it of body?.items || []) {
+      let iso = '';
+      try { iso = parseUserDate(it.date, mode); }
+      catch (e: any) { throw new HttpException(e.message, 400); }
+      /*
+       * پاک کردن یک روز (آخرین کلیک در چرخه‌ی وضعیت): ردیف حذف می‌شود، نه اینکه
+       * با وضعیت خالی ذخیره شود — وگرنه روز «ثبت‌نشده» باز هم در شمارش
+       * حاضر/غایب و گزارش‌ها می‌ماند.
+       */
+      if (it.remove === true || it.status === '' || it.status === null) {
+        await p.$executeRawUnsafe(`DELETE FROM "Attendance" WHERE "employeeId"=? AND "date"=?`, Number(it.employeeId), iso);
+        saved++;
+        continue;
+      }
+      await p.$executeRawUnsafe(
+        `INSERT INTO "Attendance" ("employeeId","date","status","checkIn","checkOut","overtime","note")
+         VALUES (?,?,?,?,?,?,?)
+         ON CONFLICT("employeeId","date") DO UPDATE SET "status"=excluded."status","checkIn"=excluded."checkIn",
+         "checkOut"=excluded."checkOut","overtime"=excluded."overtime","note"=excluded."note"`,
+        Number(it.employeeId), iso, it.status || 'present', it.checkIn || '', it.checkOut || '',
+        Number(it.overtime) || 0, it.note || '',
+      );
+      saved++;
+    }
+    await logActivity({ action: 'update', entity: 'Attendance', detail: `${saved} ردیف حضور و غیاب` });
+    return { ok: true, saved };
+  }
+
+  @Post('attendance/mark-day')
+  async markDay(@Body() body: { date: string; employeeIds: number[]; status: string }) {
+    const mode = await this.cal();
+    let iso = '';
+    try { iso = parseUserDate(body.date, mode); }
+    catch (e: any) { throw new HttpException(e.message, 400); }
+    const p = db();
+    for (const id of body.employeeIds || []) {
+      await p.$executeRawUnsafe(
+        `INSERT INTO "Attendance" ("employeeId","date","status") VALUES (?,?,?)
+         ON CONFLICT("employeeId","date") DO UPDATE SET "status"=excluded."status"`,
+        Number(id), iso, body.status || 'present',
+      );
+    }
+    return { ok: true };
+  }
+
   @Get('employees/:id')
   async one(@Param('id') id: string) {
     const rows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Employee" WHERE "id"=?`, Number(id));
@@ -135,98 +245,6 @@ export class EmployeesController {
   }
 
   // ------------------------------ attendance -------------------------------
-  @Get('attendance')
-  async attendance(@Query('month') month: string, @Query('date') date: string) {
-    await ensureSchemaAsync();
-    const mode = await this.cal();
-    const employees: any[] = await db().$queryRawUnsafe(
-      `SELECT * FROM "Employee" WHERE "status"='active' ORDER BY "code"`,
-    );
-    if (date) {
-      let iso = '';
-      try { iso = parseUserDate(date, mode); }
-      catch (e: any) { throw new HttpException(e.message, 400); }
-      const rows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Attendance" WHERE "date"=?`, iso);
-      return { mode, date: iso, employees, rows };
-    }
-    // month = "1404-08" in the active calendar
-    const m = String(month || '').match(/^(\d{4})[\/\-](\d{1,2})$/);
-    const today = todayISO();
-    let ref = today;
-    if (m) {
-      const y = Number(m[1]);
-      const mo = Number(m[2]);
-      const { fromCalendar } = await import('../common/calendar');
-      ref = fromCalendar(y, mo, 1, mode);
-    }
-    const bucket = monthBucket(ref, mode);
-    let days: string[] = [];
-    try { days = daysBetween(bucket.start, bucket.end); }
-    catch (e: any) { throw new HttpException(e.message, 400); }
-    const rows: any[] = await db().$queryRawUnsafe(
-      `SELECT * FROM "Attendance" WHERE "date" >= ? AND "date" <= ? ORDER BY "date"`,
-      bucket.start,
-      bucket.end,
-    );
-    const salaries: any[] = await db().$queryRawUnsafe(
-      `SELECT * FROM "Salary" WHERE "periodStart" = ?`,
-      bucket.start,
-    );
-    return {
-      mode,
-      month: `${bucket.year}-${String(bucket.month).padStart(2, '0')}`,
-      label: bucket.label,
-      start: bucket.start,
-      end: bucket.end,
-      days,
-      employees,
-      rows,
-      salariesThen: salaries.length,
-    };
-  }
-
-  /** Bulk save of a day sheet / month cell. */
-  @Post('attendance/bulk')
-  async saveAttendance(@Body() body: { items: any[] }) {
-    await ensureSchemaAsync();
-    const mode = await this.cal();
-    const p = db();
-    let saved = 0;
-    for (const it of body?.items || []) {
-      let iso = '';
-      try { iso = parseUserDate(it.date, mode); }
-      catch (e: any) { throw new HttpException(e.message, 400); }
-      await p.$executeRawUnsafe(
-        `INSERT INTO "Attendance" ("employeeId","date","status","checkIn","checkOut","overtime","note")
-         VALUES (?,?,?,?,?,?,?)
-         ON CONFLICT("employeeId","date") DO UPDATE SET "status"=excluded."status","checkIn"=excluded."checkIn",
-         "checkOut"=excluded."checkOut","overtime"=excluded."overtime","note"=excluded."note"`,
-        Number(it.employeeId), iso, it.status || 'present', it.checkIn || '', it.checkOut || '',
-        Number(it.overtime) || 0, it.note || '',
-      );
-      saved++;
-    }
-    await logActivity({ action: 'update', entity: 'Attendance', detail: `${saved} ردیف حضور و غیاب` });
-    return { ok: true, saved };
-  }
-
-  @Post('attendance/mark-day')
-  async markDay(@Body() body: { date: string; employeeIds: number[]; status: string }) {
-    const mode = await this.cal();
-    let iso = '';
-    try { iso = parseUserDate(body.date, mode); }
-    catch (e: any) { throw new HttpException(e.message, 400); }
-    const p = db();
-    for (const id of body.employeeIds || []) {
-      await p.$executeRawUnsafe(
-        `INSERT INTO "Attendance" ("employeeId","date","status") VALUES (?,?,?)
-         ON CONFLICT("employeeId","date") DO UPDATE SET "status"=excluded."status"`,
-        Number(id), iso, body.status || 'present',
-      );
-    }
-    return { ok: true };
-  }
-
   @Get('attendance/summary')
   async summary(@Query('month') month: string) {
     const mode = await this.cal();

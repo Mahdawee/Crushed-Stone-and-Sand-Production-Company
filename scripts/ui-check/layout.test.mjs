@@ -64,7 +64,11 @@ ok('در کشو، ریل نادیده گرفته می‌شود', /body\.is-drawe
 ok('پشت‌زمینه (backdrop) فقط در کشو تعریف شده', /body\.is-drawer \.sb-backdrop \{/.test(css));
 ok('هیچ گروهی از بسته‌شدن منع نشده (حتی گروه فعال)', !/id === activeGroup\) return/.test(layout));
 ok('toggleGroup فقط همان گروه را عوض می‌کند (آکاردئون نیست)',
-  /setOpenGroups\(\(prev\) => \(\{ \.\.\.prev, \[id\]: !isOpen \}\)\)/.test(layout));
+  /setOpenGroups\(\(prev\) => \(\{ \.\.\.prev, \[id\]: !prev\[id\] \}\)\)/.test(layout));
+ok('toggleGroup وضعیت را از بیرون نمی‌گیرد (منبع واحد: openGroups)',
+  /const toggleGroup = useCallback\(\(id: string\) =>/.test(layout) && !/toggleGroup\(g\.id, isOpen\)/.test(layout));
+ok('کلیک سرگروه در حالت عادی فقط toggleGroup را صدا می‌زند',
+  /railActive \? openPanel\(g\.id\) : toggleGroup\(g\.id\)/.test(layout));
 ok('وضعیت باز بودن از openGroups خوانده می‌شود، نه از صفحه فعال',
   /const isOpen = railActive \? hoverGroup === g\.id : !!openGroups\[g\.id\];/.test(layout));
 ok('وضعیت «باز» ذخیره می‌شود (نه «بسته») تا کلیک بی‌اثر نماند',

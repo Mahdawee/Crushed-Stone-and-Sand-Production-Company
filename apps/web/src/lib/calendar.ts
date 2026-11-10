@@ -60,9 +60,25 @@ export function parseInputDate(input: string, mode: CalendarMode): string {
   return `${y}-${pad2(mo)}-${pad2(d)}`;
 }
 
+/**
+ * تعداد روزهای یک ماه تقویمی.
+ *
+ * مقاوم‌سازی: اگر سال/ماه نامعتبر باشد (رشته‌ی خالی، NaN، ماه ۱۳)، قبلاً
+ * `jalaali.jalaaliMonthLength` استثنا می‌داد و — چون این تابع در رندر تقویم
+ * صدا زده می‌شود — کل صفحه سفید می‌شد. حالا همیشه یک عدد معتبر برمی‌گردد.
+ */
 export function monthLength(y: number, m: number, mode: CalendarMode) {
-  if (mode === 'jalali') return jalaali.jalaaliMonthLength(y, m);
-  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const yy = Number.isFinite(y) ? Math.trunc(y) : currentYearSafe(mode);
+  const mm = Number.isFinite(m) ? Math.trunc(m) : 1;
+  const month = Math.min(12, Math.max(1, mm));
+  if (mode === 'jalali') {
+    try { return jalaali.jalaaliMonthLength(yy, month); } catch { return month <= 6 ? 31 : month <= 11 ? 30 : 29; }
+  }
+  return new Date(Date.UTC(yy, month, 0)).getUTCDate();
+}
+/** سال جاری، بدون وابستگی به ترتیب تعریف توابع بالای فایل. */
+function currentYearSafe(mode: CalendarMode) {
+  try { return toCalendar(todayISO(), mode).jy; } catch { return new Date().getFullYear(); }
 }
 
 export function currentYear(mode: CalendarMode) {
@@ -130,7 +146,10 @@ export function shiftMonth(y: number, m: number, delta: number): { y: number; m:
 /** افزودن/کاستن روز از یک تاریخ ISO میلادی. */
 export function addDaysISO(isoStr: string, n: number): string {
   const [y, m, d] = String(isoStr).slice(0, 10).split('-').map(Number);
+  /* ورودی نامعتبر → «امروز»، نه `NaN-NaN-NaN` که تقویم را سفید می‌کند */
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return todayISO();
   const dt = new Date(Date.UTC(y, m - 1, d + n));
+  if (Number.isNaN(dt.getTime())) return todayISO();
   return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`;
 }
 

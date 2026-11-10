@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api, downloadCsv } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useDebounced } from '../lib/useDebounced';
+import { useLatestRequest } from '../lib/useLatestRequest';
 import {
   useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, Pager,
   ListHead, SearchBox, FilterButton, FilterPanel, FilterChip, InlineStat,
@@ -28,13 +29,16 @@ export default function ReceiptsPage() {
   const [busy, setBusy] = useState(false);
   const [fOpen, setFOpen] = useState(false);
 
+  const latest = useLatestRequest();
   const load = async (p = page) => {
     const qs = new URLSearchParams({ page: String(p), pageSize: '25' });
     if (dq) qs.set('q', dq);
     if (filters.from) qs.set('from', filters.from);
     if (filters.to) qs.set('to', filters.to);
     if (filters.source) qs.set('source', filters.source);
-    setData(await api.get(`/receipts?${qs.toString()}`));
+    /* فقط آخرین پاسخ روی جدول می‌نشیند — وگرنه پاسخ کندِ جستجوی قبلی
+       می‌تواند نتیجه‌ی تازه را بازنویسی کند. */
+    await latest(() => api.get(`/receipts?${qs.toString()}`), setData);
   };
   useEffect(() => { load(page).catch((e) => toast.error('بارگذاری نشد', e.message)); }, [page, dq, filters.from, filters.to, filters.source]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -148,7 +152,7 @@ export default function ReceiptsPage() {
       </div>
 
       {form ? (
-        <Modal title={form.id ? `ویرایش رسید ${form.no}` : 'رسید نو'} onClose={() => setForm(null)} size="md" footer={
+        <Modal title={form.id ? `ویرایش رسید ${form.no}` : 'رسید نو'} onClose={() => setForm(null)} onEnter={save} size="md" footer={
           <><button className="btn primary" onClick={save} disabled={busy}>{busy ? 'ذخیره…' : 'ذخیره رسید'}</button>
             <button className="btn" onClick={() => setForm(null)}>انصراف</button>
             <div className="spacer" />

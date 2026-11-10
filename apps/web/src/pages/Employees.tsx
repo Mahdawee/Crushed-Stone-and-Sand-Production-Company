@@ -5,6 +5,7 @@ import { api, downloadCsv } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, ListHead, SearchBox, InlineStat } from '../components/ui';
 import { useDebounced } from '../lib/useDebounced';
+import { useLatestRequest } from '../lib/useLatestRequest';
 import { money, formatDate, todayISO } from '../lib/calendar';
 import { DatePicker } from '../components/DatePicker';
 
@@ -23,10 +24,11 @@ export default function EmployeesPage() {
   const [hire, setHire] = useState('');   // ISO میلادی
   const [busy, setBusy] = useState(false);
 
-  const load = async () => {
-    const r = await api.get(`/employees?q=${encodeURIComponent(dq)}&status=${status}`);
-    setRows(r.rows);
-  };
+  const latest = useLatestRequest();
+  const load = () => latest(
+    () => api.get(`/employees?q=${encodeURIComponent(dq)}&status=${status}`),
+    (r: any) => setRows(r.rows),
+  );
   const dq = useDebounced(q);
   useEffect(() => { load().catch((e) => toast.error('بارگذاری نشد', e.message)); }, [dq, status]);
 
@@ -112,7 +114,7 @@ export default function EmployeesPage() {
       </div>
 
       {form ? (
-        <Modal title={form.id ? 'ویرایش کارمند' : 'کارمند نو'} onClose={() => setForm(null)}
+        <Modal title={form.id ? 'ویرایش کارمند' : 'کارمند نو'} onClose={() => setForm(null)} onEnter={save}
           footer={<><button className="btn primary" onClick={save} disabled={busy}>{busy ? 'ذخیره…' : 'ذخیره'}</button>
             <button className="btn" onClick={() => setForm(null)}>انصراف</button></>}>
           <div className="form-grid">

@@ -117,11 +117,25 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ---------------------------------- layout --------------------------- */
 .app { display: flex; min-height: 100%; }
+/*
+ * سایدبار: ارتفاع پنجره، با فهرستِ قابل اسکرول.
+ *
+ * باگ: قبلاً ارتفاع سایدبار `100vh` بود و نوار کناری هم `overflow:hidden`
+ * داشت؛ در پنجره‌های کوتاه (لپ‌تاپ ۷۶۸px با نوار مرورگر، یا مقیاس ۱۲۵٪ ویندوز)
+ * گروه‌های پایانی و دکمه‌ی «بل فروش نو» بیرون می‌افتادند و دسترسی به آن‌ها
+ * نبود — که در عمل شبیه «کار نکردن منو» دیده می‌شود. حالا خودِ پنجره اسکرول
+ * نمی‌شود؛ فقط فهرست وسط سایدبار (که از قبل overflow-y دارد) اسکرول می‌شود و
+ * لوگو و دکمه‌ی پایین همیشه سر جای خود می‌مانند.
+ */
 .sidebar {
   width: 256px; flex: 0 0 256px; background: var(--sidebar-bg); border-left: 1px solid var(--sidebar-border);
-  display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; z-index: 30;
+  display: flex; flex-direction: column; position: sticky; top: 0;
+  height: 100vh; max-height: 100vh; overflow: hidden; z-index: 30;
   transition: width .18s ease, flex-basis .18s ease, transform .2s ease;
 }
+.sidebar .brand { flex: 0 0 auto; }
+.sidebar .nav { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.sidebar .nav-foot { flex: 0 0 auto; }
 .brand { display: flex; align-items: center; gap: 9px; padding: 14px 12px 10px; }
 .brand-logo {
   width: 34px; height: 34px; flex: 0 0 34px; border-radius: 10px; display: grid; place-items: center;
@@ -173,12 +187,26 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .nav-group-head.open .nav-group-chev { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
 .nav-group-chev.up { transform: rotate(180deg); }
 
+/*
+ * باز/بسته شدن آیتم‌های یک گروه.
+ *
+ * باگ: قبلاً با `grid-template-rows: 0fr → 1fr` انجام می‌شد. این ترفند فقط در
+ * Chromium 107 به بعد کار می‌کند؛ در WebView2 قدیمی‌تر (ویندوزهای آپدیت‌نشده)
+ * هر دو حالت یکسان رندر می‌شد — یعنی آیتم‌ها همیشه باز می‌ماندند و کلیک روی
+ * سرگروه «هیچ کاری نمی‌کرد» (فقط فلش می‌چرخید). حالا با max-height که در همه‌ی
+ * موتورها پشتیبانی می‌شود: بسته = ارتفاع صفر، باز = ارتفاع محتوا.
+ *
+ * visibility هم عوض می‌شود تا آیتم‌های بسته با Tab قابل دسترسی نباشند.
+ */
 .nav-items {
-  display: grid; grid-template-rows: 0fr; transition: grid-template-rows .18s ease;
-  overflow: hidden;
+  max-height: 0; overflow: hidden; visibility: hidden;
+  transition: max-height .22s cubic-bezier(.4, 0, .2, 1), visibility 0s linear .22s;
 }
 .nav-items > * { min-height: 0; }
-.nav-items.expanded { grid-template-rows: 1fr; overflow: visible; }
+.nav-items.expanded {
+  max-height: 460px; visibility: visible;
+  transition: max-height .22s cubic-bezier(.4, 0, .2, 1), visibility 0s;
+}
 
 .nav-link {
   display: flex; align-items: center; gap: 8px; padding: 0 8px; height: 32px; border-radius: var(--radius-md);
@@ -215,8 +243,12 @@ html[data-theme='dark'] .nav-link.active { color: #7ee7d8; }
   border: 1px solid var(--border); color: var(--text-3); z-index: 2;
 }
 .app.rail .sb-toggle:hover { color: var(--accent); border-color: var(--accent); }
-.app.rail .nav { padding: 4px 8px 10px; overflow: visible; }
+/* در حالت ریل، سایدبار نباید اسکرول را قطع کند (پنل‌ها کنارش باز می‌شوند) */
+.app.rail .nav { padding: 4px 8px 10px; overflow-x: visible; overflow-y: auto; }
 .app.rail .nav-group { position: relative; }
+/* پنل شناور در ریل باید از کادر سایدبار بیرون بزند؛ overflow سایدبار
+   در حالت ریل آزاد می‌شود تا پنل بریده نشود. */
+.app.rail .sidebar { overflow: visible; }
 .app.rail .nav-group-head { justify-content: center; padding: 0; height: 36px; margin-top: 2px; }
 .app.rail .nav-items { display: none; }            /* آیتم‌ها در پنل شناور می‌آیند */
 .app.rail .nav-link { justify-content: center; padding: 0; }
