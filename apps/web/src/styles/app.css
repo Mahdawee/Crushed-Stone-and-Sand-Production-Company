@@ -161,15 +161,17 @@ html[data-theme='dark'] .nav-link.active { color: #7ee7d8; }
 
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .topbar {
-  height: 56px; display: flex; align-items: center; gap: 8px; padding: 0 16px;
+  height: 56px; display: flex; align-items: center; gap: 10px; padding: 0 16px;
   background: color-mix(in srgb, var(--bg-2) 90%, transparent);
   backdrop-filter: blur(10px); border-bottom: 1px solid var(--border);
   position: sticky; top: 0; z-index: 20;
 }
-.page-title { font-size: 1rem; font-weight: 700; }
+.page-title { font-size: .95rem; font-weight: 600; }
+.topbar-sep { width: 1px; height: 20px; background: var(--border-strong); flex: 0 0 1px; opacity: .7; }
 .page-title small { display: block; font-size: .7rem; color: var(--text-3); font-weight: 400; line-height: 1.3; }
 .topbar-spacer { flex: 1; }
-.content { padding: 16px; max-width: 1440px; width: 100%; margin: 0 auto; }
+.content { padding: 16px 16px 28px; max-width: 1440px; width: 100%; margin: 0 auto; }
+@media (min-width: 1024px) { .content { padding: 20px 24px 32px; } }
 
 .hamburger { display: none; }
 
@@ -191,7 +193,10 @@ html[data-theme='dark'] .nav-link.active { color: #7ee7d8; }
 @media (max-width: 1100px) { .grid.c4 { grid-template-columns: repeat(2, minmax(0,1fr)); } .grid.c3 { grid-template-columns: repeat(2, minmax(0,1fr)); } }
 @media (max-width: 720px) { .grid.c2, .grid.c3, .grid.c4 { grid-template-columns: 1fr; } }
 
-.stat { padding: 14px 15px; display: flex; flex-direction: column; gap: 3px; position: relative; overflow: hidden; }
+.stat {
+  padding: 14px 15px; display: flex; flex-direction: column; gap: 3px; position: relative; overflow: hidden;
+  background: linear-gradient(to top, color-mix(in srgb, var(--accent) 5%, transparent), var(--surface) 70%);
+}
 .stat .label { font-size: .78rem; color: var(--text-2); display: flex; gap: 6px; align-items: center; }
 .stat .value { font-size: 1.35rem; font-weight: 700; letter-spacing: -.4px; }
 .stat .foot { font-size: .72rem; color: var(--text-2); }
@@ -619,3 +624,21 @@ table.tbl tfoot td { border-top: 1px solid var(--border-strong); }
 }
 .att-cell:hover { transform: scale(1.08); box-shadow: var(--shadow); }
 table.tbl tbody tr:hover .att-cell.on { filter: brightness(.98); }
+
+/* ================= shadcn/ui alignment (new-york, v4) ==================
+   ردیف‌های ۳۲px، گوشه‌های ۱۰px، سطح‌های خنثی — مطابق مقیاس
+   Button(h-9/h-8/h-6) · Input(h-9) · Badge(rounded-full) · SidebarMenu(h-8)
+   این بلوک در انتهای فایل است تا روی استایل‌های قبلی بنشیند.
+   ===================================================================== */
+.btn.tb-filter { height: 32px; padding: 0 10px; box-shadow: none; }
+.btn.icon { width: 32px; height: 32px; padding: 0; }
+.user-chip .btn.icon { width: 28px; height: 28px; }
+.today-chip { height: 28px; }
+.input, .field input, .field select, .field textarea, select.input, textarea.input, input.input { border-radius: var(--radius-md); }
+.field .computed { border-radius: var(--radius-md); }
+.modal, .tb-panel, .dp-pop { border-radius: var(--radius-lg); }
+.badge { border-radius: 999px; }
+.kbd { border-radius: var(--radius-sm); }
+.list-head { padding: 7px 10px; }
+.summary-bar, .list-summary { font-size: .8rem; }
+table.tbl.compact td, table.tbl.compact th { font-size: .82rem; }

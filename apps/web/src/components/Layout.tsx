@@ -199,6 +199,11 @@ export default function Layout() {
       <div className="main">
         <header className="topbar no-print">
           <button className="btn ghost icon hamburger" onClick={() => setOpen((v) => !v)} title="منو"><IconMenu size={18} /></button>
+          <button className="btn ghost icon hide-sm" onClick={() => setRail((v) => !v)}
+            title={rail ? 'باز کردن سایدبار' : 'جمع کردن سایدبار'}>
+            <IconChevron dir={rail ? 'end' : 'start'} size={16} />
+          </button>
+          <span className="topbar-sep hide-sm" />
           <div className="page-title">{title.t}<small>{title.s}</small></div>
           <div className="topbar-spacer" />
           <span className="today-chip" title="امروز">
