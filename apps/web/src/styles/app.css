@@ -529,7 +529,7 @@ table.tbl.compact td, table.tbl.compact th { padding: 6px 8px; font-size: .78rem
 .tb-stat { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .tb-stat b { font-variant-numeric: tabular-nums; }
 .list-actions { display: flex; align-items: center; gap: 6px; }
-.list-actions .btn { height: 32px; padding: 5px 11px; font-size: .8rem; }
+.list-actions .btn { height: 32px; padding: 0 11px; font-size: .8rem; box-shadow: none; }
 
 .tb-chip {
   display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px 2px 9px; border-radius: 99px;
@@ -541,7 +541,7 @@ table.tbl.compact td, table.tbl.compact th { padding: 6px 8px; font-size: .78rem
   color: var(--text-3); display: grid; place-items: center; cursor: pointer;
 }
 .tb-chip button:hover { background: var(--danger-soft); color: var(--danger); }
-.chip-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 0 10px 8px; margin-top: -2px; background: var(--surface); }
+.chip-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 10px; margin: -1px 0 0; background: var(--surface-2); border-bottom: 1px solid var(--border); }
 
 .summary-bar {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: .78rem; color: var(--text-2);
