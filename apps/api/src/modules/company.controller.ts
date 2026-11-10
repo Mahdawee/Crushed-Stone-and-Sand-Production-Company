@@ -3,7 +3,7 @@ import { db } from '../db';
 import { ensureSchemaAsync } from '../schema';
 import { AuthGuard, ManagerOnly } from '../common/auth';
 import { logActivity } from '../common/activity';
-import { settingsService } from '../common/settings';
+import { settingsService, SettingsService, isSettingError } from '../common/settings';
 
 @UseGuards(AuthGuard)
 @Controller()
@@ -86,6 +86,14 @@ export class CompanyController {
   @Put('settings')
   @ManagerOnly()
   async saveSettings(@Body() body: Record<string, string>) {
+    /*
+     * باگ (فاز تست): مقدار نامعتبر مثل calendar:'martian' با ۲۰۰ ذخیره می‌شد.
+     * حالا ۴۰۰ با پیام فارسی برمی‌گردد و هیچ‌چیز ذخیره نمی‌شود.
+     */
+    for (const [k, v] of Object.entries(body || {})) {
+      const err = SettingsService.validate(k, v);
+      if (isSettingError(err)) throw new HttpException(err, 400);
+    }
     return settingsService.setMany(body);
   }
 }

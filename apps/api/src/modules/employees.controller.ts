@@ -115,6 +115,12 @@ export class EmployeesController {
        * با وضعیت خالی ذخیره شود — وگرنه روز «ثبت‌نشده» باز هم در شمارش
        * حاضر/غایب و گزارش‌ها می‌ماند.
        */
+      /* کارمند باید وجود داشته باشد — وگرنه ردیف حضور «یتیم» ساخته می‌شود
+         که در هیچ ورق و گزارشی دیده نمی‌شود ولی در جدول می‌ماند. */
+      const emp: any[] = await p.$queryRawUnsafe(`SELECT "id" FROM "Employee" WHERE "id"=?`, Number(it.employeeId));
+      if (!emp?.length) {
+        throw new HttpException(`کارمند با شناسه ${it.employeeId} پیدا نشد.`, 400);
+      }
       if (it.remove === true || it.status === '' || it.status === null) {
         await p.$executeRawUnsafe(`DELETE FROM "Attendance" WHERE "employeeId"=? AND "date"=?`, Number(it.employeeId), iso);
         saved++;
@@ -225,6 +231,14 @@ export class EmployeesController {
     return { ok: true };
   }
 
+  /**
+   * حذف کارمند — فقط اگر هیچ سابقه‌ای (معاش یا حضور) نداشته باشد.
+   *
+   * باگ: حضور و غیابِ کارمند بی‌سروصدا پاک می‌شد. اگر روزی مدیر حضور یک ماه
+   * را ثبت کرده بود و بعد کارمند را حذف می‌کرد، آمار حضور/اضافه‌کاری ماه
+   * بی‌خبر کم می‌شد و گزارش با قبل نمی‌خواند. حالا مثل معاش، حذف با سابقه
+   * رد می‌شود و پیشنهاد «غیر فعال کردن» داده می‌شود.
+   */
   @Delete('employees/:id')
   @ManagerOnly()
   async remove(@Param('id') id: string) {
@@ -232,7 +246,10 @@ export class EmployeesController {
     if (Number(used?.[0]?.c) > 0) {
       throw new HttpException('این کارمند دارای سابقه معاش است؛ به جای حذف، وضعیت او را «غیر فعال» کنید.', 400);
     }
-    await db().$executeRawUnsafe(`DELETE FROM "Attendance" WHERE "employeeId"=?`, Number(id));
+    const att: any[] = await db().$queryRawUnsafe(`SELECT COUNT(*) as c FROM "Attendance" WHERE "employeeId"=?`, Number(id));
+    if (Number(att?.[0]?.c) > 0) {
+      throw new HttpException('این کارمند سابقه حضور و غیاب دارد؛ به جای حذف، وضعیت او را «غیر فعال» کنید.', 400);
+    }
     await db().$executeRawUnsafe(`DELETE FROM "Employee" WHERE "id"=?`, Number(id));
     await logActivity({ action: 'delete', entity: 'Employee', entityId: Number(id) });
     return { ok: true };

@@ -124,7 +124,17 @@ export class SalariesController {
     const mode = await settingsService.calendar();
     const m = String(body?.month || '').match(/^(\d{4})[\/\-](\d{1,2})$/);
     if (!m) throw new HttpException('ماه را انتخاب کنید.', 400);
-    const ref = fromCalendar(Number(m[1]), Number(m[2]), 1, mode);
+    const my = Number(m[1]);
+    const mm = Number(m[2]);
+    /*
+     * باگ (با فاز تست پیدا شد): «۱۴۰۵/۱۳» یا سال ۰ ماه نامعتبر است و
+     * `fromCalendar` استثنا می‌داد → پاسخ **۵۰۰ Internal server error**.
+     * حالا ۴۰۰ با پیام فارسی.
+     */
+    if (mm < 1 || mm > 12 || my < 1) throw new HttpException('ماه انتخابی معتبر نیست.', 400);
+    let ref = '';
+    try { ref = fromCalendar(my, mm, 1, mode); }
+    catch { throw new HttpException('ماه انتخابی معتبر نیست.', 400); }
     const b = monthBucket(ref, mode);
     let payDate = todayISO();
     try { if (body.payDate) payDate = parseUserDate(body.payDate, mode); }
@@ -132,7 +142,13 @@ export class SalariesController {
     const prefix = await settingsService.get('docPrefixSalary');
     const p = db();
     let saved = 0;
+    if (!Array.isArray(body.rows) || !body.rows.length) {
+      throw new HttpException('هیچ کارمندی برای ذخیره در ورق معاش نیست.', 400);
+    }
     for (const r of body.rows || []) {
+      /* کارمند باید وجود داشته باشد — وگرنه سند معاش «یتیم» ساخته می‌شود */
+      const emp: any[] = await p.$queryRawUnsafe(`SELECT "id" FROM "Employee" WHERE "id"=?`, Number(r.employeeId));
+      if (!emp?.length) throw new HttpException(`کارمند با شناسه ${r.employeeId} پیدا نشد.`, 400);
       const base = Number(r.baseSalary) || 0;
       const bonus = Number(r.bonus) || 0;
       const penalty = Number(r.penalty) || 0;

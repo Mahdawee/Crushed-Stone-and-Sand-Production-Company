@@ -101,16 +101,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       }
       setReady(true);
     })();
-    /* در حالت «خودکار»، تغییر تم سیستم همان لحظه اعمال شود */
-    const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
-    const onScheme = () => { if (!settings.theme || settings.theme === 'auto') applyThemeToDocument(settings); };
-    mq?.addEventListener?.('change', onScheme);
-
+    /* سه تم روشن/برجسته/تیره — حالت «خودکار» وجود ندارد، پس شنونده‌ی
+       prefers-color-scheme هم لازم نیست (کد مرده حذف شد). */
     const onUnauth = () => { setUser(null); setToken(''); };
     window.addEventListener('farday:unauthorized', onUnauth as any);
     return () => {
       window.removeEventListener('farday:unauthorized', onUnauth as any);
-      mq?.removeEventListener?.('change', onScheme);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -127,6 +123,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     try { await api.post('/auth/logout'); } catch { /* ignore */ }
     setToken('');
     setUser(null);
+    /*
+     * تنظیماتِ کش‌شده پاک می‌شود.
+     *
+     * باگ حریم خصوصی/سردرگمی: کارمند با تنظیمات مدیر (تم/تقویم/ساعت کاری)
+     * وارد می‌شد و صفحه‌ی ورود با همان‌ها نمایش داده می‌شد؛ اگر کارمند بعداً
+     * مدیر می‌شد، مقادیر کش‌شده‌ی قدیمی اول نشان داده می‌شدند.
+     */
+    localStorage.removeItem('farday.settings');
+    setSettings({ calendar: 'jalali', theme: 'light', accent: 'teal' });
   }, []);
 
   /**
@@ -134,17 +139,20 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
    * اگر سرور در دسترس نبود، انتخاب کاربر در حافظه‌ی محلی می‌ماند.
    */
   const saveSettings = useCallback(async (patch: Settings) => {
+    /* خوش‌بینانه: تم/تقویم فوراً اعمال شود (بدون انتظار برای سرور) */
     const optimistic = { ...settings, ...patch };
     setSettings(optimistic);
     applyThemeToDocument(optimistic);
     localStorage.setItem('farday.settings', JSON.stringify(optimistic));
     try {
       const next = await api.put<Settings>('/settings', patch);
-      setSettings(next);
-      applyThemeToDocument(next);
-      localStorage.setItem('farday.settings', JSON.stringify(next));
+      /* یک بار اعمال، نه دوبار — دوبار اعمال باعث پرش/سوسو زدن تم می‌شد */
+      const merged = { ...optimistic, ...next };
+      setSettings(merged);
+      applyThemeToDocument(merged);
+      localStorage.setItem('farday.settings', JSON.stringify(merged));
     } catch {
-      /* آفلاین/خطای سرور: همان انتخاب محلی معتبر است */
+      /* آفلاین/خطای سرور: همان انتخاب محلی معتبر می‌ماند */
     }
   }, [settings]);
 

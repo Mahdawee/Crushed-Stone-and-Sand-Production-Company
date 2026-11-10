@@ -103,9 +103,19 @@ export class ReportsController {
     await ensureSchemaAsync();
     const mode = await settingsService.calendar();
     const today = todayISO();
-    const start = from ? parseUserDate(from, mode) : startOfMonth(today, mode);
-    const end = to ? parseUserDate(to, mode) : endOfMonth(today, mode);
-    try { assertRange(start, end); } catch (e: any) { throw new HttpException(e.message, 400); }
+    /*
+     * باگ (با فاز تست پیدا شد): ورودی نامعتبر تاریخ در راپور روزانه **۵۰۰**
+     * می‌داد، چون `parseUserDate` بیرون از try صدا زده می‌شد و استثنایش به
+     * «Internal server error» تبدیل می‌شد — کاربر به‌جای پیام فارسی، خطای
+     * مبهم می‌دید. حالا همان ۴۰۰ با پیام روشن برمی‌گردد.
+     */
+    let start: string;
+    let end: string;
+    try {
+      start = from ? parseUserDate(from, mode) : startOfMonth(today, mode);
+      end = to ? parseUserDate(to, mode) : endOfMonth(today, mode);
+      assertRange(start, end);
+    } catch (e: any) { throw new HttpException(e.message, 400); }
     const days = daysBetween(start, end).reverse(); // newest first
     const rows = [];
     let running = 0;
@@ -129,7 +139,17 @@ export class ReportsController {
   async monthly(@Query('year') year?: string) {
     await ensureSchemaAsync();
     const mode = await settingsService.calendar();
-    const y = Number(year) || toCalendar(todayISO(), mode).jy;
+    const cy = toCalendar(todayISO(), mode).jy;
+    let y = Number(year) || cy;
+    /*
+     * باگ (فاز تست): `monthly?year=-5` یا `year=999999` هم ۲۰۰ می‌داد و
+     * راپور با برچسب بی‌معنی/تاریخ‌های خارج از محدوده ساخته می‌شد. حالا
+     * فقط ±۱۰۰ سال حول سال جاری پذیرفته می‌شود.
+     */
+    if (!Number.isFinite(y) || y < cy - 100 || y > cy + 100) {
+      throw new HttpException('سال انتخابی معتبر نیست.', 400);
+    }
+    y = Math.trunc(y);
     const rows = [];
     for (let m = 1; m <= 12; m++) {
       const start = fromCalendar(y, m, 1, mode);

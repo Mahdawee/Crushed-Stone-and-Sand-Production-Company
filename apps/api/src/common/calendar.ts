@@ -81,8 +81,12 @@ export function formatDate(isoStr: string, mode: CalendarMode, withMonthName = f
  * dated 1403/12/30 from year reports, and 31-day Gregorian months were cut short.
  */
 export function monthLength(y: number, m: number, mode: CalendarMode): number {
-  if (mode === 'jalali') return jalaali.jalaaliMonthLength(y, m);
-  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const yy = Number.isFinite(y) ? Math.trunc(y) : 1400;
+  const mm = Math.min(12, Math.max(1, Number.isFinite(m) ? Math.trunc(m) : 1));
+  if (mode === 'jalali') {
+    try { return jalaali.jalaaliMonthLength(yy, mm); } catch { return mm <= 6 ? 31 : mm <= 11 ? 30 : 29; }
+  }
+  return new Date(Date.UTC(yy, mm, 0)).getUTCDate();
 }
 
 /**
@@ -90,17 +94,20 @@ export function monthLength(y: number, m: number, mode: CalendarMode): number {
  * Returns { year, month, start, end } where start/end are Gregorian ISO bounds.
  */
 export function monthBucket(isoStr: string, mode: CalendarMode) {
-  const c = toCalendar(isoStr, mode);
-  const y = mode === 'jalali' ? c.jy : c.jy;
-  const m = mode === 'jalali' ? c.jm : c.jm;
+  /* تاریخ نامعتبر → امروز (نه استثنا/NaN؛ گزارش نباید صفحه را بیندازد) */
+  const safe = isValidISO(isoStr) ? String(isoStr).slice(0, 10) : todayISO();
+  const c = toCalendar(safe, mode);
+  const y = c.jy;
+  const m = c.jm;
   const first = fromCalendar(y, m, 1, mode);
-  const daysInMonth = mode === 'jalali' ? jalaali.jalaaliMonthLength(y, m) : new Date(Date.UTC(y, m, 0)).getUTCDate();
-  const last = fromCalendar(y, m, daysInMonth, mode);
+  /* تنها منبع حقیقت برای طول ماه (نه محاسبه‌ی تکراری داخل این تابع) */
+  const last = fromCalendar(y, m, monthLength(y, m, mode), mode);
   return { year: y, month: m, start: first, end: last, label: `${monthName(m, mode)} ${y}` };
 }
 
 export function yearBucket(isoStr: string, mode: CalendarMode) {
-  const c = toCalendar(isoStr, mode);
+  const safe = isValidISO(isoStr) ? String(isoStr).slice(0, 10) : todayISO();
+  const c = toCalendar(safe, mode);
   const y = c.jy;
   const start = fromCalendar(y, 1, 1, mode);
   /* آخرین روز واقعی سال (اسفند ۲۹ یا ۳۰، دسمبر ۳۱) */

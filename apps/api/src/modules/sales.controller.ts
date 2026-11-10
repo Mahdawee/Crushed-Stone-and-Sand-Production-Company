@@ -84,7 +84,10 @@ export class SalesController {
   @Get('next-no')
   async nextNo(@Query('date') date?: string) {
     const mode = await settingsService.calendar();
-    const d = date ? parseUserDate(date, mode) : undefined;
+    /* باگ: تاریخ نامعتبر در «شماره بعدی» ۵۰۰ می‌داد (parseUserDate بیرون از try) */
+    let d: string | undefined;
+    try { d = date ? parseUserDate(date, mode) : undefined; }
+    catch (e: any) { throw new HttpException(e.message, 400); }
     const { todayISO } = await import('../common/calendar');
     const isoDate = d || todayISO();
     const { toCalendar } = await import('../common/calendar');

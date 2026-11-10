@@ -87,7 +87,15 @@ ok('resolveTheme سه حالت را می‌شناسد', /export function resolve
   /'vivid'/.test(session) && /'dark'/.test(session) && /'light'/.test(session));
 ok('تم روی <html data-theme> نوشته می‌شود', /root\.dataset\.theme = theme/.test(session));
 ok('برجسته پالت رنگ جدا دارد', /ACCENTS_VIVID/.test(session));
-ok('حالت خودکار تم سیستم را همان لحظه دنبال می‌کند', /prefers-color-scheme: dark/.test(session) && /addEventListener\?\.\('change'/.test(session));
+/*
+ * قبلاً اینجا انتظار می‌رفت یک شنونده‌ی `matchMedia('change')` تم را زنده
+ * دنبال کند. ولی هیچ گزینه‌ی «خودکار» در تنظیمات وجود ندارد (سه تم:
+ * روشن/برجسته/تیره)، پس آن شنونده کد مرده بود و هر بار کل تم را دوباره
+ * اعمال می‌کرد (پرش رنگ). حالا فقط «حالت تعریف‌نشده» به تم سیستم می‌افتد —
+ * یعنی پیش از ورود/پیش از بارگذاری تنظیمات.
+ */
+ok('تم تعریف‌نشده به ترجیح سیستم برمی‌گردد (فقط پیش از بارگذاری تنظیمات)',
+  /prefers-color-scheme: dark/.test(session) && !/addEventListener\?\.\('change'/.test(session));
 ok('ذخیره تنظیمات تم را فوری اعمال می‌کند (بدون انتظار سرور)', /const optimistic = \{ \.\.\.settings, \.\.\.patch \}/.test(session));
 
 /* --- اعمال واقعی روی DOM --- */
