@@ -1,4 +1,4 @@
-import { IconAlert } from '../components/icons';
+import { IconAlert, IconCheck } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -14,6 +14,13 @@ const ACCENTS = [
   { value: 'amber', label: 'کهربایی', color: '#b45309' },
   { value: 'rose', label: 'سرخابی', color: '#e11d48' },
   { value: 'slate', label: 'خاکستری', color: '#475569' },
+];
+
+/** سه تم برنامه — همان مقادیر ذخیره‌شده در تنظیمات */
+const THEMES = [
+  { value: 'light', label: 'روشن', hint: 'روشن کلاسیک — پس‌زمینه‌ی سفید و خاکستری ملایم' },
+  { value: 'vivid', label: 'برجسته', hint: 'کنتراست بالا و رنگ‌های درخشان — مناسب نور شدید و فضای باز' },
+  { value: 'dark', label: 'تیره', hint: 'تیره‌ی مدرن سرمه‌ای (نه سیاه مطلق) — راحت برای چشم در شب' },
 ];
 
 export default function SettingsPage() {
@@ -73,9 +80,22 @@ export default function SettingsPage() {
               <Select value={s.calendar} onChange={(v) => setS({ ...s, calendar: v })}
                 options={[{ value: 'jalali', label: 'هجری شمسی' }, { value: 'gregorian', label: 'میلادی' }]} />
             </Field>
-            <Field label="حالت نمایش">
-              <Select value={s.theme} onChange={(v) => setS({ ...s, theme: v })}
-                options={[{ value: 'light', label: 'روشن' }, { value: 'dark', label: 'تیره' }, { value: 'auto', label: 'خودکار (مطابق سیستم)' }]} />
+            <Field label="حالت نمایش" hint="«برجسته» برای نور شدید و فضای باز: کنتراست بالا و رنگ‌های درخشان.">
+              <div className="theme-pick" role="radiogroup" aria-label="حالت نمایش">
+                {THEMES.map((t) => (
+                  <button
+                    key={t.value} type="button" role="radio" aria-checked={s.theme === t.value}
+                    className={`theme-card ${s.theme === t.value ? 'on' : ''}`}
+                    onClick={() => setS({ ...s, theme: t.value })}
+                    title={t.hint}
+                  >
+                    <span className={`theme-thumb ${t.value}`} aria-hidden="true">
+                      <i className="tt-bar" /><i className="tt-side" /><i className="tt-line" /><i className="tt-line short" />
+                    </span>
+                    <span className="theme-name"><IconCheck size={12} /> {t.label}</span>
+                  </button>
+                ))}
+              </div>
             </Field>
             <Field label="فونت">
               <Select value={s.fontFamily} onChange={(v) => setS({ ...s, fontFamily: v })}

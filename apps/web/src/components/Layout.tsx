@@ -4,7 +4,7 @@ import { useSession, applyThemeToDocument } from '../lib/session';
 import { formatDate, todayISO } from '../lib/calendar';
 import {
   IconBuilding, IconCalendar, IconCash, IconChart, IconChevron, IconClose, IconCoins,
-  IconContact, IconDashboard, IconDatabase, IconHelp, IconHistory, IconLock, IconLogout,
+  IconContact, IconContrast, IconDashboard, IconDatabase, IconHelp, IconHistory, IconLock, IconLogout,
   IconMenu, IconMoon, IconPanel, IconPlus, IconReceipt, IconSearchDoc, IconSettings, IconSun,
   IconTrend, IconTruck, IconUsers, IconWallet,
 } from './icons';
@@ -94,8 +94,11 @@ const PAGE_TITLES: Record<string, { t: string; s: string }> = {
 };
 
 
+const groupOfPath = (pathname: string) =>
+  NAV.find((g) => g.items.some((i) => i.to === pathname))?.id || '';
+
 const RAIL_KEY = 'farday.sidebarRail';
-const CLOSED_KEY = 'farday.sidebarGroups';
+const OPEN_KEY = 'farday.sidebarGroupsOpen';
 /** تنها نقطه شکست رفتار سایدبار — دقیقاً همان ۱۱۰۰px در app.css */
 const MQ_DRAWER = '(max-width: 1100px)';
 
@@ -103,7 +106,8 @@ export default function Layout() {
   const { user, logout, isManager, settings, saveSettings, calendar } = useSession();
   const loc = useLocation();
   const nav = useNavigate();
-  const dark = document.documentElement.dataset.theme === 'dark';
+  /** تم فعلی (تیره/برجسته/روشن) — از data-theme خوانده می‌شود تا با Settings هم‌خوان بماند */
+  const themeMode = (document.documentElement.dataset.theme || 'light') as 'light' | 'vivid' | 'dark';
 
   /** ①/② کدام رفتار؟ از خود CSS هم استفاده می‌شود (body.is-drawer) */
   const [drawer, setDrawer] = useState(() => window.matchMedia(MQ_DRAWER).matches);
@@ -112,13 +116,25 @@ export default function Layout() {
   /** حالت ریل (فقط پهلو) — انتخاب کاربر */
   const [rail, setRail] = useState(() => localStorage.getItem(RAIL_KEY) === '1');
   /**
-   * گروه‌های بسته‌شده — هر گروه مستقل باز/بسته می‌شود (نه آکاردئون)، و
-   * گروهِ صفحه‌ی جاری هم قابل بستن است. پیش‌فرض: همه باز.
+   * گروه‌های **باز** — هر گروه مستقل باز/بسته می‌شود (نه آکاردئون) و گروهی که
+   * شاخه‌ی فعال دارد هم قابل بستن است. عمداً «باز» ذخیره می‌شود نه «بسته»،
+   * چون نبودِ یک کلید در نقشه‌ی «بسته» در نسخه‌های قبل معنای مخالفی داشت و
+   * می‌توانست باعث شود کلیکِ کاربر بی‌اثر به نظر برسد. پیش‌فرض: همه بسته
+   * (منوی جمع‌وجمع) — کاربر اولین گروه را باز می‌کند.
    */
-  const [closed, setClosed] = useState<Record<string, boolean>>(() => {
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(CLOSED_KEY) || '{}');
-      return saved && typeof saved === 'object' ? saved : {};
+      const saved = JSON.parse(localStorage.getItem(OPEN_KEY) || 'null');
+      if (saved && typeof saved === 'object' && Object.keys(saved).length) return saved;
+      /* مهاجرت از کلید قدیمی: هر گروهی که «بسته» نبود، باز بوده است */
+      const legacy = JSON.parse(localStorage.getItem('farday.sidebarGroups') || 'null');
+      if (legacy && typeof legacy === 'object') {
+        const migrated: Record<string, boolean> = {};
+        NAV.forEach((g) => { migrated[g.id] = !legacy[g.id]; });
+        return migrated;
+      }
+      /* اولین بار: فقط گروهِ صفحه‌ی جاری باز است (منوی کم‌شلوغ) */
+      return { [groupOfPath(window.location.pathname)]: true };
     } catch { return {}; }
   });
   /** پنل شناور در حالت ریل */
@@ -159,7 +175,7 @@ export default function Layout() {
   }, [drawer, railActive]);
 
   useEffect(() => { localStorage.setItem(RAIL_KEY, rail ? '1' : '0'); }, [rail]);
-  useEffect(() => { localStorage.setItem(CLOSED_KEY, JSON.stringify(closed)); }, [closed]);
+  useEffect(() => { localStorage.setItem(OPEN_KEY, JSON.stringify(openGroups)); }, [openGroups]);
 
   /* با رفتن به صفحه‌ی نو: کشو بسته، پنل ریل بسته */
   useEffect(() => { setOpen(false); setHoverGroup(''); }, [loc.pathname]);
@@ -185,10 +201,10 @@ export default function Layout() {
       if (k === 's') { e.preventDefault(); if (drawer) setOpen((v) => !v); else setRail((v) => !v); }
       if (k === 'g') {
         e.preventDefault();
-        setClosed((prev) => {
-          const allOpen = NAV.every((g) => !prev[g.id]);
+        setOpenGroups((prev) => {
+          const allOpen = NAV.every((g) => prev[g.id]);
           const next: Record<string, boolean> = {};
-          NAV.forEach((g) => { next[g.id] = allOpen; });
+          NAV.forEach((g) => { next[g.id] = !allOpen; });
           return next;
         });
       }
@@ -197,10 +213,17 @@ export default function Layout() {
     return () => window.removeEventListener('keydown', onAlt);
   }, [drawer, activeGroup]);
 
+  /**
+   * چرخه‌ی تم با یک کلیک: روشن → برجسته → تیره → روشن
+   * (همان انتخاب‌های صفحه‌ی تنظیمات، فقط سریع‌تر)
+   */
+  const THEME_CYCLE = ['light', 'vivid', 'dark'] as const;
+  const nextTheme = THEME_CYCLE[(THEME_CYCLE.indexOf(themeMode) + 1) % THEME_CYCLE.length];
+  const themeLabel = themeMode === 'dark' ? 'تیره' : themeMode === 'vivid' ? 'برجسته' : 'روشن';
   const toggleTheme = async () => {
-    const next = { ...settings, theme: dark ? 'light' : 'dark' };
+    const next = { ...settings, theme: nextTheme };
     applyThemeToDocument(next);
-    try { await saveSettings({ theme: next.theme }); } catch { /* ignore */ }
+    try { await saveSettings({ theme: nextTheme }); } catch { /* ignore */ }
   };
 
   /**
@@ -208,7 +231,7 @@ export default function Layout() {
    * بقیه‌ی گروه‌ها دست نمی‌خورند، و گروهی که شاخه‌ی فعال دارد هم بسته می‌شود.
    */
   const toggleGroup = (id: string, isOpen: boolean) => {
-    setClosed((prev) => ({ ...prev, [id]: isOpen }));
+    setOpenGroups((prev) => ({ ...prev, [id]: !isOpen }));
   };
 
   /** موقعیت پنل شناور ریل: کنار همان گروه */
@@ -258,7 +281,7 @@ export default function Layout() {
           {groups.map((g) => {
             const isActiveGroup = activeGroup === g.id;
             /* در ریل: گروه فقط با هاور/کلیک باز می‌شود؛ در حالت عادی: آکاردئون */
-            const isOpen = railActive ? hoverGroup === g.id : !closed[g.id];
+            const isOpen = railActive ? hoverGroup === g.id : !!openGroups[g.id];
             const GIcon = g.icon;
             return (
               <div
@@ -266,22 +289,30 @@ export default function Layout() {
                 className="nav-group"
                 onMouseEnter={railActive ? () => openPanel(g.id) : undefined}
               >
+                {/*
+                  سرگروه: یک دکمه‌ی تمام‌عرض. در حالت عادی کلیک = باز/بسته کردن
+                  همان گروه؛ در ریل کلیک = باز کردن پنل شناور.
+                */}
                 <button
                   type="button"
                   ref={(el) => { groupRefs.current[g.id] = el; }}
                   className={`nav-group-head ${isActiveGroup ? 'has-active' : ''} ${isOpen ? 'open' : ''}`}
                   onClick={() => (railActive ? openPanel(g.id) : toggleGroup(g.id, isOpen))}
-                  title={railActive ? g.title : undefined}
+                  title={railActive ? g.title : (isOpen ? `بستن «${g.title}»` : `باز کردن «${g.title}»`)}
                   aria-expanded={isOpen}
+                  aria-controls={`nav-items-${g.id}`}
+                  data-group={g.id}
                 >
                   <GIcon size={15} />
                   <span className="nav-group-title">{g.title}</span>
                   {railActive ? null : (
-                    <IconChevron dir="down" size={12} className={`nav-group-chev ${isOpen ? 'up' : ''}`} />
+                    <span className={`nav-group-chev ${isOpen ? 'up' : ''}`} aria-hidden="true">
+                      <IconChevron dir="down" size={13} />
+                    </span>
                   )}
                 </button>
 
-                <div className={`nav-items ${isOpen && !railActive ? 'expanded' : ''}`}>
+                <div id={`nav-items-${g.id}`} className={`nav-items ${isOpen && !railActive ? 'expanded' : ''}`}>
                   {g.items.map((item) => {
                     const IIcon = item.icon;
                     return (
@@ -349,9 +380,12 @@ export default function Layout() {
             {formatDate(todayISO(), calendar, true)}
           </span>
 
-          <button type="button" className="btn ghost icon" onClick={toggleTheme}
-            title={dark ? 'حالت روشن' : 'حالت تیره'} aria-label={dark ? 'حالت روشن' : 'حالت تیره'}>
-            {dark ? <IconSun size={17} /> : <IconMoon size={17} />}
+          <button type="button" className={`btn ghost icon theme-btn th-${themeMode}`} onClick={toggleTheme}
+            title={`تم فعلی: ${themeLabel} — کلیک: تم بعدی`}
+            aria-label={`تم فعلی ${themeLabel}، تغییر به تم بعدی`}>
+            {themeMode === 'dark' ? <IconMoon size={17} />
+              : themeMode === 'vivid' ? <IconSun size={17} />
+              : <IconContrast size={17} />}
           </button>
 
           <div className="user-chip">

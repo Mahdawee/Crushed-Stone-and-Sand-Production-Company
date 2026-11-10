@@ -41,26 +41,56 @@
   --shadow-lg: 0 24px 60px -24px rgba(16, 32, 46, .35);
 }
 
+/* ── تیره: سرمه‌ای/گرافیتی مدرن — عمداً «سیاه خالص» نیست ───────────── */
 html[data-theme='dark'] {
-  --bg: #0d1418;
-  --bg-2: #111a20;
-  --surface: #131d24;
-  --surface-2: #182430;
-  --surface-3: #1d2b36;
-  --border: #24333e;
-  --border-strong: #31454f;
-  --text: #e9eff4;
-  --text-2: #a6b5c1;
-  --text-3: #7e8f9c;
-  --accent-soft: #103c3a;
-  --danger-soft: #3b1618;
-  --ok-soft: #10301d;
-  --warn-soft: #3a2a10;
-  --info-soft: #16244a;
-  --sidebar-bg: #101820; --sidebar-border: #24333e; --sidebar-accent: #18242e;
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, .5);
-  --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 30px -16px rgba(0, 0, 0, .8);
-  --shadow-lg: 0 30px 70px -30px rgba(0, 0, 0, .9);
+  color-scheme: dark;
+  --bg: #0f1720;              /* پس‌زمینه: سرمه‌ای تیره، نه #000 */
+  --bg-2: #15202b;            /* نواحی ثانویه (نوار بالا، پنل‌ها) */
+  --surface: #18242f;         /* کارت‌ها: یک پله روشن‌تر از پس‌زمینه */
+  --surface-2: #1e2c39;
+  --surface-3: #263644;
+  --border: #2a3a48;
+  --border-strong: #3a4d5e;
+  --text: #e8eef5;
+  --text-2: #a9bac9;
+  --text-3: #7d90a1;
+  --accent-soft: #123c3b;
+  --danger: #f87171; --danger-soft: #3d1a1d;
+  --ok: #4ade80;     --ok-soft: #10301f;
+  --warn: #fbbf24;   --warn-soft: #3a2c10;
+  --info: #60a5fa;   --info-soft: #16264a;
+  --sidebar-bg: #121c26; --sidebar-border: #26343f; --sidebar-accent: #1d2b38;
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, .35);
+  --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 12px 30px -16px rgba(0, 0, 0, .7);
+  --shadow-lg: 0 30px 70px -30px rgba(0, 0, 0, .8);
+  --field-bg: #101b25;        /* فیلدها کمی تیره‌تر از کارت: لبه‌ها دیده شوند */
+  --field-border: #2f4354;
+}
+
+/* ── برجسته (High-Contrast / Outdoor): برای نور شدید آفتاب ──────────────
+   کنتراست متن ≥ 7:1، حاشیه‌ها ضخیم‌تر و تیره‌تر، رنگ‌های اشباع و درخشان. */
+html[data-theme='vivid'] {
+  color-scheme: light;
+  --bg: #eef3f8;
+  --bg-2: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f2f6fb;
+  --surface-3: #e4ecf5;
+  --border: #9db1c6;          /* حاشیه‌ی واضح، نه خاکستری محو */
+  --border-strong: #6b8299;
+  --text: #08131f;            /* تقریباً مشکی: کنتراست ۱۸:۱ */
+  --text-2: #24384c;
+  --text-3: #41586e;
+  --danger: #b3131b; --danger-soft: #ffdedf;
+  --ok: #0b6b2f;     --ok-soft: #d4f7de;
+  --warn: #8a4a00;   --warn-soft: #ffe9bf;
+  --info: #0b3ec9;   --info-soft: #dbe6ff;
+  --sidebar-bg: #ffffff; --sidebar-border: #9db1c6; --sidebar-accent: #e6eefa;
+  --shadow-xs: 0 1px 2px rgba(8, 19, 31, .14);
+  --shadow: 0 1px 2px rgba(8, 19, 31, .14), 0 8px 22px -16px rgba(8, 19, 31, .5);
+  --shadow-lg: 0 26px 60px -26px rgba(8, 19, 31, .55);
+  --field-bg: #ffffff;
+  --field-border: #6b8299;
 }
 
 * { box-sizing: border-box; }
@@ -114,23 +144,35 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .nav { flex: 1; overflow-y: auto; padding: 4px 8px 10px; scrollbar-width: thin; }
 .nav-group + .nav-group { margin-top: 2px; }
-/* سرگروه — یک دکمه‌ی تمام‌عرض با ناحیه‌ی کلیک راحت (۳۲px) */
+/* سرگروه — دکمه‌ی تمام‌عرض ۳۶px با پس‌زمینه‌ی محسوس و فلش گرد.
+   هدف: هیچ‌جای نوار «مرده» به نظر نرسد. */
 .nav-group-head {
-  display: flex; align-items: center; gap: 7px; width: 100%; height: 32px; padding: 0 8px;
-  margin-top: 6px; border: none; border-radius: var(--radius-md); background: transparent;
-  color: var(--text-2); cursor: pointer; font-size: .74rem; font-weight: 600; letter-spacing: 0;
-  transition: background .13s, color .13s;
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 0 6px;
+  margin-top: 4px; border: 1px solid transparent; border-radius: var(--radius-md);
+  background: transparent; color: var(--text-2); cursor: pointer;
+  font-size: .78rem; font-weight: 700; letter-spacing: -.1px;
+  transition: background .13s, color .13s, border-color .13s;
 }
 .nav-group-head:hover { background: var(--sidebar-accent); color: var(--text); }
+.nav-group-head:active { background: color-mix(in srgb, var(--accent) 14%, var(--sidebar-accent)); }
+.nav-group-head.open { color: var(--text); }
 .nav-group-head.has-active { color: var(--accent); }
-.nav-group-head.has-active::after {           /* نقطه‌ی کوچک: این گروه شاخه‌ی فعال دارد */
-  content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
-  order: 3; flex: 0 0 5px; opacity: .85;
+.nav-group-head.has-active::after {           /* نقطه: این گروه شاخه‌ی فعال دارد */
+  content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+  flex: 0 0 6px; opacity: .9;
 }
 .nav-group-title { flex: 1; text-align: start; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.nav-group-chev { transition: transform .18s ease, opacity .13s; opacity: .45; flex: 0 0 auto; order: 4; }
-.nav-group-head:hover .nav-group-chev, .nav-group-head.open .nav-group-chev { opacity: .9; }
+
+/* فلش: خودش یک «دکمه‌ی» کوچک و دیدنی است، نه یک آیکن محو */
+.nav-group-chev {
+  flex: 0 0 auto; width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center;
+  background: var(--surface-3); color: var(--text-2);
+  transition: transform .18s ease, background .13s, color .13s;
+}
+.nav-group-head:hover .nav-group-chev { background: var(--surface); color: var(--accent); }
+.nav-group-head.open .nav-group-chev { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
 .nav-group-chev.up { transform: rotate(180deg); }
+
 .nav-items {
   display: grid; grid-template-rows: 0fr; transition: grid-template-rows .18s ease;
   overflow: hidden;
@@ -282,7 +324,8 @@ html[data-theme='dark'] .nav-link.active { color: #7ee7d8; }
 .field .hint { font-size: .7rem; color: var(--text-3); }
 .input, .field input, .field select, .field textarea, select.input, textarea.input, input.input {
   width: 100%; padding: 0 11px; border-radius: var(--radius-md); border: 1px solid var(--border-strong);
-  background: var(--bg-2); color: var(--text); font-size: .875rem; transition: border .14s, box-shadow .14s;
+  background: var(--field-bg, var(--bg-2)); color: var(--text); font-size: .875rem;
+  transition: border .14s, box-shadow .14s;
   height: 36px; min-height: 36px; box-shadow: var(--shadow-xs);
 }
 .input:focus, .field input:focus, .field select:focus, .field textarea:focus {
@@ -446,8 +489,8 @@ body.is-drawer .sb-backdrop { position: fixed; inset: 0; background: rgba(8, 18,
 .dp-field {
   display: flex; align-items: center; gap: 4px; height: 36px; min-width: 0;
   padding: 0 4px 0 2px;                 /* فاصله‌ی داخلی؛ آیکن/متن/× هر کدام سهم خود را دارند */
-  border: 1px solid var(--border-strong); border-radius: var(--radius-md);
-  background: var(--bg-2); box-shadow: var(--shadow-xs);
+  border: 1px solid var(--field-border, var(--border-strong)); border-radius: var(--radius-md);
+  background: var(--field-bg, var(--bg-2)); box-shadow: var(--shadow-xs);
   transition: border-color .14s, box-shadow .14s;
 }
 .dp-field:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border-strong)); }
@@ -762,3 +805,63 @@ table.tbl.compact td, table.tbl.compact th { font-size: .82rem; }
 .dp-title-btn:focus-visible, .dp-chip:focus-visible, .sb-toggle:focus-visible, .sb-close:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 2px;
 }
+
+/* =====================================================================
+   تم «برجسته» — تقویت‌های ساختاری (نه فقط رنگ متغیرها)
+   هدف: خوانایی در نور شدید/فضای باز: حاشیه‌های ضخیم‌تر، بدون سایه‌های نرم
+   ===================================================================== */
+html[data-theme='vivid'] .card,
+html[data-theme='vivid'] .modal,
+html[data-theme='vivid'] .dp-pop,
+html[data-theme='vivid'] .tb-panel { border-width: 1.5px; border-color: var(--border); box-shadow: none; }
+html[data-theme='vivid'] .input,
+html[data-theme='vivid'] .field input,
+html[data-theme='vivid'] .field select,
+html[data-theme='vivid'] .field textarea,
+html[data-theme='vivid'] .dp-field { border-width: 1.5px; border-color: var(--field-border); box-shadow: none; }
+html[data-theme='vivid'] .btn { border-width: 1.5px; font-weight: 600; }
+html[data-theme='vivid'] .nav-link { font-weight: 600; color: var(--text); }
+html[data-theme='vivid'] .nav-link.active { background: var(--accent); color: #fff; }
+html[data-theme='vivid'] .nav-link.active .ico { opacity: 1; }
+html[data-theme='vivid'] .nav-link.active::before { display: none; }
+html[data-theme='vivid'] table.tbl th { background: var(--surface-3); color: var(--text); border-bottom: 1.5px solid var(--border-strong); }
+html[data-theme='vivid'] table.tbl td { border-bottom: 1px solid var(--border); }
+html[data-theme='vivid'] .badge { border-width: 1.5px; font-weight: 700; }
+html[data-theme='vivid'] .topbar { background: var(--surface); backdrop-filter: none; border-bottom: 1.5px solid var(--border); }
+
+/* در تم برجسته، سایدبار هم مرز واضح می‌گیرد */
+html[data-theme='vivid'] .sidebar { border-left-width: 1.5px; }
+
+/* تیره: سایه‌ها کم‌اثرند، مرزها کار می‌کنند */
+html[data-theme='dark'] .card { box-shadow: none; }
+html[data-theme='dark'] .btn.primary { box-shadow: 0 6px 18px -12px var(--accent); }
+
+/* ============================== انتخاب تم ============================ */
+.theme-pick { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 560px) { .theme-pick { grid-template-columns: 1fr; } }
+.theme-card {
+  display: flex; flex-direction: column; gap: 7px; padding: 8px; cursor: pointer;
+  background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-md);
+  color: var(--text-2); font-size: .8rem; text-align: center;
+  transition: border-color .14s, box-shadow .14s, transform .1s;
+}
+.theme-card:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+.theme-card.on { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); color: var(--text); }
+.theme-card .theme-name { display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-weight: 600; }
+.theme-card .theme-name svg { opacity: 0; color: var(--accent); }
+.theme-card.on .theme-name svg { opacity: 1; }
+
+/* بندانگشتی پیش‌نمایش — با همان متغیرهای واقعی تم رنگ می‌شود */
+.theme-thumb {
+  position: relative; display: block; height: 58px; border-radius: 7px; overflow: hidden;
+  border: 1px solid var(--border); background: var(--bg); direction: rtl;
+}
+.theme-thumb .tt-bar { position: absolute; inset-block-start: 0; inset-inline: 0; height: 12px; background: var(--bg-2); border-bottom: 1px solid var(--border); }
+.theme-thumb .tt-side { position: absolute; inset-block: 12px 0; inset-inline-start: 0; width: 22px; background: var(--sidebar-bg); border-inline-end: 1px solid var(--border); }
+.theme-thumb .tt-line { position: absolute; inset-inline-start: 28px; inset-inline-end: 8px; top: 22px; height: 7px; border-radius: 4px; background: var(--surface-3); }
+.theme-thumb .tt-line.short { top: 35px; inset-inline-end: 30px; background: var(--accent); opacity: .85; }
+
+/* سه پیش‌نمایش با پالت خودشان (چون در صفحه‌ی جاری فقط یک تم فعال است) */
+.theme-thumb.light { --bg: #eef1f5; --bg-2: #fff; --sidebar-bg: #fafafa; --surface-3: #dde4ec; --accent: #0f766e; --border: #d3dae1; }
+.theme-thumb.vivid { --bg: #e3ebf5; --bg-2: #fff; --sidebar-bg: #fff; --surface-3: #c9d8ea; --accent: #1a5cff; --border: #6b8299; }
+.theme-thumb.dark  { --bg: #0f1720; --bg-2: #15202b; --sidebar-bg: #121c26; --surface-3: #2a3a48; --accent: #2dd4bf; --border: #2a3a48; }

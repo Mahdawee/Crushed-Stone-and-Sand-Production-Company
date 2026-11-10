@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', { url: 'http://localhost:5173/', pretendToBeVisual: true });
 global.window = dom.window;
-for (const k of ['document', 'HTMLElement', 'Element', 'Node', 'MouseEvent', 'KeyboardEvent', 'CustomEvent', 'getComputedStyle', 'localStorage', 'Event']) {
+for (const k of ['document', 'HTMLElement', 'Element', 'Node', 'MouseEvent', 'KeyboardEvent', 'CustomEvent', 'getComputedStyle', 'localStorage', 'Event', 'location', 'history']) {
   Object.defineProperty(global, k, { value: dom.window[k] ?? dom.window.document.defaultView?.[k], configurable: true, writable: true });
 }
 Object.defineProperty(global, 'navigator', { value: dom.window.navigator, configurable: true });
@@ -63,8 +63,13 @@ ok('حالت باز = transform: none', /body\.is-drawer \.sidebar\.open \{ tran
 ok('در کشو، ریل نادیده گرفته می‌شود', /body\.is-drawer \.app\.rail \.sidebar \{ width: 268px/.test(css));
 ok('پشت‌زمینه (backdrop) فقط در کشو تعریف شده', /body\.is-drawer \.sb-backdrop \{/.test(css));
 ok('هیچ گروهی از بسته‌شدن منع نشده (حتی گروه فعال)', !/id === activeGroup\) return/.test(layout));
-ok('toggleGroup فقط همان گروه را عوض می‌کند (آکاردئون نیست)', /setClosed\(\(prev\) => \(\{ \.\.\.prev, \[id\]: isOpen \}\)\)/.test(layout));
-ok('وضعیت باز بودن از closed خوانده می‌شود، نه از صفحه فعال', /const isOpen = railActive \? hoverGroup === g\.id : !closed\[g\.id\];/.test(layout));
+ok('toggleGroup فقط همان گروه را عوض می‌کند (آکاردئون نیست)',
+  /setOpenGroups\(\(prev\) => \(\{ \.\.\.prev, \[id\]: !isOpen \}\)\)/.test(layout));
+ok('وضعیت باز بودن از openGroups خوانده می‌شود، نه از صفحه فعال',
+  /const isOpen = railActive \? hoverGroup === g\.id : !!openGroups\[g\.id\];/.test(layout));
+ok('وضعیت «باز» ذخیره می‌شود (نه «بسته») تا کلیک بی‌اثر نماند',
+  /localStorage\.setItem\(OPEN_KEY, JSON\(?|\.stringify\(openGroups\)/.test(layout));
+ok('داده‌ی قدیمی localStorage مهاجرت می‌کند', /getItem\('farday\.sidebarGroups'\)/.test(layout));
 ok('گروه فعال فقط نشانه (نقطه) دارد', /\.nav-group-head\.has-active::after/.test(css));
 ok('زیرمنوها در کشو تاشو هستند (expanded)', /nav-items \$\{isOpen && !railActive \? 'expanded' : ''\}/.test(layout));
 

@@ -26,14 +26,34 @@ const ACCENTS: Record<string, string> = {
   violet: '#7c3aed', amber: '#b45309', rose: '#e11d48', slate: '#475569',
 };
 
+/** رنگ‌های برجسته‌تر برای تم «برجسته» (روشن‌تر و اشباع‌تر، مخصوص نور شدید) */
+const ACCENTS_VIVID: Record<string, string> = {
+  teal: '#00807a', emerald: '#00884a', blue: '#1a5cff', indigo: '#4a3af5',
+  violet: '#7b2ff2', amber: '#b85800', rose: '#e01a4f', slate: '#31506b',
+};
+
+export type ThemeMode = 'light' | 'vivid' | 'dark';
+
+/** تم واقعیِ اعمال‌شده: auto فقط در حافظه به light/vivid/dark تبدیل می‌شود */
+export function resolveTheme(mode?: string): ThemeMode {
+  if (mode === 'dark') return 'dark';
+  if (mode === 'vivid' || mode === 'high-contrast' || mode === 'outdoor') return 'vivid';
+  if (mode === 'light') return 'light';
+  /* auto / تعریف‌نشده → مطابق سیستم */
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
 export function applyThemeToDocument(s: Settings) {
   const root = document.documentElement;
-  const mode = s.theme || 'light';
-  const dark = mode === 'dark' || (mode === 'auto' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
-  root.dataset.theme = dark ? 'dark' : 'light';
-  const accent = ACCENTS[s.accent || 'teal'] || ACCENTS.teal;
+  const theme = resolveTheme(s.theme);
+  const dark = theme === 'dark';
+  root.dataset.theme = theme;
+  root.style.colorScheme = dark ? 'dark' : 'light';
+
+  const palette = theme === 'vivid' ? ACCENTS_VIVID : ACCENTS;
+  const accent = palette[s.accent || 'teal'] || palette.teal;
   root.style.setProperty('--accent', accent);
-  root.style.setProperty('--accent-dark', shade(accent, -18));
+  root.style.setProperty('--accent-dark', theme === 'vivid' ? shade(accent, -35) : shade(accent, dark ? 22 : -18));
   root.style.setProperty('--accent-soft', shade(accent, dark ? -70 : 82));
   root.style.setProperty('--row-pad', s.density === 'compact' ? '6px 10px' : '11px 14px');
   root.style.setProperty('--radius', s.corners === 'sharp' ? '6px' : s.corners === 'soft' ? '18px' : '14px');
@@ -81,9 +101,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       }
       setReady(true);
     })();
+    /* در حالت «خودکار»، تغییر تم سیستم همان لحظه اعمال شود */
+    const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
+    const onScheme = () => { if (!settings.theme || settings.theme === 'auto') applyThemeToDocument(settings); };
+    mq?.addEventListener?.('change', onScheme);
+
     const onUnauth = () => { setUser(null); setToken(''); };
     window.addEventListener('farday:unauthorized', onUnauth as any);
-    return () => window.removeEventListener('farday:unauthorized', onUnauth as any);
+    return () => {
+      window.removeEventListener('farday:unauthorized', onUnauth as any);
+      mq?.removeEventListener?.('change', onScheme);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -101,12 +129,24 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
+  /**
+   * ذخیره تنظیمات — تم فوراً اعمال می‌شود (بدون انتظار برای سرور) و
+   * اگر سرور در دسترس نبود، انتخاب کاربر در حافظه‌ی محلی می‌ماند.
+   */
   const saveSettings = useCallback(async (patch: Settings) => {
-    const next = await api.put<Settings>('/settings', patch);
-    setSettings(next);
-    localStorage.setItem('farday.settings', JSON.stringify(next));
-    applyThemeToDocument(next);
-  }, []);
+    const optimistic = { ...settings, ...patch };
+    setSettings(optimistic);
+    applyThemeToDocument(optimistic);
+    localStorage.setItem('farday.settings', JSON.stringify(optimistic));
+    try {
+      const next = await api.put<Settings>('/settings', patch);
+      setSettings(next);
+      applyThemeToDocument(next);
+      localStorage.setItem('farday.settings', JSON.stringify(next));
+    } catch {
+      /* آفلاین/خطای سرور: همان انتخاب محلی معتبر است */
+    }
+  }, [settings]);
 
   const value = useMemo<Ctx>(() => ({
     user, settings, ready,

@@ -18,7 +18,7 @@ const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></
   url: 'http://localhost:5173/', pretendToBeVisual: true,
 });
 global.window = dom.window;
-for (const k of ['document', 'HTMLElement', 'Element', 'Node', 'MouseEvent', 'KeyboardEvent', 'Event', 'localStorage', 'getComputedStyle']) {
+for (const k of ['document', 'HTMLElement', 'Element', 'Node', 'MouseEvent', 'KeyboardEvent', 'Event', 'localStorage', 'getComputedStyle', 'FocusEvent', 'DocumentFragment', 'location', 'history']) {
   Object.defineProperty(global, k, { value: dom.window[k], configurable: true, writable: true });
 }
 Object.defineProperty(global, 'navigator', { value: dom.window.navigator, configurable: true });

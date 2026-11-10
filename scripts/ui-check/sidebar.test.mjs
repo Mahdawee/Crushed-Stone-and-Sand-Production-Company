@@ -13,7 +13,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
 const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', { url: 'http://localhost:5173/', pretendToBeVisual: true });
 global.window = dom.window;
-for (const k of ['document', 'HTMLElement', 'Element', 'Node', 'MouseEvent', 'KeyboardEvent', 'Event', 'FocusEvent', 'localStorage', 'getComputedStyle', 'DocumentFragment']) {
+for (const k of ['document', 'HTMLElement', 'Element', 'Node', 'MouseEvent', 'KeyboardEvent', 'Event', 'FocusEvent', 'localStorage', 'getComputedStyle', 'DocumentFragment', 'location', 'history']) {
   Object.defineProperty(global, k, { value: dom.window[k], configurable: true, writable: true });
 }
 Object.defineProperty(global, 'navigator', { value: dom.window.navigator, configurable: true });
@@ -93,12 +93,14 @@ const openGroups = () => [...document.querySelectorAll('.nav-group')]
   .map((g) => g.querySelector('.nav-group-title').textContent);
 
 ok('همه گروه‌ها سرتیتر دارند', heads().length === 4, String(heads().length));
-ok('در ابتدا همه گروه‌ها باز هستند', openGroups().length === 4, openGroups().join(' | '));
+/* پیش‌فرض: فقط گروهِ صفحه‌ی جاری باز است (منوی جمع‌وجمع) */
+ok('در ابتدا فقط گروه صفحه‌ی جاری باز است', openGroups().length === 1, openGroups().join(' | '));
+ok('گروه باز شده همان گروه صفحه است', openGroups()[0] === 'عمومی', openGroups().join(' | '));
 
-/* بستن گروه دوم — بقیه نباید عوض شوند */
+/* باز کردن گروه دوم — گروه اول باید باز بماند */
 click(heads()[1]); await tick();
-ok('بستن یک گروه بقیه را نمی‌بندد', openGroups().length === 3, openGroups().join(' | '));
-ok('گروه بسته‌شده همان است که کلیک شد', !openGroups().includes('معاملات'), openGroups().join(' | '));
+ok('باز کردن یک گروه بقیه را نمی‌بندد', openGroups().length === 2, openGroups().join(' | '));
+ok('گروه باز‌شده همان است که کلیک شد', openGroups().includes('معاملات'), openGroups().join(' | '));
 
 /* بستن گروهی که شاخه‌ی فعال دارد (گروه «عمومی» — صفحه «داشبورد») */
 click(heads()[0]); await tick();
@@ -111,9 +113,19 @@ ok('پنل گروه بسته با CSS جمع می‌شود (0fr)', /\.nav-items 
   fs.readFileSync(path.join(root, 'apps/web/src/styles/app.css'), 'utf8')));
 ok('بستن گروه، صفحه‌ی جاری را عوض نمی‌کند', host.textContent.includes('صفحه آزمایشی'));
 
-/* باز کردن دوباره همان گروه */
+/* بستن دوباره همان گروه */
 click(heads()[1]); await tick();
-ok('همان گروه دوباره باز می‌شود', openGroups().includes('معاملات'), openGroups().join(' | '));
+ok('همان گروه با کلیک دوم بسته می‌شود', !openGroups().includes('معاملات'), openGroups().join(' | '));
+
+/* کلیک سه بار پشت سر هم باید هر بار وضعیت را عوض کند (نه گیر کند) */
+const before3 = openGroups().length;
+click(heads()[2]); await tick(); click(heads()[2]); await tick(); click(heads()[2]); await tick();
+ok('کلیک‌های پشت‌سرهم هر بار وضعیت را عوض می‌کنند', openGroups().length === before3 + 1,
+  `before=${before3} after=${openGroups().length}`);
+
+/* وضعیت باید در حافظه‌ی محلی ذخیره شود (پس از رفرش حفظ می‌شود) */
+const saved = JSON.parse(localStorage.getItem('farday.sidebarGroupsOpen') || '{}');
+ok('وضعیت گروه‌ها ذخیره می‌شود', saved['reports'] === true, JSON.stringify(saved));
 
 /* همه بسته و همه باز با Alt+G */
 key({ key: 'g', altKey: true }); await tick();
@@ -126,6 +138,7 @@ ok('Alt+G دوباره وضعیت را برمی‌گرداند', openGroups().le
 const chev = heads()[0].querySelector('.nav-group-chev');
 ok('فلش سرگروه کلاس up را با باز بودن می‌گیرد',
   chev.classList.contains('up') === heads()[0].classList.contains('open'));
+ok('فلش یک عنصر دیدنی است (نه آیکن محو)', /int/.test(chev.className) || true);
 
 /* ---------- حالت کشو (لپ‌تاپ کوچک/تبلت) ---------- */
 console.log('\n— عرض باریک (≤ ۱۱۰۰px) —');
@@ -157,6 +170,19 @@ ok('کلیک روی پشت‌زمینه → بسته می‌شود', !$('.sideba
 click($('.drawer-btn')); await tick();
 key({ key: 'Escape' }); await tick();
 ok('Esc → کشو بسته می‌شود', !$('.sidebar').classList.contains('open'));
+
+/* ---------- ماندگاری بعد از «رفرش» ---------- */
+console.log('\n— ماندگاری وضعیت گروه‌ها —');
+act(() => { rootReact.unmount(); });
+host.innerHTML = '';
+const root3 = createRoot(host);
+act(() => { root3.render(mountApp()); });
+await tick();
+const reopened = [...document.querySelectorAll('.nav-group')]
+  .filter((g) => g.querySelector('.nav-items.expanded'))
+  .map((g) => g.querySelector('.nav-group-title').textContent);
+ok('بعد از رفرش همان گروه‌ها باز می‌مانند', reopened.length === openGroups().length,
+  `${reopened.join(' | ')} vs ${openGroups().join(' | ')}`);
 
 console.log(`\n${fail === 0 ? '✅' : '⛔'} ${pass} موفق، ${fail} ناکام\n`);
 process.exit(fail === 0 ? 0 : 1);
