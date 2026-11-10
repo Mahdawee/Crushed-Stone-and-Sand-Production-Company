@@ -26,7 +26,7 @@ fn dev_mode() -> bool {
 /// صفحه و کاربر عملاً نمی‌توانست برنامه را درست ببیند.
 /// حالا اندازه بر اساس مانیتور انتخاب می‌شود و حداقل اندازه هم کوچک‌تر است.
 fn window_geometry(app: &tauri::App) -> ((f64, f64), (f64, f64)) {
-    use tauri::Manager;
+    /* `primary_monitor` متد ذاتی `tauri::App` است — نیازی به `tauri::Manager` نیست */
     let (mut w, mut h) = (1360.0_f64, 860.0_f64);
     let (mut min_w, mut min_h) = (900.0_f64, 600.0_f64);
 
@@ -374,6 +374,12 @@ const SPLASH_JS: &str = r#"
 "#;
 
 /// A self-contained RTL error page (no external assets, no network).
+///
+/// باگ کامپایل (گزارش کاربر): این قالب پیش‌تر با `format!` ساخته می‌شد و وقتی
+/// یک بلوک جاوااسکریپت با آکولادهای تکی به آن اضافه شد، Rust همان `{` را
+/// جای‌نگهدار فرمت دید و ساخت با «invalid format string: expected `}`, found `t`»
+/// شکست. حالا `format!` حذف شده و جای‌نگهدار یک توکن متنی است (`@@BODY@@`):
+/// آکولادهای CSS/JS نیازی به دوبار شدن ندارند و این خطا دیگر ممکن نیست.
 fn error_page(details: &str) -> String {
     let body = details
         .replace('&', "&amp;")
@@ -382,24 +388,27 @@ fn error_page(details: &str) -> String {
         .replace('`', "'")
         .replace('\\', "\\\\")
         .replace('\n', "<br>");
-    format!(
-        r#"<html dir="rtl" lang="fa"><head><meta charset="utf-8">
+    ERROR_PAGE.replace("@@BODY@@", &body)
+}
+
+/// قالب خام صفحه‌ی خطا — عمداً بدون `format!` (بخش `error_page` را ببینید).
+const ERROR_PAGE: &str = r#"<html dir="rtl" lang="fa"><head><meta charset="utf-8">
 <style>
-  body{{margin:0;font-family:Tahoma,'Segoe UI',sans-serif;background:#0f1720;color:#e8eef5;
-        display:flex;align-items:center;justify-content:center;min-height:100vh}}
-  .box{{max-width:760px;padding:28px 30px;background:#18242f;border:1px solid #2a3a48;border-radius:16px}}
-  h1{{font-size:1.15rem;margin:0 0 10px}}
-  p{{color:#a9bac9;font-size:.9rem;line-height:1.9;margin:0 0 14px}}
-  pre{{direction:ltr;text-align:left;background:#0f1720;border:1px solid #2a3a48;border-radius:10px;
-       padding:12px;font-size:.76rem;line-height:1.7;max-height:260px;overflow:auto;color:#cfe0ee}}
-  code{{background:#1e2c39;padding:1px 5px;border-radius:5px;direction:ltr;display:inline-block}}
-  .hint{{border-inline-start:3px solid #2dd4bf;padding-inline-start:12px;color:#cfe0ee}}
-  .btns{{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0 8px}}
-  .btn{{font-family:inherit;font-size:.85rem;padding:9px 16px;border-radius:10px;cursor:pointer;
-        border:1px solid #2dd4bf;background:#12433f;color:#d7fbf6}}
-  .btn:hover{{background:#17554f}}
-  .btn.ghost{{border-color:#33475a;background:#1b2833;color:#cfe0ee}}
-  .btn.ghost:hover{{background:#22323f}}
+  body{margin:0;font-family:Tahoma,'Segoe UI',sans-serif;background:#0f1720;color:#e8eef5;
+        display:flex;align-items:center;justify-content:center;min-height:100vh}
+  .box{max-width:760px;padding:28px 30px;background:#18242f;border:1px solid #2a3a48;border-radius:16px}
+  h1{font-size:1.15rem;margin:0 0 10px}
+  p{color:#a9bac9;font-size:.9rem;line-height:1.9;margin:0 0 14px}
+  pre{direction:ltr;text-align:left;background:#0f1720;border:1px solid #2a3a48;border-radius:10px;
+       padding:12px;font-size:.76rem;line-height:1.7;max-height:260px;overflow:auto;color:#cfe0ee}
+  code{background:#1e2c39;padding:1px 5px;border-radius:5px;direction:ltr;display:inline-block}
+  .hint{border-inline-start:3px solid #2dd4bf;padding-inline-start:12px;color:#cfe0ee}
+  .btns{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0 8px}
+  .btn{font-family:inherit;font-size:.85rem;padding:9px 16px;border-radius:10px;cursor:pointer;
+        border:1px solid #2dd4bf;background:#12433f;color:#d7fbf6}
+  .btn:hover{background:#17554f}
+  .btn.ghost{border-color:#33475a;background:#1b2833;color:#cfe0ee}
+  .btn.ghost:hover{background:#22323f}
 </style></head><body><div class="box">
 <h1>برنامه بالا نیامد — سرویس داخلی جواب نداد</h1>
 <p>پنجره باز شد ولی سرویس محلی (فروشات، معاشات و …) آماده نشد، برای همین رابط کاربری بارگذاری نشد.</p>
@@ -412,8 +421,8 @@ fn error_page(details: &str) -> String {
   <button class="btn ghost" onclick="__fd('')">باز کردن پوشه داده و لاگ‌ها</button>
 </div>
 <p class="hint">اگر دکمه‌ها کار نکردند، همین کارها را از خط فرمان بزنید (بدون انترنت):<br>
-<code>"C:\Users\%USERNAME%\AppData\Local\Programs\Farday Roshan\Farday Roshan.exe" --cli --reset-admin</code><br>
-<code>... \Farday Roshan.exe --cli --list-backups</code></p>
+<code>%LOCALAPPDATA%\Programs\Farday Roshan\Farday Roshan.exe --cli --reset-admin</code><br>
+<code>%LOCALAPPDATA%\Programs\Farday Roshan\Farday Roshan.exe --cli --list-backups</code></p>
 <script>
   /* این صفحه داخل پنجره‌ی Tauri است؛ invoke به پوسته می‌رسد (بدون اینترنت) */
   function __fd(arg) {
@@ -432,15 +441,13 @@ fn error_page(details: &str) -> String {
     if (e.target && e.target.tagName === 'PRE') {
       try {
         var r = document.createRange(); r.selectNodeContents(e.target);
-        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
         document.execCommand('copy');
         e.target.style.borderColor = '#2dd4bf';
       } catch (err) {}
     }
   });
 </script>
-<pre>{body}</pre>
+<pre>@@BODY@@</pre>
 <p>فایل‌های عیب‌یابی: <code>%APPDATA%\af.farday.roshan\api.log</code> و <code>shell.log</code></p>
-</div></body></html>"#
-    )
-}
+</div></body></html>"#;

@@ -213,6 +213,8 @@ npx tauri build --offline
 | پنجره سفید در نسخه نصب‌شده | API هنوز بالا نیامده / آدرس اشتباه | `git pull` — پنجره حالا بعد از آماده شدن API ساخته می‌شود و همیشه `127.0.0.1:4317` را باز می‌کند |
 | `Can't open language file - "...\NSIS\Contrib\Language files\Persian.nlf"!` | در `tauri.conf.json` نام زبان `Persian` بود؛ NSIS3 زبان فارسی را **`Farsi`** می‌نامد (فایل `Farsi.nlf`) و `Persian.nlf` وجود ندارد | `git pull` — حالا `languages: ["Farsi","English"]` است و پیام‌های فارسی در `src-tauri/nsis/Farsi.nsh` تعریف شده‌اند. بررسی سریع: `npm run test:nsis` |
 | `Error in macro MUI_LANGUAGEEX on macroline 13` | همان خطای بالا (نتیجه‌ی آن) | همان راه‌حل بالا |
+| `invalid format string: expected \`}\`, found \`t\`` در `src\main.rs` | قالب HTML صفحه‌ی خطا با `format!` ساخته می‌شد و بعداً یک بلوک `<script>` با آکولاد تکی به آن اضافه شد؛ `format!` هر `{` را جای‌نگهدار می‌بیند | **حل شد:** قالب حالا `const ERROR_PAGE` (رشته‌ی خام) + `replace("@@BODY@@")` است. `git pull` و `npm run test:tauri` — تست ساختاری جدید همین دسته خطا را قبل از build می‌گیرد |
+| `warning: unused import: tauri::Manager` | ایمپورت اضافه در `window_geometry` (چون `primary_monitor` متد ذاتی `tauri::App` است) | **حل شد** (هشدار پاک شد) |
 | `failed to bundle project: Failed to bundle app with makensis` | هر خطای makensis؛ خط واقعی چند خط بالاتر است | همان چند خط بالا را بخوانید؛ یا `npm run doctor` بخش ۸ |
 
 ## ۱۱) بررسی سلامت نسخه نصب‌شده
