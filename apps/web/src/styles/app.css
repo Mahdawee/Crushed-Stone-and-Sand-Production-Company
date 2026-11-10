@@ -557,11 +557,10 @@ html[data-theme='dark'] .user-chip .avatar { color: #8ff0e2; }
 .user-chip .meta span { font-size: .66rem; color: var(--text-3); }
 @media (max-width: 720px) { .user-chip .meta, .today-chip { display: none; } }
 
-/* یکدست کردن آیکن‌های منو (ایموجی رنگی → سیلوئت مینیمال) */
-.nav-link .ico { filter: grayscale(1); opacity: .65; font-size: .98rem; transition: opacity .12s, filter .12s; }
-.nav-link:hover .ico, .nav-link.active .ico { filter: none; opacity: 1; }
+/* آیکن‌ها حالا SVG خطی هستند؛ فقط شفافیت برای آرامش بصری */
+.nav-link .ico { opacity: .7; transition: opacity .12s; }
+.nav-link:hover .ico, .nav-link.active .ico { opacity: 1; }
 .brand-logo { font-family: var(--font); }
-.stat .spark { filter: grayscale(1); opacity: .22; font-size: 1.1rem; }
 .login-logo { box-shadow: 0 14px 40px -18px var(--accent); }
 
 /* ============================== responsive table ====================== */
