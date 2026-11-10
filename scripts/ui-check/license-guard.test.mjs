@@ -132,6 +132,38 @@ const apiClient = read(path.join(web, 'lib/api.ts'));
 ok('پاسخ ۴۲۳ کاربر را از سیستم بیرون نمی‌اندازد (فقط رویداد لایسنس)', /status === 423/.test(apiClient) && /farday:license-required/.test(apiClient));
 ok('۴۲۳ باعث خروج خودکار نمی‌شود', !/status === 423[\s\S]{0,400}setToken\(''\)/.test(apiClient));
 
+console.log('\n— «مُهر»: کلید عمومی داخل فایل اجرایی —');
+const buildRs = exists(path.join(root, 'src-tauri/build.rs')) ? read(path.join(root, 'src-tauri/build.rs')) : '';
+const sealRs = exists(path.join(root, 'src-tauri/src/seal.rs')) ? read(path.join(root, 'src-tauri/src/seal.rs')) : '';
+ok('build.rs کلید عمومی را داخل باینری می‌پزد (seal.rs)', /SEALED_PUBLIC_KEY/.test(buildRs) && /SEAL_FINGERPRINT/.test(buildRs));
+ok('seal.rs اثر انگشت SHA-256 را هنگام اجرا بررسی می‌کند', /sha256_hex/.test(sealRs) && /actual != expected/.test(sealRs));
+ok('seal.rs بردارهای مرجع SHA-256 را تست می‌کند', /e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/.test(sealRs));
+ok('پوسته کلید مُهرشده را به سرویس داخلی می‌دهد', /FD_SEALED_PUBLIC_KEY/.test(read(path.join(root, 'src-tauri/src/api_sidecar.rs'))));
+ok('API کلید مُهرشده را با بالاترین اولویت می‌خواند', /FD_SEALED_PUBLIC_KEY/.test(state) && /const sealed/.test(state));
+ok('منبع مُهر در مخزن هست', exists(path.join(root, 'src-tauri/seal/public-key.txt')));
+ok('build-desktop-api منبع مُهر را کاپی می‌کند', /seal/.test(read(path.join(root, 'scripts/build-desktop-api.mjs'))));
+
+console.log('\n— درهای پشتی (متغیرهای محیطی) —');
+const machineSrc = read(path.join(api, 'common/license-machine.ts'));
+ok('FD_MACHINE_KEY فقط در حالت توسعه اثر دارد', /FD_LICENSE_DEV === '1'/.test(machineSrc));
+ok('FD_LICENSE_PUBLIC_KEY فقط در حالت توسعه اثر دارد',
+  /FD_LICENSE_DEV/.test(state) && /licenseDevMode\(\)/.test(state));
+ok('هیچ کلید/فایلی از پوشه‌ی داده خوانده نمی‌شود (کاربر آن را کنترل می‌کند)',
+  !/path\.join\(dataDir\(\), PUBLIC_KEY_FILE\)/.test(state) && /shippedKeyPaths/.test(state));
+ok('مسیرهای مجاز کلید محدود و ثابت‌اند', /export function shippedKeyPaths/.test(state));
+
+console.log('\n— ابزار گرافیکی لایسنس —');
+const server = exists(path.join(root, 'tools/license/server.mjs')) ? read(path.join(root, 'tools/license/server.mjs')) : '';
+const uiHtml = exists(path.join(root, 'tools/license/ui.html')) ? read(path.join(root, 'tools/license/ui.html')) : '';
+ok('سرور ابزار فقط روی 127.0.0.1 گوش می‌دهد', /HOST = '127\.0\.0\.1'/.test(server));
+ok('سرور کلید خصوصی را برنمی‌گرداند (هیچ پاسخ JSON آن را ندارد)', !/privateKey:\s*priv/.test(server) && !/readFileSync\(privatePath[^)]*\)\s*,\s*200/.test(server));
+ok('توکن CSRF برای درخواست‌های تغییردهنده لازم است', /x-license-csrf/.test(server) && /guardMutation/.test(server));
+ok('مبدأ درخواست بررسی می‌شود (ضد CSRF مرورگری)', /origin/.test(server) && /مجاز نیست/.test(server));
+ok('شناسه‌ی فایل در برابر path traversal سنجیده می‌شود', /\^FR-LIC-\[A-Za-z0-9-\]/.test(server));
+ok('صفحه‌ی گرافیکی: صدور/کاپی/بازرسی/باطل‌کردن', /صدور لایسنس/.test(uiHtml) && /بازرسی/.test(uiHtml) && /revoke/.test(uiHtml));
+ok('صفحه‌ی گرافیکی راست‌به‌چپ و فارسی است', /dir="rtl"/.test(uiHtml) && /lang="fa"/.test(uiHtml));
+ok('دستور npm برای باز کردن ابزار هست', /license:ui/.test(read(path.join(root, 'package.json'))));
+
 console.log('\n— مستندسازی برای مالک برنامه —');
 ok('راهنمای لایسنس نوشته شده است', exists(path.join(root, 'docs/LICENSE.md')));
 const doc = exists(path.join(root, 'docs/LICENSE.md')) ? read(path.join(root, 'docs/LICENSE.md')) : '';

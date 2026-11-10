@@ -174,6 +174,8 @@ const machine = require(path.join(common, 'license-machine.js'));
       ...process.env,
       FD_DATA_DIR: dataDir,
       FD_PORT: String(PORT),
+      /* ⚠️ حالت توسعه لازم است، وگرنه برنامه متغیر محیطی را (عمداً) نمی‌پذیرد */
+      FD_LICENSE_DEV: '1',
       FD_LICENSE_PUBLIC_KEY: kp.publicKey,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -215,10 +217,12 @@ const machine = require(path.join(common, 'license-machine.js'));
   check('صفحه‌ی لایسنس بدون ورود در دسترس است', stTrial.status === 200);
   const dev = await api('GET', '/license/device');
   check('کلید دستگاه از API خوانده می‌شود', /^[0-9A-Z-]{29}$/.test(dev.body.machineKey || ''), dev.body.machineKey);
+  const dbg = await api('GET', '/license/status');
+  check('کلید عمومی داخل بسته/توسعه دیده می‌شود', dbg.body.publicKeyPresent === true, String(dbg.body.publicKeyPresent));
 
   /* ۲) لایسنس دستگاه دیگر رد می‌شود */
   const wrong = await api('POST', '/license/activate', { text: wrongMachine.text });
-  check('لایسنس دستگاه دیگر فعال نمی‌شود', wrong.status === 400, String(wrong.status));
+  check('لایسنس دستگاه دیگر فعال نمی‌شود', wrong.status === 400, `${wrong.status} ${String(wrong.body?.message || '').slice(0, 80)}`);
   check('پیام «دستگاه دیگری» روشن است', /دستگاه دیگر/.test(String(wrong.body.message || '')), String(wrong.body.message));
 
   /* ۳) لایسنس دست‌کاری‌شده رد می‌شود */

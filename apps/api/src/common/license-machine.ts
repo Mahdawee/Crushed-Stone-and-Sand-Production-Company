@@ -101,8 +101,15 @@ export function computeMachineKey(): string {
  * پشتیبانی وقتی مشتری کلید را تلفنی می‌خواند).
  */
 export async function machineKeyForDevice(): Promise<string> {
-  const override = (process.env.FD_MACHINE_KEY || '').trim();
-  if (override && isValidMachineKey(override)) return normalizeMachineKey(override);
+  /*
+   * جانشینی با متغیر محیطی فقط در حالت توسعه. وگرنه هر کسی می‌توانست با
+   * `set FD_MACHINE_KEY=…` کلید دستگاه را جعل کند و لایسنس دستگاه دیگری را
+   * روی این کمپیوتر فعال کند (درِ پشتی).
+   */
+  if (process.env.FD_LICENSE_DEV === '1') {
+    const override = (process.env.FD_MACHINE_KEY || '').trim();
+    if (override && isValidMachineKey(override)) return normalizeMachineKey(override);
+  }
   return computeMachineKey();
 }
 

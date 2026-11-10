@@ -345,9 +345,14 @@ if (!fs.existsSync(pubSrc)) {
   console.error('   اول این را اجرا کنید:  npm run license:keygen');
   process.exit(1);
 }
+/* ۱) فایل کنار برنامه (لایه‌ی دوم؛ اگر مُهر نباشد از این خوانده می‌شود) */
 fs.mkdirSync(path.join(out, 'public-key'), { recursive: true });
 fs.copyFileSync(pubSrc, path.join(out, 'public-key', 'farday-public.b64'));
-console.log('   ✔ کلید عمومی لایسنس داخل بسته کاپی شد');
+/* ۲) منبع مُهر: build.rs همین را داخل فایل اجرایی می‌پزد */
+const sealDir = path.join(root, 'src-tauri', 'seal');
+fs.mkdirSync(sealDir, { recursive: true });
+fs.copyFileSync(pubSrc, path.join(sealDir, 'public-key.txt'));
+console.log('   ✔ کلید عمومی لایسنس داخل بسته و در منبع مُهر (build.rs) کاپی شد');
 
 console.log('▶ 5/5 حذف فایل‌های نقشه و تست…');
 const walk = (dir) => {

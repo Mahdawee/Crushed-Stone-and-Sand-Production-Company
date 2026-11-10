@@ -48,27 +48,19 @@ export const LICENSE_FILE = 'license.key';
 export const TRIAL_FILE = 'license.trial';
 
 /**
- * کلید عمومی برنامه. ترتیب: متغیر محیطی (ابزار لایسنس) → فایل کنار دیتابیس
- * → فایل همراه بسته (`public-key/`، ساخته‌شده در زمان build) → ثابت پشتیبان.
+ * آیا برنامه در «حالت مالک/توسعه» اجرا می‌شود؟
+ *
+ * چرا این مهم است: متغیرهای محیطی برای ابزار لایسنس و تست لازم‌اند، ولی اگر
+ * در نسخه‌ی نصب‌شده فعال بمانند، یک درِ پشتی می‌شوند (`FD_MACHINE_KEY` کلید
+ * دستگاه را جعل می‌کند و `FD_LICENSE_PUBLIC_KEY` کلید عمومی را عوض می‌کند).
+ * پس این‌ها **فقط** وقتی پذیرفته می‌شوند که صریحاً `FD_LICENSE_DEV=1` هم
+ * تنظیم شده باشد — و نسخه‌ی نصب‌شده هرگز این متغیر را ندارد.
  */
-export function embeddedPublicKey(): string {
-  const env = (process.env.FD_LICENSE_PUBLIC_KEY || '').trim();
-  if (env) return env;
-  const dir = dataDir();
-  /*
-   * فایل کلید در بسته، `<install>/_up_/public-key/farday-public.b64` است و
-   * مسیر دقیقش با نوع نصب (nsis/msi/قابل حمل) جابه‌جا می‌شود. پس از چند
-   * ریشه‌ی محتمل نسبت به `__dirname` (= پوشه‌ی api) جست‌وجو می‌شود.
-   */
-  const here = __dirname;
-  const candidates = [
-    path.join(dir, PUBLIC_KEY_FILE),
-    path.join(here, PUBLIC_KEY_RESOURCE),
-    path.join(here, 'public-key', PUBLIC_KEY_RESOURCE),
-    path.join(here, '..', 'public-key', PUBLIC_KEY_RESOURCE),
-    path.join(here, '..', '..', 'public-key', PUBLIC_KEY_RESOURCE),
-    path.join(here, '..', '..', '..', 'public-key', PUBLIC_KEY_RESOURCE),
-  ];
+export function licenseDevMode(): boolean {
+  return process.env.FD_LICENSE_DEV === '1';
+}
+
+function readKeyFile(candidates: string[]): string {
   for (const c of candidates) {
     try {
       const t = fs.readFileSync(c, 'utf8').trim();
@@ -76,6 +68,60 @@ export function embeddedPublicKey(): string {
     } catch { /* next */ }
   }
   return '';
+}
+
+/**
+ * کلید عمومی برنامه — از فایل‌هایی که **داخل بسته** هستند.
+ *
+ * ترتیب:
+ *   ۱) `public-key/farday-public.b64` کنار خود api (بسته‌بندی معمول)
+ *   ۲) همان فایل در ریشه‌های بالاتر (`_up_/public-key/…` در NSIS)
+ *   ۳) متغیر محیطی — **فقط** در حالت توسعه (`FD_LICENSE_DEV=1`)
+ *
+ * چرا متغیر محیطی آخر و مشروط شد: بالاتر بودنش یعنی هر کسی با یک متغیر
+ * محیطی می‌توانست کلید عمومی دلخواه خودش را جا بزند و لایسنس جعلی بسازد.
+ */
+/**
+ * تنها مسیرهایی که «کلید عمومی خودِ برنامه» در آن‌ها ممکن است باشد.
+ *
+ * چرا یک تابع جدا: هیچ‌کدام از این مسیرها در اختیار کاربر نیست. اگر برنامه
+ * کلید را از پوشه‌ی داده یا مسیر دلخواه می‌خواند، کاربر می‌توانست کلید خودش
+ * را بگذارد و لایسنس جعلی بسازد.
+ */
+export function shippedKeyPaths(): string[] {
+  const here = __dirname;
+  return [
+    path.join(here, PUBLIC_KEY_RESOURCE),
+    path.join(here, 'public-key', PUBLIC_KEY_RESOURCE),
+    path.join(here, '..', 'public-key', PUBLIC_KEY_RESOURCE),
+    path.join(here, '..', '..', 'public-key', PUBLIC_KEY_RESOURCE),
+    path.join(here, '..', '..', '..', 'public-key', PUBLIC_KEY_RESOURCE),
+  ];
+}
+
+export function embeddedPublicKey(): string {
+  /*
+   * ۰) کلید «مُهرشده» داخل فایل اجرایی (پوسته‌ی Tauri آن را می‌فرستد).
+   *    این بالاترین اولویت را دارد و در نسخه‌ی نصب‌شده تنها منبع است.
+   */
+  const sealed = (process.env.FD_SEALED_PUBLIC_KEY || '').trim();
+  if (sealed) return sealed;
+  /*
+   * در حالت توسعه/تست، متغیر محیطی **مقدم** است (ابزار و تست‌ها کلید
+   * موقت خودشان را می‌دهند). در نسخه‌ی نصب‌شده این بلوک هرگز اجرا نمی‌شود
+   * چون `FD_LICENSE_DEV` وجود ندارد.
+   */
+  if (licenseDevMode()) {
+    const env = (process.env.FD_LICENSE_PUBLIC_KEY || '').trim();
+    if (env) return env;
+  }
+  const fromFiles = readKeyFile(shippedKeyPaths());
+  /*
+   * ⚠️ عمداً **هیچ** فایلی از پوشه‌ی داده خوانده نمی‌شود: آن پوشه در اختیار
+   * کاربر است. اگر برنامه کلید عمومی را از آنجا می‌خواند، کاربر می‌توانست
+   * جفت‌کلید خودش را بسازد، کلید عمومی‌اش را آنجا بگذارد و برای خودش
+   * لایسنس امضا کند — یعنی دور زدن کامل. کلید فقط از داخل بسته. */
+  return fromFiles;
 }
 
 /* ------------------------------------------------------------------ */

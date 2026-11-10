@@ -31,6 +31,8 @@ const privatePath = path.join(keysDir, 'private.key');
 const publicPath = path.join(keysDir, 'public.key');
 const ledgerPath = path.join(keysDir, 'issued.json');
 const bundledPublic = path.join(root, 'src-tauri', 'public-key', 'farday-public.b64');
+/** منبع «مُهر» — build.rs این را داخل فایل اجرایی می‌پزد */
+const sealSource = path.join(root, 'src-tauri', 'seal', 'public-key.txt');
 const apiPublic = path.join(root, 'apps', 'api', 'public-key', 'farday-public.b64');
 
 const b64u = (b) => Buffer.from(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -236,7 +238,7 @@ function cmdKeygen(opts) {
   fs.mkdirSync(keysDir, { recursive: true });
   fs.writeFileSync(privatePath, kp.privateKey + '\n', { encoding: 'utf8', mode: 0o600 });
   fs.writeFileSync(publicPath, kp.publicKey + '\n', 'utf8');
-  for (const p of [bundledPublic, apiPublic]) {
+  for (const p of [bundledPublic, apiPublic, sealSource]) {
     fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.writeFileSync(p, kp.publicKey + '\n', 'utf8');
   }

@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod api_sidecar;
+mod seal;
 
 use std::sync::Mutex;
 use std::time::Duration;

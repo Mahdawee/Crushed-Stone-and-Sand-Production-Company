@@ -299,6 +299,34 @@ ok('صفحه‌ی خطا راهنمای فارسی را نشان می‌دهد',
 ok('plain_path از format! با رشته‌ی خام استفاده نمی‌کند',
   !/format!\(\s*r#?"[\s\S]{0,80}\{[\s\S]{0,80}"#?\s*\)/.test(side));
 
+console.log('\n— «مُهر» کلید در باینری (build.rs و seal.rs) —');
+const buildRs = fs.readFileSync(path.join(root, 'src-tauri/build.rs'), 'utf8');
+const sealRs = fs.readFileSync(path.join(srcDir, 'seal.rs'), 'utf8');
+ok('build.rs یک sha256_hex کامل دارد (۶۴ ثابت K)', (buildRs.match(/0x[0-9a-f]{8},/g) || []).length >= 64);
+ok('seal.rs همان تابع را دارد', (sealRs.match(/0x[0-9a-f]{8},/g) || []).length >= 64);
+ok('build.rs خروجی seal.rs را در OUT_DIR می‌نویسد', /OUT_DIR/.test(buildRs) && /seal\.rs/.test(buildRs));
+ok('seal.rs شامل فایل تولیدشده است', /include!\(concat!\(env!\("OUT_DIR"\), "\/seal\.rs"\)\)/.test(sealRs));
+ok('اگر اثر انگشت نخواند، کلید را قبول نمی‌کند', /if actual != expected/.test(sealRs));
+ok('ترکیب/جداکردن XOR متقارن است (همان تابع mix در هر دو)', /fn mix\(byte: u8, i: usize\) -> u8/.test(buildRs) && /fn mix\(byte: u8, i: usize\) -> u8/.test(sealRs));
+ok('build.rs به تغییر کلید حساس است (rerun-if-changed)', buildRs.includes('rerun-if-changed') && buildRs.includes('key_file'));
+/* هیچ unwrap یا expect در مسیر اجرا */
+{
+  const parsed = parseRust(sealRs);
+  ok('seal.rs بدون unwrap', !/\.unwrap\(\)/.test(parsed.code));
+}
+/* براکت‌های فایل‌های تازه هم متعادل باشند (فایل‌های تازه در حلقه‌ی اول نبودند) */
+for (const f of ['seal.rs', '../build.rs']) {
+  const src2 = fs.readFileSync(path.join(srcDir, f), 'utf8');
+  const { code } = parseRust(src2);
+  let bal = true;
+  for (const [o, c] of [['{', '}'], ['(', ')'], ['[', ']']]) {
+    const a = (code.match(new RegExp('\\' + o, 'g')) || []).length;
+    const b = (code.match(new RegExp('\\' + c, 'g')) || []).length;
+    if (a !== b) bal = false;
+  }
+  ok(`${f}: براکت‌ها متعادل‌اند`, bal);
+}
+
 console.log('\n— ایمنی‌های زبان Rust —');
 ok('هیچ unwrap در مسیر راه‌اندازی (بدون کامنت)', !/\.unwrap\(\)/.test(parseRust(main).code.replace(/expect\(/g, 'expect(')));
 ok('let-else فقط با نسخه‌ی Rust پشتیبانی‌شده', /rust-version = "1\.77/.test(fs.readFileSync(path.join(root, 'src-tauri/Cargo.toml'), 'utf8')));

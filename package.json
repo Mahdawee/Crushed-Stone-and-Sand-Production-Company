@@ -46,7 +46,8 @@
     "license:revoke": "node scripts/license-tool.mjs revoke",
     "license:export-pub": "node scripts/license-tool.mjs export-pub",
     "test:license": "npm run build -w @farday/api && node apps/api/test/license.test.js",
-    "test:license:guard": "node scripts/ui-check/license-guard.test.mjs"
+    "test:license:guard": "node scripts/ui-check/license-guard.test.mjs",
+    "license:ui": "node tools/license/server.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.4",

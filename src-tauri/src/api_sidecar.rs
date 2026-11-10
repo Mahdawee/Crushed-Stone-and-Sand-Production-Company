@@ -463,6 +463,15 @@ pub fn start(app: &tauri::AppHandle, data_dir: &Path) -> Result<Started, String>
         .stdout(out)
         .stderr(err);
 
+    /*
+     * کلید عمومی لایسنس از **داخل باینری** (مُهر) به سرویس داخلی داده می‌شود.
+     * چرا: اگر کلید فقط فایل کنار برنامه بود، با Notepad عوض می‌شد و هر کسی
+     * برای خودش لایسنس می‌ساخت. حالا عوض‌کردنش یعنی وصله‌کردن فایل اجرایی.
+     */
+    if let Some(pk) = crate::seal::unsealed_public_key() {
+        cmd.env("FD_SEALED_PUBLIC_KEY", pk);
+    }
+
     #[cfg(windows)]
     {
         /* CREATE_NO_WINDOW: without it Windows may flash a console window and,
@@ -668,6 +677,10 @@ pub fn run_recovery(app: &tauri::AppHandle, data_dir: &Path, extra_args: &[&str]
         .stdin(Stdio::null())
         .stdout(Stdio::from(open_log()?))
         .stderr(Stdio::from(open_log()?));
+    /* حالت نجات هم باید لایسنس را ببیند (ابزار نجات بدون لایسنس کار می‌کند) */
+    if let Some(pk) = crate::seal::unsealed_public_key() {
+        cmd.env("FD_SEALED_PUBLIC_KEY", pk);
+    }
 
     #[cfg(windows)]
     {
