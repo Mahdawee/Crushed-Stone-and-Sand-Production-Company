@@ -38,6 +38,7 @@ const ok = (n, c, extra = '') => {
 function parseRust(source) {
   let code = '';
   const rawStrings = [];
+  const normalStrings = [];
   let i = 0;
   while (i < source.length) {
     /* کامنت خطی */
@@ -75,14 +76,16 @@ function parseRust(source) {
         continue;
       }
     }
-    /* رشته‌ی معمولی "…" با backslash */
+    /* رشته‌ی معمولی "…" با backslash — برای بررسی escape‌ها نگه داشته می‌شود */
     if (source[i] === '"') {
+      const open = i; // شامل خودِ "
       let k = i + 1;
       while (k < source.length) {
         if (source[k] === '\\') { k += 2; continue; }
         if (source[k] === '"') { k++; break; }
         k++;
       }
+      normalStrings.push({ start: open, text: source.slice(open + 1, k - 1) });
       code += '""';
       i = k;
       continue;
@@ -96,7 +99,7 @@ function parseRust(source) {
     }
     code += source[i++];
   }
-  return { code, rawStrings };
+  return { code, rawStrings, normalStrings };
 }
 
 const files = fs.readdirSync(srcDir).filter((f) => f.endsWith('.rs'));
@@ -115,6 +118,62 @@ for (const f of files) {
   }
   ok(`${f}: براکت‌ها متعادل‌اند`, balanced, detail.join(' '));
 }
+
+console.log('\n— escape‌های نامعتبر در رشته‌های معمولی (خطای unknown character escape) —');
+/*
+ * سه بار پشت سر هم ساخت روی ویندوز با خطای کامپایل شکست خورد و هر بار یک
+ * الگوی تازه بود. آخرینش:
+ *
+ *   error: unknown character escape: `C`
+ *      --> src\api_sidecar.rs:553:52
+ *        "… مسیر ویندوزی (\\?\C:\…) …"
+ *
+ * ریشه: در رشته‌ی **معمولی** Rust هر `\` شروع یک escape است. `\\` یک
+ * بک‌اسلش می‌دهد، پس `(\` + `)?` می‌ماند و بعد `\C` و `\…` که وجود ندارند.
+ * این تست همان قانون lexer را پیاده می‌کند تا دیگر لازم نباشد کاربر خطا را
+ * کشف کند.
+ */
+const VALID_ESCAPES = new Set(['n', 'r', 't', '\\', '0', "'", '"']);
+function badEscapes(text) {
+  const bad = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== '\\') continue;
+    const c = text[i + 1];
+    if (c === undefined) { bad.push('\\<پایان رشته>'); continue; }
+    if (c === '\n') { i++; continue; } // ادامه‌ی خط: بک‌اسلش + خط جدید مجاز است
+    if (VALID_ESCAPES.has(c)) { i++; continue; }
+    if (c === 'x') { i += 3; continue; }
+    if (c === 'u' && text[i + 2] === '{') {
+      const close = text.indexOf('}', i + 3);
+      i = close < 0 ? text.length : close;
+      continue;
+    }
+    bad.push('\\' + c);
+    i++;
+  }
+  return bad;
+}
+/* صحت خودِ تابع را با همان نمونه‌ی کاربر می‌سنجیم (بک‌اسلش با کد ۹۲) */
+const BS = String.fromCharCode(92);
+const sampleBad = badEscapes('(' + BS + BS + '?' + BS + 'C:)' + '(' + BS + '…' + ')');
+const sampleGood = badEscapes('(' + BS + BS + BS + BS + '?' + BS + BS + 'C:' + BS + BS + '…' + ')');
+ok('سنجه‌ی escape: نمونه‌ی خطادار کاربر را می‌گیرد', sampleBad.length >= 1, sampleBad.join(' '));
+ok('سنجه‌ی escape: شکل درست (بک‌اسلش دوبل) را قبول می‌کند', sampleGood.length === 0, sampleGood.join(' '));
+
+let escapeProblems = 0;
+for (const f of files) {
+  const src = fs.readFileSync(path.join(srcDir, f), 'utf8');
+  const { normalStrings } = parseRust(src);
+  for (const str of normalStrings) {
+    const bad = badEscapes(str.text);
+    if (bad.length) {
+      escapeProblems++;
+      const line = src.slice(0, str.start).split('\n').length;
+      console.log(`     ↳ ${f}:${line} → escape نامعتبر: ${bad.join(', ')}`);
+    }
+  }
+}
+ok('هیچ رشته‌ی معمولی escape نامعتبر ندارد (خطای unknown character escape)', escapeProblems === 0);
 
 console.log('\n— رشته‌های خام و format! (خطای «invalid format string») —');
 for (const f of files) {
