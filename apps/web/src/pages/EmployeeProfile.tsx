@@ -37,7 +37,7 @@ export default function EmployeeProfile() {
 
       <div className="grid c4">
         <Stat label="معاش ثابت" value={money(e.baseSalary)} foot="افغانی" icon="💰" />
-        <Stat label="ایام حاضر (۶۰ روز اخیر)" value={sum.present} foot={`غایب ${sum.absent} — رخصت ${sum.leave}`} kind="ok" icon="✔" />
+        <Stat label="ایام حاضر (آخرین سوابق)" value={sum.present} foot={`غایب ${sum.absent} — رخصت ${sum.leave}`} kind="ok" icon="✔" />
         <Stat label="اضافه کاری" value={`${money(sum.overtime)} ساعت`} foot="مجموع ثبت‌شده" icon="⏱" />
         <Stat label="مجموع معاش پرداخت‌شده" value={money(totalSalary)} foot={`${(d.salaries || []).length} سند`} icon="🧾" />
       </div>
@@ -54,7 +54,7 @@ export default function EmployeeProfile() {
               <dt>شماره تماس</dt><dd className="mono">{e.phone || '—'}</dd>
               <dt>شماره تذکره</dt><dd className="mono">{e.nationalId || '—'}</dd>
               <dt>مدت قرارداد</dt><dd>{e.contractPeriod || '—'}</dd>
-              <dt>آدرس</dt><dd>{e.address || '—'}</dd>
+              <dt>آدرس</dt><dd style={{ fontWeight: 400 }}>{e.address || '—'}</dd>
               <dt>وضعیت</dt><dd><span className={`badge ${e.status === 'active' ? 'ok' : 'muted'}`}>{e.status === 'active' ? 'فعال' : 'غیر فعال'}</span></dd>
               <dt>توضیحات</dt><dd className="muted">{e.note || '—'}</dd>
             </dl>
@@ -82,7 +82,7 @@ export default function EmployeeProfile() {
       </div>
 
       <div className="card">
-        <div className="card-h"><h3>حضور و غیاب اخیر</h3><div style={{ flex: 1 }} /><Link className="small" to={`/attendance?employee=${e.id}`}>در شیت حضور</Link></div>
+        <div className="card-h"><h3>حضور و غیاب اخیر</h3><div style={{ flex: 1 }} /><Link className="small" to="/attendance">رفتن به شیت حضور و غیاب ←</Link></div>
         <div className="card-b tight">
           <Table head={['تاریخ', 'وضعیت', 'ورود', 'خروج', 'اضافه کاری', 'توضیحات']} compact empty="سابقه‌ای موجود نیست.">
             {att.map((r: any) => (
