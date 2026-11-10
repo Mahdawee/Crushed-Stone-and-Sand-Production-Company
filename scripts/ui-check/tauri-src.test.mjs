@@ -19,6 +19,8 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const main = fs.readFileSync(path.join(root, 'src-tauri/src/main.rs'), 'utf8');
 const side = fs.readFileSync(path.join(root, 'src-tauri/src/api_sidecar.rs'), 'utf8');
+/* سورس API (هم‌خوانی پورت و مسیر داده با پوسته) */
+const apiMain = fs.readFileSync(path.join(root, 'apps/api/src/main.ts'), 'utf8');
 const cargo = fs.readFileSync(path.join(root, 'src-tauri/Cargo.toml'), 'utf8');
 
 let pass = 0, fail = 0;
@@ -32,9 +34,18 @@ ok('مسیرها برای ویندوز با / نرمال می‌شوند', /fn a
 ok('node.exe هم کنار app.js و هم یک پله بالاتر جست‌وجو می‌شود', /NODE_CANDIDATES/.test(side) && /roots\.push/.test(side));
 ok('اگر node همراه نبود، Node سیستم جست‌وجو می‌شود', /fn system_node/.test(side) && /Program Files/.test(side));
 ok('ap.js از مسیر واقعی منابع canonicalize می‌شود', /canonicalize/.test(side));
-ok('پورت اشغال‌شده با پیام روشن گزارش می‌شود', /port_busy/.test(side) && /در اختیار برنامه دیگری/.test(side));
+/*
+ * باگ بازرسی بسته‌بندی: قبلاً اگر پورت ۴۳۱۷ اشغال بود، برنامه با پیام
+ * «پورت در اختیار برنامه دیگری است» **بالا نمی‌آمد** — یعنی روی هر لپ‌تاپی
+ * کار نمی‌کرد. حالا پورت اشغال = نود روی پورت آزاد بعدی (`FD_PORT=0`) و
+ * پوسته پورت واقعی را از خط `FARDAY_PORT` در api.log می‌خواند.
+ */
+ok('پورت اشغال‌شده بن‌بست نیست (نود روی پورت آزاد بالا می‌آید)', /port_busy|port_open\(API_PORT\)/.test(side) && /requested_port/.test(side));
+ok('پورت واقعی از api.log خوانده می‌شود (FARDAY_PORT)', /FARDAY_PORT/.test(side) && /fn read_announced_port/.test(side));
+ok('سمت API هم پورت ۰ را می‌فهمد و پورت واقعی را اعلام می‌کند',
+  /FARDAY_PORT \$\{port\}/.test(apiMain) && /listenWithFallback/.test(apiMain));
 ok('آماده بودن با درخواست واقعی /api/health سنجیده می‌شود', /\/api\/health/.test(side));
-ok('انتظار برای آماده شدن مقدار برمی‌گرداند (bool)', /pub fn wait_until_ready\(seconds: u64\) -> bool/.test(side));
+ok('انتظار برای آماده شدن **پورت** را برمی‌گرداند (Option<u16>)', /pub fn wait_until_ready\([^)]*\) -> Option<u16>/.test(side));
 
 console.log('\n— پوسته دسکتاپ: پنجره —');
 ok('حالت توسعه با tauri::is_dev() تشخیص داده می‌شود (cfg(dev) وجود ندارد)', /tauri::is_dev\(\)/.test(main) && !/cfg!\(\s*dev\s*\)/.test(main.replace(/\/\/.*$/gm, '')));
@@ -43,13 +54,21 @@ ok('انتظار و راه‌اندازی در رشته‌ی جداگانه اس
 ok('بعد از آماده شدن، خودش به رابط کاربری می‌رود', /w\.navigate\(url\)/.test(main));
 ok('صفحه «در حال آماده‌سازی» بلافاصله نشان داده می‌شود', /SPLASH_JS/.test(main) && /initialization_script/.test(main));
 ok('SPLASH فقط روی about: عمل می‌کند (UI واقعی بازنویسی نمی‌شود)', /location\.protocol !== 'about:'/.test(main));
-ok('نتیجه انتظار استفاده می‌شود (قبلاً نادیده گرفته می‌شد)', /let ready = api_sidecar::wait_until_ready/.test(main) && /if ready \{/.test(main));
+ok('نتیجه انتظار استفاده می‌شود (پورت در آدرس پنجره به‌کار می‌رود)',
+  /let ready = if dev_mode\(\)/.test(main) && /if let Some\(p\) = ready/.test(main) && /http:\/\/127\.0\.0\.1:\{api_port\}\//.test(main));
 ok('در خطا، صفحه توضیح فارسی نشان داده می‌شود (پنجره سفید نه)', /fn error_page/.test(main) && /startup=error|document\.write/.test(main));
 ok('خطاها در shell.log نوشته می‌شوند', /log_line/.test(main) && /shell\.log/.test(side));
 ok('لاگ شامل آخرین خطوط api.log است', /tail_log/.test(main));
 ok('پوشه داده even با خطای app_data_dir ساخته می‌شود', /unwrap_or_else\(\|_\| std::env::temp_dir/.test(main));
 ok('بستن پنجره سرویس را می‌کشد (بدون node یتیم)', /CloseRequested/.test(main) && /child\.kill\(\)/.test(main));
-ok('پنجره با اندازه و حداقل اندازه ساخته می‌شود', /inner_size\(1360\.0, 860\.0\)/.test(main) && /min_inner_size/.test(main));
+/*
+ * اندازه‌ی ثابت ۱۳۶۰×۸۶۰ روی لپ‌تاپ کوچک از صفحه بزرگ‌تر می‌شد. حالا اندازه
+ * از مانیتور محاسبه می‌شود و حداقل اندازه هم کوچک‌تر (و محدود به صفحه) است.
+ */
+ok('اندازه پنجره از مانیتور محاسبه می‌شود (نه عدد ثابت)',
+  /fn window_geometry\(app: &tauri::App\)/.test(main) && /primary_monitor\(\)/.test(main) && /scale_factor\(\)/.test(main));
+ok('حداقل اندازه از صفحه بزرگ‌تر نمی‌شود', /min_w = 900\.0_f64\.min/.test(main) && /min_h = 600\.0_f64\.min/.test(main));
+ok('پنجره با اندازه محاسبه‌شده ساخته می‌شود', /inner_size\(win_w, win_h\)/.test(main) && /min_inner_size\(min_w, min_h\)/.test(main));
 
 console.log('\n— پوسته دسکتاپ: سلامت کد Rust (خطاهای واقعی کامپایل) —');
 /*
@@ -59,7 +78,10 @@ console.log('\n— پوسته دسکتاپ: سلامت کد Rust (خطاهای �
  */
 const rustAll = main + '\n' + side;
 ok('روی Stdio کاپی گرفته نمی‌شود (try_clone ندارد)', !/\.try_clone\(\)/.test(side));
-ok('لاگ برای stdout و stderr جداگانه باز می‌شود', (side.match(/Stdio::from\(open_log\(\)\?\)/g) || []).length === 2);
+/* دو محل: اجرای سرویس اصلی + ابزار نجات؛ هر دو باید با استریم‌های فایل‌شده اجرا شوند */
+ok('در هر دو مسیر (سرویس و ابزار نجات) لاگ جدا برای stdout/stderr باز می‌شود',
+  (side.match(/Stdio::from\(open_log\(\)\?\)/g) || []).length >= 2 &&
+  /run_recovery/.test(side));
 /* کامنت‌ها/رشته‌ها حذف می‌شوند تا «توضیح درباره‌ی unwrap» با «خودِ unwrap» قاطی نشود */
 const stripRust = (t) => t
   .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -67,8 +89,8 @@ const stripRust = (t) => t
 const sideCode = stripRust(side);
 const mainCode = stripRust(main);
 ok('در مسیر راه‌اندازی unwrap روی آدرس پورت نداریم', !/parse\(\)\.unwrap\(\)/.test(sideCode));
-ok('آدرس پورت از یک تابع امن می‌آید', /fn api_addr\(\) -> Option<std::net::SocketAddr>/.test(side));
-ok('let-else مجاز است (Rust ≥ 1.65 و نسخه پروژه 1.77)', /rust-version = "1\.77/.test(cargo) && /let Some\(addr\) = api_addr\(\) else/.test(side));
+ok('آدرس پورت از یک تابع امن می‌آید', /fn api_addr\(port: u16\) -> Option<std::net::SocketAddr>/.test(side));
+ok('let-else مجاز است (Rust ≥ 1.65 و نسخه پروژه 1.77)', /rust-version = "1\.77/.test(cargo) && /let Some\(addr\) = api_addr\(port\) else/.test(side));
 ok('رشته فقط AppHandle را می‌گیرد (هیچ ساختار غیر-Send منتقل نمی‌شود)',
   /let handle = app\.handle\(\)\.clone\(\)/.test(main) && /handle\.get_webview_window\("main"\)/.test(main));
 ok('پنجره داخل رشته پیدا می‌شود، نه با انتقال از setup', !/move \|\| \{\s*let win/.test(main) || true);
@@ -84,8 +106,24 @@ console.log('\n— پوسته دسکتاپ: بسته‌بندی —');
 ok('tauri 2 در Cargo.toml است', /tauri = \{ version = "2"/.test(cargo));
 ok('پلاگین‌های استفاده‌شده اعلام شده‌اند', /tauri-plugin-shell/.test(cargo) && /tauri-plugin-dialog/.test(cargo) && /tauri-plugin-fs/.test(cargo));
 
+console.log('\n— نصب روی هر لپ‌تاپی (بدون نصب چیز اضافه / بدون انترنت) —');
+const conf = JSON.parse(fs.readFileSync(path.join(root, 'src-tauri/tauri.conf.json'), 'utf8'));
+ok('نصب‌کننده WebView2 را همراه دارد (embedBootstrapper) — نه دانلود از انترنت',
+  conf.bundle?.windows?.webviewInstallMode?.type === 'embedBootstrapper');
+ok('نصب بدون دسترسی مدیر (currentUser)', conf.bundle?.windows?.nsis?.installMode === 'currentUser');
+ok('node.exe اجباری است (نصب‌کننده بدون نود ساخته نمی‌شود)',
+  /--require-node/.test(fs.readFileSync(path.join(root, 'package.json'), 'utf8')));
+ok('مسیر ساخت آفلاین با ZIP محلی وجود دارد',
+  fs.existsSync(path.join(root, 'scripts/prepare-offline-desktop.mjs')));
+ok('حالت نجات بدون WebView (--cli) در پوسته هست', /--cli/.test(main) && /--recovery/.test(main));
+ok('ابزار نجات (بازنشانی رمز) در API هست', fs.existsSync(path.join(root, 'apps/api/src/cli/recovery.ts')));
+ok('صفحه خطا دکمه نجات نشان می‌دهد', /__fd\('--reset-admin'\)/.test(main));
+ok('دستور recovery در پوسته ثبت شده', /generate_handler!\[recovery\]/.test(main));
+ok('ورودی دستور recovery محدود به مقادیر مجاز است', /"--reset-admin" => /.test(main) && /_ => \{/.test(main));
+ok('کد برنامه هیچ منبع اینترنتی لازم ندارد (CSP فقط self و لوکال)',
+  !/https:\/\//.test(conf.app?.security?.csp || ''));
+
 console.log('\n— هم‌خوانی با API —');
-const apiMain = fs.readFileSync(path.join(root, 'apps/api/src/main.ts'), 'utf8');
 ok('API همان پورت 4317 را می‌خواند', /FD_PORT/.test(apiMain) && /4317/.test(side));
 ok('API مسیر داده را از FD_DATA_DIR می‌گیرد', /FD_DATA_DIR/.test(apiMain) || /FD_DATA_DIR/.test(fs.readFileSync(path.join(root, 'apps/api/src/db.ts'), 'utf8')));
 ok('API مسیر رابط build شده را خودش سرو می‌کند', /express\.static/.test(apiMain));

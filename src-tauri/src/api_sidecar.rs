@@ -12,14 +12,26 @@
 //!     `The handle is invalid` (error 6) inside a GUI process. stdout/stderr are
 //!     therefore always redirected to `api.log`.
 //!  2. `node.exe` / `app.js` may live in a path with spaces or non-ASCII
-//!     characters (e.g. `C:\Users\DELL\AppData\Local\Programs\Farday Roshan`).
-//!     Paths are canonicalised and quoted where the platform needs it.
+//!     characters (e.g. `C:\Users\DELL\AppData\Local\Programs\Farday Roshan`
+//!     یا `C:\Users\علی\...`). Paths are canonicalised and passed with forward
+//!     slashes so quoting never matters.
+//!
+//! ## پورت: از یک پورت ثابت تا «هر پورت آزاد»
+//!
+//! باگ پیدا شده (بازرسی بسته‌بندی): اگر روی کمپیوتر مقصد برنامه‌ی دیگری پورت
+//! 4317 را گرفته بود (یا کارخانه/برنامه‌ی دیگر)، برنامه با پیام «پورت در
+//! اختیار برنامه دیگری است» بالا نمی‌آمد — یعنی «روی هر لپ‌تاپی کار می‌کند»
+//! صادق نبود. حالا پورت با `FD_PORT=0` به نود سپرده می‌شود: نود خودش یک
+//! پورت آزاد می‌گیرد و آن را با خط `FARDAY_PORT <n>` در `api.log` (و در
+//! stdout که همان فایل است) اعلام می‌کند؛ پوسته همان را می‌خواند و پنجره را
+//! به همان آدرس می‌برد. یک منبع حقیقت، بدون حدس.
 
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+/// پورت ترجیحی — برای اینکه آدرس همیشه یکی باشد و کش مرورگر/WebView عوض نشود.
 pub const API_PORT: u16 = 4317;
 
 /* ------------------------------------------------------------------ */
@@ -44,37 +56,37 @@ pub fn log_line(data_dir: &Path, msg: &str) {
 /* port checks                                                         */
 /* ------------------------------------------------------------------ */
 
-/// آدرس محلی پورت API — بدون `unwrap`.
+/// آدرس محلی یک پورت — بدون `unwrap`.
 ///
 /// `"127.0.0.1:4317".parse().unwrap()` عملاً هرگز شکست نمی‌خورد، ولی یک
 /// `unwrap` در مسیر راه‌اندازی یعنی «اگر روزی شکست، برنامه بی‌صدا می‌میرد»
 /// (همان چیزی که کاربر «غیب شدن» می‌بیند). اینجا نتیجه به Option تبدیل می‌شود.
-fn api_addr() -> Option<std::net::SocketAddr> {
+fn api_addr(port: u16) -> Option<std::net::SocketAddr> {
     use std::net::SocketAddr;
-    format!("127.0.0.1:{API_PORT}").parse::<SocketAddr>().ok()
+    format!("127.0.0.1:{port}").parse::<SocketAddr>().ok()
 }
 
-fn port_open() -> bool {
-    match api_addr() {
+fn port_open(port: u16) -> bool {
+    match api_addr(port) {
         Some(addr) => TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok(),
         None => false,
     }
 }
 
-/// True when *our* API answers (not some other program that grabbed the port).
-fn ours_is_running() -> bool {
-    if !port_open() {
+/// True when *our* API answers on `port` (not some other program that grabbed it).
+pub fn ours_is_running(port: u16) -> bool {
+    if !port_open(port) {
         return false;
     }
     /* Ask the API itself. A raw TCP connect is not proof: any program can
        listen on 4317 and then no window content would ever load. */
-    let Some(addr) = api_addr() else { return false };
+    let Some(addr) = api_addr(port) else { return false };
     match std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(400)) {
         Ok(mut stream) => {
             use std::io::{Read, Write};
             let _ = stream.set_read_timeout(Some(Duration::from_millis(600)));
             let req = format!(
-                "GET /api/health HTTP/1.0\r\nHost: 127.0.0.1:{API_PORT}\r\nConnection: close\r\n\r\n"
+                "GET /api/health HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
             );
             if stream.write_all(req.as_bytes()).is_err() {
                 return false;
@@ -89,8 +101,8 @@ fn ours_is_running() -> bool {
 }
 
 /// True if *something* (maybe a different program) occupies the port.
-pub fn port_busy() -> bool {
-    port_open() && !ours_is_running()
+pub fn port_busy(port: u16) -> bool {
+    port_open(port) && !ours_is_running(port)
 }
 
 /* ------------------------------------------------------------------ */
@@ -116,9 +128,28 @@ fn arg_path(p: &Path) -> std::ffi::OsString {
 /// runs, so every plausible location is checked and the first hit wins.
 pub fn resource_dir(app: &tauri::AppHandle) -> PathBuf {
     use tauri::Manager;
+    let mut bases: Vec<PathBuf> = Vec::new();
+    if let Ok(dir) = app.path().resource_dir() {
+        bases.push(dir);
+    }
+    resource_dir_from(bases)
+}
+
+/// مثل `resource_dir` ولی بدون نیاز به `AppHandle` — برای حالت `--cli`
+/// که پنجره‌ای وجود ندارد (و حتی وقتی WebView2 خراب است باید کار کند).
+pub fn resource_dir_headless() -> PathBuf {
+    resource_dir_from(Vec::new())
+}
+
+/// مسیرهای «node + app.js» بدون `AppHandle` (حالت CLI).
+pub fn runtime_paths_public() -> Result<(PathBuf, PathBuf), String> {
+    runtime_paths_from(resource_dir_headless())
+}
+
+fn resource_dir_from(bases: Vec<PathBuf>) -> PathBuf {
     let mut candidates: Vec<PathBuf> = Vec::new();
 
-    if let Ok(dir) = app.path().resource_dir() {
+    for dir in bases {
         candidates.push(dir.join("api")); // <resource_dir>/api   (normal)
         candidates.push(dir.clone()); // resources flattened
         candidates.push(dir.join("_up_").join("api")); // bundle.resources parent
@@ -206,18 +237,51 @@ pub struct Started {
     pub child: Child,
     /// A human readable description of how the API was reached, for the log.
     pub how: String,
+    /// پورتی که واقعاً استفاده می‌شود (ممکن است 4317 نباشد).
+    pub port: u16,
+}
+
+/// پورت اعلام‌شده از سوی نود را از `api.log` می‌خواند.
+///
+/// نود با `FD_PORT=0` پورت آزاد می‌گیرد و `FARDAY_PORT <n>` را چاپ می‌کند.
+/// این تابع آخرین خطِ `FARDAY_PORT` را برمی‌گرداند (چون لاگ append است و
+/// اجراهای قبلی هم در همان فایل‌اند).
+fn read_announced_port(log_path: &Path) -> Option<u16> {
+    let text = std::fs::read_to_string(log_path).ok()?;
+    let mut found: Option<u16> = None;
+    for line in text.lines() {
+        if let Some(rest) = line.split("FARDAY_PORT ").nth(1) {
+            let digits: String = rest
+                .trim()
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
+            if let Ok(p) = digits.parse::<u16>() {
+                if p > 0 {
+                    found = Some(p);
+                }
+            }
+        }
+    }
+    found
 }
 
 /// Starts the API and returns the child process (or a clear error message).
+///
+/// * اگر پورت ترجیحی (4317) آزاد است → همان استفاده می‌شود (آدرس ثابت).
+/// * اگر برنامه‌ی دیگری آن را گرفته است → نود روی **هر پورت آزادی** بالا
+///   می‌آید و پوسته آن را از لاگ می‌خواند. دیگر «پورت اشغال است» بن‌بست نیست.
 pub fn start(app: &tauri::AppHandle, data_dir: &Path) -> Result<Started, String> {
-    if ours_is_running() {
-        return Err("API already running — reusing it".into());
+    /*
+     * یک نمونه‌ی زنده از برنامه‌ی قبلی: همان را استفاده می‌کنیم (نه دو نسخه).
+     * روی پورت ترجیحی و پورت جایگزین هر دو بررسی می‌شود.
+     */
+    for candidate in [API_PORT, API_PORT + 1] {
+        if ours_is_running(candidate) {
+            return Err(format!("API already running on {candidate} — reusing it"));
+        }
     }
-    if port_busy() {
-        return Err(format!(
-            "پورت {API_PORT} در اختیار برنامه دیگری است. آن برنامه را ببندید یا ویندوز را ری‌استارت کنید."
-        ));
-    }
+    let fixed_port_free = !port_open(API_PORT);
 
     let dir = resource_dir(app);
     let entry = if dir.join("app.js").exists() {
@@ -266,11 +330,20 @@ pub fn start(app: &tauri::AppHandle, data_dir: &Path) -> Result<Started, String>
     let out = Stdio::from(open_log()?);
     let err = Stdio::from(open_log()?);
 
+    /* پورت ۰ = «نود هر پورت آزادی را انتخاب کن»؛ در غیر این صورت پورت ثابت. */
+    let requested_port = if fixed_port_free { API_PORT } else { 0 };
+    let mut log_note = String::new();
+    if !fixed_port_free {
+        log_note = format!(
+            "پورت {API_PORT} آزاد نیست (برنامه‌ی دیگری آن را گرفته) — نود روی پورت آزاد بعدی بالا می‌آید.\n"
+        );
+    }
+
     let mut cmd = Command::new(&program);
     cmd.arg(arg_path(&entry))
         .current_dir(&dir)
         .env("FD_DATA_DIR", data_dir)
-        .env("FD_PORT", API_PORT.to_string())
+        .env("FD_PORT", requested_port.to_string())
         .env("FD_HOST", "127.0.0.1")
         .env("NODE_ENV", "production")
         .env("NODE_OPTIONS", "--no-warnings")
@@ -291,19 +364,41 @@ pub fn start(app: &tauri::AppHandle, data_dir: &Path) -> Result<Started, String>
         .spawn()
         .map_err(|e| format!("اجرای سرویس داخلی ناموفق بود ({how}): {e}"))?;
 
-    Ok(Started { child, how })
+    if !log_note.is_empty() {
+        log_line(data_dir, log_note.trim_end());
+    }
+
+    Ok(Started {
+        child,
+        how,
+        port: if fixed_port_free { API_PORT } else { 0 },
+    })
 }
 
-/// Waits (max `seconds`) until *our* API answers. Returns true when ready.
-pub fn wait_until_ready(seconds: u64) -> bool {
+/// Waits (max `seconds`) until the API answers, and returns the port it used.
+///
+/// اگر پورت ثابت درخواست شده باشد همان بررسی می‌شود؛ اگر نود پورت آزاد
+/// گرفته باشد، هر ۲۵۰ میلی‌ثانیه لاگ خوانده می‌شود تا پورت اعلام شود.
+pub fn wait_until_ready(data_dir: &Path, requested_port: u16, seconds: u64) -> Option<u16> {
+    let log_path = data_dir.join("api.log");
     let deadline = Instant::now() + Duration::from_secs(seconds);
     while Instant::now() < deadline {
-        if ours_is_running() {
-            return true;
+        if requested_port != 0 {
+            if ours_is_running(requested_port) {
+                return Some(requested_port);
+            }
+        } else if let Some(p) = read_announced_port(&log_path) {
+            if ours_is_running(p) {
+                return Some(p);
+            }
         }
         std::thread::sleep(Duration::from_millis(250));
     }
-    false
+    /* آخرین تلاش: شاید پورت اعلام شده ولی بررسی ما دیر شده باشد */
+    if requested_port == 0 {
+        return read_announced_port(&log_path).filter(|p| ours_is_running(*p));
+    }
+    None
 }
 
 /// Last lines of `api.log`, for showing the user something actionable.
@@ -332,4 +427,82 @@ pub fn first_free_port_from(start_port: u16) -> Option<u16> {
         }
     }
     None
+}
+
+/* ------------------------------------------------------------------ */
+/* recovery (رمز فراموش‌شده / بررسی داده — بدون WebView)               */
+/* ------------------------------------------------------------------ */
+
+/// مسیرهای پیدا‌شده‌ی `node` و `app.js` برای اجرای ابزار نجات.
+fn runtime_paths(app: &tauri::AppHandle) -> Result<(PathBuf, PathBuf), String> {
+    runtime_paths_from(resource_dir(app))
+}
+
+fn runtime_paths_from(dir: PathBuf) -> Result<(PathBuf, PathBuf), String> {
+    let entry = if dir.join("app.js").exists() {
+        dir.join("app.js")
+    } else if dir.join("dist/main.js").exists() {
+        dir.join("dist/main.js")
+    } else {
+        return Err(format!("فایل app.js پیدا نشد (مسیر: {})", dir.display()));
+    };
+    let node = bundled_node(&dir)
+        .or_else(system_node)
+        .ok_or_else(|| "نه node.exe همراه برنامه بود و نه Node روی سیستم نصب است.".to_string())?;
+    Ok((node, entry))
+}
+
+/// اجرای حالت `--recovery` در یک پنجره‌ی کنسول **دیدار**.
+///
+/// لازم است پنجره دیده شود: خروجی فارسی است و کاربر باید بخواند
+/// («رمز admin به admin123 برگشت»). `CREATE_NEW_CONSOLE` در حالت
+/// `windows_subsystem="windows"` پنجره‌ی واقعی می‌سازد.
+///
+/// خروجی به `recovery.log` هم نوشته می‌شود تا اگر پنجره فوراً بسته شد،
+/// بشود بعداً دید چه شد.
+pub fn run_recovery(app: &tauri::AppHandle, data_dir: &Path, extra_args: &[&str]) -> Result<(), String> {
+    let (node, entry) = runtime_paths(app)?;
+    let log_path = data_dir.join("recovery.log");
+    let open_log = || -> Result<std::fs::File, String> {
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .map_err(|e| format!("فایل لاگ نجات باز نشد: {e}"))
+    };
+
+    let mut cmd = Command::new(&node);
+    cmd.arg(arg_path(&entry))
+        .arg("--recovery")
+        .args(extra_args)
+        .current_dir(entry.parent().unwrap_or(Path::new(".")))
+        .env("FD_DATA_DIR", data_dir)
+        .env("NODE_ENV", "production")
+        .env("NODE_OPTIONS", "--no-warnings")
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(open_log()?))
+        .stderr(Stdio::from(open_log()?));
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        /* 0x00000010 = CREATE_NEW_CONSOLE — پنجره‌ی کنسول واقعی */
+        const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+        cmd.creation_flags(CREATE_NEW_CONSOLE);
+    }
+
+    cmd.spawn()
+        .map_err(|e| format!("اجرای ابزار نجات ناموفق بود: {e}"))?;
+    log_line(data_dir, "ابزار نجات اجرا شد (recovery.log)");
+    Ok(())
+}
+
+/// مسیرهای «کجا را نگاه کنم» برای پیام خطا — بدون گشتن در حافظه‌ی کاربر.
+pub fn paths_hint(data_dir: &Path) -> String {
+    format!(
+        "پوشه داده: {}\napi.log: {}\nshell.log: {}",
+        data_dir.display(),
+        data_dir.join("api.log").display(),
+        data_dir.join("shell.log").display()
+    )
 }

@@ -45,7 +45,12 @@
         "customLanguageFiles": {
           "Farsi": "nsis/Farsi.nsh"
         }
-      }
+      },
+      "webviewInstallMode": {
+        "type": "embedBootstrapper",
+        "silent": true
+      },
+      "allowDowngrades": false
     },
     "shortDescription": "مدیریت فروشات، مصارف، معاشات و راپورهای شرکت",
     "longDescription": "سیستم مدیریت شرکت تولیدی فردای روشن — کاملاً آفلاین، بدون نیاز به انترنت"

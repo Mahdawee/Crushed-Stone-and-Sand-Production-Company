@@ -18,6 +18,18 @@ import { uiState } from './common/ui-state';
  *  • Desktop: the Tauri shell starts `farday-api` and waits for the port.
  *  • Dev:     `npm run dev` (vite proxy forwards /api → 127.0.0.1:4317)
  */
+/**
+ * حالت نجات: `app.js --recovery …`
+ *
+ * پوسته‌ی Tauri هنگام بروز مشکل یک دکمه‌ی «ابزار نجات» نشان می‌دهد که
+ * همین فرآیند را با `--recovery` اجرا می‌کند (و پنجره‌ی کنسول باز می‌ماند).
+ * بدون این، اگر رمز مدیر فراموش می‌شد تنها راه «نصب مجدد و از دست دادن
+ * داده» بود — روی یک برنامه‌ی آفلاین که هیچ پشتیبانی آنلاینی ندارد.
+ */
+async function runRecovery() {
+  await import('./cli/recovery');
+}
+
 async function bootstrap() {
   await ensureSchemaAsync();
   await ensureDefaultAdmin();
@@ -81,12 +93,20 @@ async function bootstrap() {
   }
   uiState.uiReady = Boolean(webDist);
 
-  const port = Number(process.env.FD_PORT || 4317);
-  // loopback only — the office PC is the only machine that may reach the API
-  await app.listen(port, process.env.FD_HOST || '127.0.0.1');
+  const host = process.env.FD_HOST || '127.0.0.1';
+  /* FD_PORT=0 یعنی «هر پورت آزادی» — پوسته‌ی Tauri وقتی ۴۳۱۷ اشغال باشد
+     همین را می‌فرستد (باگی که برنامه را روی بعضی کمپیوترها بی‌استفاده
+     می‌کرد). در غیر این صورت همان پورت ثابت. */
+  const requested = Number(process.env.FD_PORT ?? 4317);
+  const port = await listenWithFallback(app, host, Number.isFinite(requested) ? requested : 4317);
+
+  /*
+   * پورت واقعی را **همیشه** اعلام می‌کنیم: پوسته‌ی Tauri همین خط را از
+   * `api.log` می‌خواند و پنجره را به همان آدرس می‌برد. یک منبع حقیقت.
+   */
+  console.log(`FARDAY_PORT ${port}`);
   // Always tell the human where the app is. In dev the Vite server serves the UI;
   // otherwise this very process serves the built app.
-  const host = process.env.FD_HOST || '127.0.0.1';
   if (process.env.FD_DEV_MODE === '1') {
     console.log(`FARDAY_OPEN_UI http://localhost:${process.env.FD_WEB_PORT || 5173}/`);
   } else if (webDist) {
@@ -96,7 +116,44 @@ async function bootstrap() {
   console.log(`FARDAY_API_READY http://127.0.0.1:${port}/api  db=${databaseFile()}  data=${dataDir()}`);
 }
 
-bootstrap().catch((err) => {
+/**
+ * Listen with a graceful fallback when the port is taken.
+ *
+ * باگ (بازرسی بسته‌بندی): اگر پورت ۴۳۱۷ توسط برنامه‌ی دیگری گرفته می‌شد،
+ * فرآیند با EADDRINUSE می‌مرد و کاربر فقط «برنامه باز نشد» می‌دید. حالا:
+ *   • پورت ۰ → خود سیستم‌عامل یک پورت آزاد می‌دهد (حالت معمول دسکتاپ)
+ *   • پورت مشخص ولی اشغال → ۲۰ پورت بعدی امتحان می‌شود
+ * و در هر دو حالت یک خط «کدام پورت» لاگ می‌شود.
+ */
+async function listenWithFallback(
+  app: NestExpressApplication,
+  host: string,
+  requested: number,
+): Promise<number> {
+  const tryListen = (p: number) =>
+    app.listen(p, host).then(() => (app.getHttpServer().address() as any)?.port ?? p);
+
+  if (requested === 0) return tryListen(0);
+
+  try {
+    return await tryListen(requested);
+  } catch (err: any) {
+    if (err?.code !== 'EADDRINUSE') throw err;
+    console.warn(`FARDAY_PORT_BUSY ${requested} — جستجوی پورت آزاد بعدی…`);
+    for (let p = requested + 1; p <= requested + 20; p++) {
+      try {
+        return await tryListen(p);
+      } catch (e: any) {
+        if (e?.code !== 'EADDRINUSE') throw e;
+      }
+    }
+    console.error(`FARDAY_PORT_BUSY_ALL پورت‌های ${requested}..${requested + 20} اشغال‌اند.`);
+    throw err;
+  }
+}
+
+const entry = process.argv.includes('--recovery') ? runRecovery() : bootstrap();
+entry.catch((err) => {
   console.error('FARDAY_API_FATAL', err);
   process.exit(1);
 });

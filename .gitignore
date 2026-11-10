@@ -38,3 +38,6 @@ npm-debug.log*
 src-tauri/binaries/*
 !src-tauri/binaries/README.txt
 scripts/ui-check/.out*/
+
+# ZIP نود برای ساخت آفلاین (بزرگ است، نباید در گیت برود)
+.cache/

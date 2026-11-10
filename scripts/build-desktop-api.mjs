@@ -20,6 +20,15 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const apiSrc = path.join(root, 'apps/api');
 const out = path.join(root, 'src-tauri/api');
 const noNode = process.argv.includes('--no-node');
+/**
+ * حالت سخت‌گیر: اگر node.exe همراه بسته نباشد، ساخت **متوقف** می‌شود.
+ *
+ * چرا: بدترین حالت برای نصب‌کننده این است که روی کمپیوتر کاربر، بی‌خبر از
+ * همه، Node.js لازم شود. نسخه‌ی نصب‌شده باید «بدون نصب هیچ چیز اضافی» کار
+ * کند، پس `npm run desktop:build` همیشه سخت‌گیر اجرا می‌شود
+ * (`--require-node`). فقط تست‌های داخل مخزن از حالت سست استفاده می‌کنند.
+ */
+const requireNode = process.argv.includes('--require-node');
 
 const run = (cmd, cwd) => execSync(cmd, { cwd, stdio: 'inherit' });
 
@@ -186,10 +195,29 @@ if (fs.existsSync(path.join(webDist, 'index.html'))) {
 }
 fs.writeFileSync(path.join(out, 'package.json'), JSON.stringify({ name: 'farday-api', version: '0.1.0', private: true, type: 'commonjs' }, null, 2));
 
+const zipArgIdx = process.argv.findIndex((a) => a === '--node-zip');
+const localZip = zipArgIdx > 0 ? process.argv[zipArgIdx + 1] : '';
+
 if (!noNode) {
-  console.log('▶ 4/5 دانلود runtime نود برای ویندوز (نسخه بدون نصب)…');
   const ver = process.versions.node;
   const zipName = `node-v${ver}-win-x64.zip`;
+
+  /* مسیر آفلاین: اگر فایل ZIP نود از قبل روی دیسک است، همان استفاده می‌شود
+     (نه دانلود). برای کمپیوتری که اینترنت ندارد ولی ZIP را کاپی کرده است. */
+  if (localZip) {
+    console.log(`▶ 4/5 استفاده از فایل ZIP محلی نود: ${localZip}`);
+    try {
+      const found = extractFileFromZip(localZip, 'node.exe', path.join(out, 'node.exe'));
+      console.log(`   ✔ node.exe کاپی شد (${found})`);
+    } catch (e) {
+      console.error(`⛔ استخراج node.exe از ${localZip} انجام نشد: ${e instanceof Error ? e.message : e}`);
+      process.exit(1);
+    }
+    finish();
+    process.exit(0);
+  }
+
+  console.log('▶ 4/5 دانلود runtime نود برای ویندوز (نسخه بدون نصب)…');
   const url = `https://nodejs.org/dist/v${ver}/${zipName}`;
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'farday-node-'));
   const zip = path.join(tmp, zipName);
@@ -198,8 +226,23 @@ if (!noNode) {
     if (!fs.existsSync(zip) || fs.statSync(zip).size < 5_000_000) throw new Error('دانلود ناقص بود');
     const found = extractFileFromZip(zip, 'node.exe', path.join(out, 'node.exe'));
     console.log(`   ✔ node.exe کاپی شد (${found})`);
-  } catch {
-    // بدون انترنت هم باید بشود نصب‌کننده ساخت — فقط Node روی سیستم لازم می‌شود
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (requireNode) {
+      console.error('\n⛔ node.exe همراه بسته نشد — ساخت متوقف شد.');
+      console.error('   علت: ' + msg);
+      console.error('');
+      console.error('   بدون node.exe برنامه روی کمپیوتری که Node.js ندارد اجرا نمی‌شود.');
+      console.error('   راه‌حل‌ها (یکی را انتخاب کنید):');
+      console.error(`     ۱) یک بار با انترنت دوباره بسازید:  npm run desktop:build`);
+      console.error(`     ۲) فایل ZIP رسمی نود را از این آدرس بگیرید (روی هر کمپیوتری با انترنت):`);
+      console.error(`        https://nodejs.org/dist/v${ver}/${zipName}`);
+      console.error(`        و بعد دستور زیر را اجرا کنید (بدون نیاز به انترنت):`);
+      console.error(`        node scripts/build-desktop-api.mjs --require-node --node-zip "<مسیر فایل zip>"`);
+      console.error('');
+      process.exit(1);
+    }
+    // حالت سست (تست‌های داخل مخزن): فقط هشدار
     console.log('   ⚠ دانلود Node انجام نشد (انترنت نیست یا nodejs.org بسته است).');
     console.log('     نصب‌کننده ساخته می‌شود، ولی کمپیوتر مقصد باید Node.js نصب داشته باشد.');
     console.log('     راه‌حل کامل: یک بار با انترنت همین دستور را اجرا کنید، یا فایل node-v' + ver + '-win-x64.zip');
@@ -221,6 +264,7 @@ const walk = (dir) => {
 };
 walk(out);
 
+function finish() {
 const size = (dir) => {
   let s = 0;
   for (const f of fs.readdirSync(dir)) {
@@ -232,10 +276,17 @@ const size = (dir) => {
 };
 const hasNode = fs.existsSync(path.join(out, 'node.exe'));
 console.log(`✔ آماده است — ${out}  (${(size(out) / 1024 / 1024).toFixed(1)} MB)`);
-if (!hasNode && process.platform !== 'win32') {
-  console.log('   ℹ node.exe فقط برای نصب‌کننده ویندوز لازم است.');
-} else if (!hasNode) {
-  console.log('   ⚠ node.exe داخل بسته نیست → کمپیوتر مقصد باید Node.js داشته باشد.');
-  console.log('     برای بسته مستقل، یک بار با انترنت همین دستور را اجرا کنید.');
+if (!hasNode && requireNode) {
+  console.error('');
+  console.error('⛔ node.exe داخل بسته نیست و حالت سخت‌گیر فعال است — ساخت متوقف شد.');
+  console.error('   نصب‌کننده‌ای که node.exe ندارد روی کمپیوتری بدون Node.js باز نمی‌شود.');
+  console.error('   یک بار با انترنت بسازید، یا از گزینه --node-zip استفاده کنید (راهنما در docs/INSTALL-WINDOWS.md).');
+  process.exit(1);
+}
+if (!hasNode) {
+  console.log('   ⚠ node.exe داخل بسته نیست → کمپیوتر مقصد باید Node.js داشته باشد (فقط برای تست مناسب است).');
 }
 console.log('   حالا بسازید:  npx tauri build');
+}
+
+finish();
