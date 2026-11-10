@@ -3,7 +3,8 @@ import { api } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useToast, Spinner, Select, Table } from '../components/ui';
 import { DatePicker, MonthPicker } from '../components/DatePicker';
-import { monthKey, formatDate, pad2, toCalendar, todayISO } from '../lib/calendar';
+import { monthKey, formatDate, pad2, toCalendar, todayISO, weekdayIndex, WEEKDAYS } from '../lib/calendar';
+
 
 const STATUSES = [
   { value: 'present', label: 'حاضر', short: 'ح', color: 'ok' },
@@ -131,9 +132,24 @@ export default function AttendancePage() {
                     <th style={{ position: 'sticky', insetInlineStart: 0, background: 'var(--surface-2)', zIndex: 3 }}>کارمند</th>
                     {data.days.map((d: string) => {
                       const c = toCalendar(d, calendar);
-                      return <th key={d} className="mono" style={{ textAlign: 'center', minWidth: 32 }}>{c.jd}</th>;
+                      const wd = weekdayIndex(c.jy, c.jm, c.jd, calendar);
+                      const isToday = d === todayISO();
+                      const isFri = wd === 6;
+                      return (
+                        <th key={d} className="att-th" title={`${formatDate(d, calendar, true)} — ${WEEKDAYS[wd]}`}
+                          style={{
+                            textAlign: 'center', minWidth: 34,
+                            background: isToday ? 'var(--accent-soft)' : isFri ? 'var(--surface-3)' : undefined,
+                          }}>
+                          <span className="mono" style={{ display: 'block', fontSize: '.76rem', color: isToday ? 'var(--accent-dark)' : undefined }}>{c.jd}</span>
+                          <span style={{ display: 'block', fontSize: '.6rem', opacity: .55, fontWeight: 400 }}>{WEEKDAYS[wd]}</span>
+                        </th>
+                      );
                     })}
-                    <th>حاضر</th><th>غایب</th><th>رخصت</th><th>اضافه</th>
+                    <th style={{ textAlign: 'center' }}>حاضر</th>
+                    <th style={{ textAlign: 'center' }}>غایب</th>
+                    <th style={{ textAlign: 'center' }} className="hide-sm">رخصت</th>
+                    <th style={{ textAlign: 'center' }} className="hide-sm">اضافه</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -167,10 +183,10 @@ export default function AttendancePage() {
                             </td>
                           );
                         })}
-                        <td className="num">{cnt.present}</td>
-                        <td className="num">{cnt.absent}</td>
-                        <td className="num">{cnt.leave}</td>
-                        <td className="num">{ot}</td>
+                        <td className="num" style={{ textAlign: 'center', color: 'var(--ok)' }}>{cnt.present}</td>
+                        <td className="num" style={{ textAlign: 'center', color: cnt.absent ? 'var(--danger)' : 'var(--text-3)' }}>{cnt.absent}</td>
+                        <td className="num hide-sm" style={{ textAlign: 'center' }}>{cnt.leave}</td>
+                        <td className="num hide-sm" style={{ textAlign: 'center' }}>{ot}</td>
                       </tr>
                     );
                   })}
