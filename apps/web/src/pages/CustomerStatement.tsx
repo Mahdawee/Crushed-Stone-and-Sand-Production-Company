@@ -26,17 +26,20 @@ export default function CustomerStatement() {
   const lastInRange = shown.length ? shown[shown.length - 1].balance : d.opening;
   return (
     <div className="col" style={{ gap: 16 }}>
-      <div className="row between wrap no-print">
-        <div>
-          <h1 style={{ fontSize: '1.25rem' }}>{c.name}</h1>
-          <p className="small muted">کد {c.code} — {c.contactPerson || 'بدون شخص رابط'} — {c.phone}</p>
-        </div>
-        <div className="row wrap">
-          <DatePicker compact value={range.from} onChange={(v) => setRange({ ...range, from: v })} calendar={calendar} clearable placeholder="از تاریخ" width={130} />
-          <DatePicker compact value={range.to} onChange={(v) => setRange({ ...range, to: v })} calendar={calendar} clearable placeholder="تا تاریخ" width={130} />
-          {range.from || range.to ? <button className="btn sm ghost" onClick={() => setRange({ from: '', to: '' })}>همه</button> : null}
-          <button className="btn" onClick={() => window.print()}><IconPrint size={15} /> چاپ صورت حساب</button>
-          <Link className="btn" to="/customers"><IconChevron dir="start" size={14} /> بازگشت</Link>
+      <div className="card no-print">
+        <div className="list-head">
+          <div style={{ minWidth: 0 }}>
+            <h3 style={{ margin: 0, fontSize: '.95rem' }}>{c.name}</h3>
+            <span className="small muted">کد {c.code} — {c.contactPerson || 'بدون شخص رابط'} — {c.phone}</span>
+          </div>
+          <div style={{ flex: 1 }} />
+          <div className="list-actions">
+            <DatePicker compact value={range.from} onChange={(v) => setRange({ ...range, from: v })} calendar={calendar} clearable placeholder="از تاریخ" width={126} />
+            <DatePicker compact value={range.to} onChange={(v) => setRange({ ...range, to: v })} calendar={calendar} clearable placeholder="تا تاریخ" width={126} />
+            {range.from || range.to ? <button className="btn sm ghost" onClick={() => setRange({ from: '', to: '' })}>همه</button> : null}
+            <button className="btn" onClick={() => window.print()}><IconPrint size={15} /> چاپ</button>
+            <Link className="btn" to="/customers"><IconChevron dir="start" size={14} /> بازگشت</Link>
+          </div>
         </div>
       </div>
 

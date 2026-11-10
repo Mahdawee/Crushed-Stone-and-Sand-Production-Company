@@ -4,8 +4,17 @@ import { api } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useToast, Table, Spinner, Stat } from '../components/ui';
 import { DatePicker } from '../components/DatePicker';
-import { money, todayISO, toCalendar, pad2, fromCalendar } from '../lib/calendar';
+import { money, todayISO, toCalendar, pad2, fromCalendar, addDaysISO } from '../lib/calendar';
 import '../styles/print.css';
+
+
+/* بازه‌های آماده — کمتر کلیک، کمتر تایپ */
+const QUICK = [
+  { key: 'today', label: 'امروز' },
+  { key: 'week', label: '۷ روز' },
+  { key: 'month', label: 'این ماه' },
+  { key: 'year', label: 'این سال' },
+] as const;
 
 export default function ReportsDaily() {
   const { calendar } = useSession();
@@ -26,18 +35,48 @@ export default function ReportsDaily() {
   };
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+
+  const isQuick = (() => {
+    const c = toCalendar(todayISO(), calendar);
+    const first = fromCalendar(c.jy, c.jm, 1, calendar);
+    const firstYear = fromCalendar(c.jy, 1, 1, calendar);
+    if (range.to !== todayISO()) return '';
+    if (range.from === todayISO()) return 'today';
+    if (range.from === addDaysISO(todayISO(), -6)) return 'week';
+    if (range.from === first) return 'month';
+    if (range.from === firstYear) return 'year';
+    return '';
+  })();
+  const applyQuick = (key: string) => {
+    const c = toCalendar(todayISO(), calendar);
+    const map: Record<string, string> = {
+      today: todayISO(),
+      week: addDaysISO(todayISO(), -6),
+      month: fromCalendar(c.jy, c.jm, 1, calendar),
+      year: fromCalendar(c.jy, 1, 1, calendar),
+    };
+    setRange({ from: map[key], to: todayISO() });
+  };
+
   return (
     <div className="col" style={{ gap: 14 }}>
-      <div className="card no-print"><div className="card-b"><div className="toolbar">
-        <div className="field"><label>از تاریخ</label>
-          <DatePicker value={range.from} onChange={(v) => setRange({ ...range, from: v })} calendar={calendar} width={140} /></div>
-        <div className="field"><label>تا تاریخ</label>
-          <DatePicker value={range.to} onChange={(v) => setRange({ ...range, to: v })} calendar={calendar} width={140} /></div>
-        <button className="btn primary" onClick={load}>نمایش</button>
-        <button className="btn" onClick={() => window.print()}><IconPrint size={15} /> چاپ</button>
-        <div className="spacer" />
-        <span className="small muted">موجودی دخل هر روز + مجموع دوره</span>
-      </div></div></div>
+      <div className="card no-print">
+        <div className="list-head">
+          <div className="pill-tabs">
+            {QUICK.map((q) => (
+              <button key={q.key} className={isQuick === q.key ? 'on' : ''} onClick={() => applyQuick(q.key)}>{q.label}</button>
+            ))}
+          </div>
+          <DatePicker compact value={range.from} onChange={(v) => setRange({ ...range, from: v })} calendar={calendar} width={132} title="از تاریخ" />
+          <span className="text-3">—</span>
+          <DatePicker compact value={range.to} onChange={(v) => setRange({ ...range, to: v })} calendar={calendar} width={132} title="تا تاریخ" />
+          <button className="btn primary" onClick={load}>نمایش</button>
+          <div style={{ flex: 1 }} />
+          <div className="list-actions">
+            <button className="btn" onClick={() => window.print()}><IconPrint size={15} /> چاپ</button>
+          </div>
+        </div>
+      </div>
 
       {!d ? <Spinner /> : (<>
         <div className="grid c4">

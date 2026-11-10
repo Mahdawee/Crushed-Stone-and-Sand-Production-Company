@@ -12,9 +12,15 @@ export default function ReportsYearly() {
   if (!d) return <Spinner />;
   return (
     <div className="col" style={{ gap: 14 }}>
-      <div className="row between no-print">
-        <span className="small muted">خلاصه هر سال مالی — افغانی</span>
-        <button className="btn" onClick={() => window.print()}><IconPrint size={15} /> چاپ</button>
+      <div className="card no-print">
+        <div className="list-head">
+          <h3 style={{ margin: 0, fontSize: '.92rem' }}>خلاصه هر سال مالی</h3>
+          <span className="badge muted">افغانی</span>
+          <div style={{ flex: 1 }} />
+          <div className="list-actions">
+            <button className="btn" onClick={() => window.print()}><IconPrint size={15} /> چاپ</button>
+          </div>
+        </div>
       </div>
       <div className="card">
         <div className="card-h"><h3>راپور سالانه</h3></div>

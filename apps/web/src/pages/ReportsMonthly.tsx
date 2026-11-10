@@ -2,7 +2,7 @@ import { IconAlert, IconChart, IconCheck, IconPrint, IconWallet } from '../compo
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
-import { useToast, Table, Spinner, Select, Stat } from '../components/ui';
+import { useToast, Table, Spinner, Stat } from '../components/ui';
 import { money, todayISO, toCalendar } from '../lib/calendar';
 import '../styles/print.css';
 
@@ -19,12 +19,19 @@ export default function ReportsMonthly() {
 
   return (
     <div className="col" style={{ gap: 14 }}>
-      <div className="row between wrap no-print">
-        <div className="row">
-          <Select value={year} onChange={(v) => setYear(Number(v))} options={years.map((y) => ({ value: y, label: String(y) }))} />
-          <button className="btn" onClick={() => window.print()}><IconPrint size={15} /> چاپ</button>
+      <div className="card no-print">
+        <div className="list-head">
+          <div className="pill-tabs">
+            {years.map((y) => (
+              <button key={y} className={year === y ? 'on' : ''} onClick={() => setYear(y)}>{y}</button>
+            ))}
+          </div>
+          <div style={{ flex: 1 }} />
+          <span className="small muted">سود = کل فروشات − (کل مصارف + کل معاشات)</span>
+          <div className="list-actions">
+            <button className="btn" onClick={() => window.print()}><IconPrint size={15} /> چاپ</button>
+          </div>
         </div>
-        <span className="small muted">سود = کل فروشات − (کل مصارف + کل معاشات)</span>
       </div>
 
       {!d ? <Spinner /> : (<>

@@ -4,11 +4,11 @@ import React from 'react';
  * مجموعه آیکن‌های خطی و یکدست (بدون ایموجی).
  * همه با stroke و currentColor رسم می‌شوند تا با رنگ متن/تم هماهنگ بمانند.
  */
-type P = { size?: number; className?: string; strokeWidth?: number };
+type P = { size?: number; className?: string; strokeWidth?: number; style?: React.CSSProperties };
 
-const Svg = ({ size = 18, className, strokeWidth = 1.7, children }: P & { children: React.ReactNode }) => (
+const Svg = ({ size = 18, className, strokeWidth = 1.7, style, children }: P & { children: React.ReactNode }) => (
   <svg
-    width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}
+    width={size} height={size} viewBox="0 0 24 24" fill="none" className={className} style={style}
     stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round"
     aria-hidden="true" focusable="false"
   >{children}</svg>
@@ -96,11 +96,14 @@ export const IconTrash = (p: P) => (
 export const IconFilter = (p: P) => (
   <Svg {...p}><path d="M3 5h18l-7 8v6l-4 2v-8z" /></Svg>
 );
-export const IconChevron = (p: P & { dir?: 'start' | 'end' | 'down' }) => {
+export const IconChevron = (p: P & { dir?: 'start' | 'end' | 'down' | 'up' }) => {
   const { dir = 'end', ...rest } = p;
   return (
     <Svg {...rest} size={rest.size ?? 14}>
-      {dir === 'down' ? <path d="M6 9l6 6 6-6" /> : dir === 'start' ? <path d="M15 5l-7 7 7 7" /> : <path d="M9 5l7 7-7 7" />}
+      {dir === 'down' ? <path d="M6 9l6 6 6-6" />
+        : dir === 'up' ? <path d="M6 15l6-6 6 6" />
+        : dir === 'start' ? <path d="M15 5l-7 7 7 7" />
+        : <path d="M9 5l7 7-7 7" />}
     </Svg>
   );
 };

@@ -1,7 +1,7 @@
-import { IconDatabase, IconDownload, IconFolder, IconHistory } from '../components/icons';
+import { IconDatabase, IconDownload } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { api, getToken, API_BASE } from '../lib/api';
-import { useToast, Table, Spinner, Stat } from '../components/ui';
+import { useToast, Table, Spinner, InlineStat } from '../components/ui';
 
 export default function BackupPage() {
   const toast = useToast();
@@ -49,16 +49,26 @@ export default function BackupPage() {
 
   return (
     <div className="col" style={{ gap: 14 }}>
-      <div className="grid c3">
-        <Stat label="تعداد پشتیبان‌ها" value={d.rows.length} foot="۳۰ فایل آخر نگه داشته می‌شود" icon={<IconDatabase size={16} />} />
-        <Stat label="آخرین پشتیبان" value={last ? new Date(last.createdAt).toLocaleDateString('fa-IR') : '—'}
-          foot={days === null ? 'هنوز پشتیبان ساخته نشده' : `${days} روز پیش`} kind={days !== null && days > 7 ? 'warn' : 'ok'} icon={<IconHistory size={16} />} />
-        <Stat label="پوشه پشتیبان" value={<span className="small mono">{d.dir}</span>} foot="همین کمپیوتر" icon={<IconFolder size={16} />} />
+      <div className="card">
+        <div className="list-head">
+          <h3 style={{ margin: 0, fontSize: '.92rem' }}>پشتیبان‌گیری</h3>
+          <div className="list-summary">
+            <InlineStat label="تعداد فایل" value={d.rows.length} />
+            <span className="sep" />
+            <InlineStat label="آخرین پشتیبان" value={last ? new Date(last.createdAt).toLocaleDateString('fa-IR') : '—'}
+              tone={days !== null && days > 7 ? 'warn' : 'ok'} />
+            <span className="sep" />
+            <InlineStat label="پوشه" value={<span className="mono small">{d.dir}</span>} />
+          </div>
+          <div style={{ flex: 1 }} />
+          <span className="small muted hide-sm">{days === null ? 'هنوز پشتیبان ساخته نشده' : `${days} روز پیش`} — ۳۰ فایل آخر نگه داشته می‌شود</span>
+          <div className="list-actions">
+            <button className="btn primary" onClick={make} disabled={busy}><IconDatabase size={15} /> {busy ? 'در حال ساخت…' : 'ساخت پشتیبان تازه'}</button>
+          </div>
+        </div>
       </div>
 
       <div className="card">
-        <div className="card-h"><h3>پشتیبان‌گیری و بازگردانی</h3><div style={{ flex: 1 }} />
-          <button className="btn primary" onClick={make} disabled={busy}>{busy ? 'در حال ساخت…' : '💾 ساخت پشتیبان تازه'}</button></div>
         <div className="card-b tight">
           <Table head={['فایل', 'تاریخ', 'حجم', '']} empty="هنوز پشتیبانی ساخته نشده است.">
             {d.rows.map((r: any) => (

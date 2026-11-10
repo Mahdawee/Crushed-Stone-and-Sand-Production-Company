@@ -1,3 +1,4 @@
+import { IconAlert } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -55,7 +56,8 @@ export default function SettingsPage() {
       {!isManager ? (
         <div className="card"><div className="card-b">
           <p className="small" style={{ color: 'var(--warn)' }}>
-            ⚠ تغییر تنظیمات فقط توسط مدیر سیستم ممکن است. می‌توانید مقادیر را ببینید، اما ذخیره فقط برای مدیر فعال است.
+            <IconAlert size={15} style={{ verticalAlign: '-2px', marginInlineEnd: 4 }} />
+            تغییر تنظیمات فقط توسط مدیر سیستم ممکن است. می‌توانید مقادیر را ببینید، اما ذخیره فقط برای مدیر فعال است.
           </p>
         </div></div>
       ) : null}

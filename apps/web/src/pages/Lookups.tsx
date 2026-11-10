@@ -110,12 +110,15 @@ export default function LookupsPage() {
 
   return (
     <div className="col" style={{ gap: 14 }}>
-      <div className="row between wrap">
-        <div>
-          <h1 style={{ fontSize: '1.15rem' }}>{meta.title}</h1>
-          <p className="small muted">{meta.hint}</p>
+      <div className="card">
+        <div className="list-head">
+          <h3 style={{ margin: 0, fontSize: '.92rem' }}>{meta.title}</h3>
+          <span className="small muted hide-sm">{meta.hint}</span>
+          <div style={{ flex: 1 }} />
+          <div className="list-actions">
+            <Link className="btn" to="/settings"><IconChevron dir="start" size={14} /> تنظیمات</Link>
+          </div>
         </div>
-        <Link className="btn" to="/settings"><IconChevron dir="start" size={14} /> تنظیمات</Link>
       </div>
 
       <div className="card">

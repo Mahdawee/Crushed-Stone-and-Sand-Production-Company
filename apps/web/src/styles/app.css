@@ -488,6 +488,9 @@ table.tbl.compact td, table.tbl.compact th { padding: 6px 8px; font-size: .78rem
 .tb-panel .input { height: 32px; min-height: 32px; font-size: .82rem; }
 
 .list-summary { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: .78rem; }
+.list-summary .sep { width: 1px; height: 14px; background: var(--line, #e4e9ee); }
+.text-3 { color: var(--text-3); font-size: .8rem; }
+.muted-flex { min-width: 0; }
 .tb-stat { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .tb-stat b { font-variant-numeric: tabular-nums; }
 .list-actions { display: flex; align-items: center; gap: 6px; }

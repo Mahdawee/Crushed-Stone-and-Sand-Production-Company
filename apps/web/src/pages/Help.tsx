@@ -1,3 +1,4 @@
+import { IconChevron, IconHelp } from '../components/icons';
 import React, { useState } from 'react';
 
 const SECTIONS = [
@@ -88,16 +89,19 @@ export default function HelpPage() {
   const [openId, setOpenId] = useState('start');
   return (
     <div className="col" style={{ gap: 12 }}>
-      <div className="card"><div className="card-b">
-        <h1 style={{ fontSize: '1.2rem', marginBottom: 6 }}>راهنمای استفاده از سیستم</h1>
-        <p className="small muted">سیستم داخلی شرکت فردای روشن — کاملاً محلی، بدون نیاز به انترنت. قابل استفاده با mouse و keyboard.</p>
-      </div></div>
+      <div className="card">
+        <div className="list-head">
+          <IconHelp size={18} />
+          <h3 style={{ margin: 0, fontSize: '.95rem' }}>راهنمای استفاده از سیستم</h3>
+          <span className="small muted hide-sm">کاملاً محلی، بدون نیاز به انترنت — قابل استفاده با mouse و keyboard</span>
+        </div>
+      </div>
 
       {SECTIONS.map((s) => (
         <div className="card" key={s.id}>
           <div className="card-h" style={{ cursor: 'pointer' }} onClick={() => setOpenId(openId === s.id ? '' : s.id)}>
             <h3>{s.title}</h3><div style={{ flex: 1 }} />
-            <span className="muted">{openId === s.id ? '▾' : '▸'}</span>
+            <span className="muted" style={{ display: 'inline-flex' }}><IconChevron dir={openId === s.id ? 'up' : 'down'} size={15} /></span>
           </div>
           {openId === s.id ? <div className="card-b small" style={{ lineHeight: 2 }}>{s.body}</div> : null}
         </div>

@@ -25,15 +25,18 @@ export default function EmployeeProfile() {
 
   return (
     <div className="col" style={{ gap: 16 }}>
-      <div className="row between wrap">
-        <div className="row" style={{ gap: 12 }}>
-          <div className="brand-logo" style={{ width: 52, height: 52, fontSize: 22 }}>{e.name.slice(0, 1)}</div>
-          <div>
-            <h1 style={{ fontSize: '1.25rem' }}>{e.name}</h1>
-            <p className="small muted">کد {e.code} — {e.position} — ولد {e.fatherName}</p>
+      <div className="card">
+        <div className="list-head">
+          <div className="brand-logo" style={{ width: 38, height: 38, fontSize: 17 }}>{e.name.slice(0, 1)}</div>
+          <div style={{ minWidth: 0 }}>
+            <h3 style={{ margin: 0, fontSize: '.98rem' }}>{e.name}</h3>
+            <span className="small muted">کد {e.code} — {e.position} — ولد {e.fatherName}</span>
+          </div>
+          <div style={{ flex: 1 }} />
+          <div className="list-actions">
+            <Link className="btn" to="/employees"><IconChevron dir="start" size={14} /> بازگشت به فهرست</Link>
           </div>
         </div>
-        <Link className="btn" to="/employees"><IconChevron dir="start" size={14} /> بازگشت به فهرست</Link>
       </div>
 
       <div className="grid c4">
