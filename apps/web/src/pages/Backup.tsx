@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api } from '../lib/api';
+import { api, getToken, API_BASE } from '../lib/api';
 import { useToast, Table, Spinner, Stat } from '../components/ui';
 
 export default function BackupPage() {
@@ -15,6 +15,22 @@ export default function BackupPage() {
     try { const r = await api.post('/system/backup', {}); toast.success('پشتیبان ساخته شد', r.file); await load(); }
     catch (e: any) { toast.error('پشتیبان ساخته نشد', e.message); }
     finally { setBusy(false); }
+  };
+
+  const download = async (file: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/system/backup/download?file=${encodeURIComponent(file)}`, {
+        headers: { 'x-auth-token': getToken() },
+      });
+      if (!res.ok) throw new Error('دانلود انجام نشد.');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = file;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      toast.success('فایل پشتیبان دانلود شد', file);
+    } catch (e: any) { toast.error('دانلود نشد', e.message); }
   };
 
   const restore = (r: any) => toast.confirm({
@@ -49,7 +65,11 @@ export default function BackupPage() {
                 <td className="mono small">{r.file}</td>
                 <td className="mono">{new Date(r.createdAt).toLocaleString('fa-IR')}</td>
                 <td className="num">{(r.size / 1024).toFixed(0)} KB</td>
-                <td><button className="btn sm" onClick={() => restore(r)}>بازگردانی</button></td>
+                <td><div className="actions">
+                  <a className="btn sm" href={`${API_BASE}/system/backup/download?file=${encodeURIComponent(r.file)}`}
+                    onClick={(e) => { e.preventDefault(); download(r.file); }}>⤓ دانلود</a>
+                  <button className="btn sm" onClick={() => restore(r)}>بازگردانی</button>
+                </div></td>
               </tr>
             ))}
           </Table>

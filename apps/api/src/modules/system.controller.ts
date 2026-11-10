@@ -38,6 +38,18 @@ export class SystemController {
     return { dir, rows };
   }
 
+  /** دانلود فایل پشتیبان (برای کاپی روی فلش یا کمپیوتر دیگر). */
+  @Get('backup/download')
+  @ManagerOnly()
+  async downloadBackup(@Query('file') file: string, @Res() res: any) {
+    const name = path.basename(String(file || ''));
+    const full = path.join(BACKUP_DIR(), name);
+    if (!name || !fs.existsSync(full)) throw new HttpException('فایل پشتیبان پیدا نشد.', 404);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+    return res.sendFile(full);
+  }
+
   @Post('backup')
   @ManagerOnly()
   async backup(@Body() body: { note?: string }) {
