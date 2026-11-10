@@ -189,6 +189,43 @@ async function main() {
     token = adminToken;
     r = await api('DELETE', '/sales/1');
     check('مدیر اجازه حذف دارد', r.body.ok === true);
+
+    /* ------------------- تاریخ‌ها: میلادی همیشه میلادی -------------------- */
+    // (رگرسیون: با تقویم شمسی، ISO به اشتباه شمسی خوانده می‌شد)
+    const cus = await api('GET', '/customers');
+    const customerId = cus.body[0].id;
+    const saleIso = await api('POST', '/sales', {
+      date: '2026-11-10', customerId: customerId, volume: 2, unitPrice: 1000, paymentType: 'cash',
+    });
+    check('تاریخ ISO میلادی درست ذخیره می‌شود (سال سند ۱۴۰۵)', /^S-1405-/.test(String(saleIso.body.no)), String(saleIso.body.no));
+
+    const saleShamsi = await api('POST', '/sales', {
+      date: '1405/08/19', customerId: customerId, volume: 1, unitPrice: 1000, paymentType: 'cash',
+    });
+    check('تاریخ شمسی با اسلش پذیرفته می‌شود', saleShamsi.status === 201 || saleShamsi.body.ok === true, JSON.stringify(saleShamsi.body));
+
+    const isoList = await api('GET', '/sales?from=2026-11-10&to=2026-11-10');
+    check('فیلتر بازه با تاریخ ISO نتیجه می‌دهد', isoList.body.total >= 1, `total=${isoList.body.total}`);
+    check('فیلتر بازه یک روز را برمی‌گرداند', isoList.body.rows.every((r) => r.date === '2026-11-10'));
+
+    const badDate = await api('POST', '/sales', { date: '1405/13/40', customerId: customerId, volume: 1, unitPrice: 1 });
+    check('تاریخ نامعتبر پیام دری می‌دهد', badDate.status === 400 && String(badDate.body.message).length > 3, JSON.stringify(badDate.body));
+
+    const badRange = await api('GET', '/reports/cashbook?from=2026-11-10&to=2026-11-01');
+    check('بازه معکوس رد می‌شود', badRange.status === 400);
+
+    const longRange = await api('GET', '/reports/breakdown?from=2020-01-01&to=2026-01-01');
+    check('بازه بیش از ۴۰۰ روز رد می‌شود', longRange.status === 400);
+
+    /* ------------------------- دسترسی تنظیمات --------------------------- */
+    const empLogin = await api('POST', '/auth/login', { username: 'karmand', password: 'test123' });
+    const mgrToken = token;
+    token = empLogin.body.token;
+    const forbidden = await api('PUT', '/settings', { calendar: 'gregorian' });
+    check('کارمند نمی‌تواند تنظیمات را تغییر دهد', forbidden.status === 403, String(forbidden.status));
+    token = mgrToken;
+    const weakPass = await api('POST', '/users', { username: 'weakuser', password: '123', role: 'employee' });
+    check('رمز کوتاه رد می‌شود', weakPass.status === 400);
   } finally {
     child.kill('SIGKILL');
     if (failed) console.log('\n--- لاگ API ---\n' + logs.join('').slice(-3000));

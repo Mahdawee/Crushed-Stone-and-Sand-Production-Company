@@ -143,7 +143,9 @@ export class EmployeesController {
       `SELECT * FROM "Employee" WHERE "status"='active' ORDER BY "code"`,
     );
     if (date) {
-      const iso = parseUserDate(date, mode);
+      let iso = '';
+      try { iso = parseUserDate(date, mode); }
+      catch (e: any) { throw new HttpException(e.message, 400); }
       const rows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Attendance" WHERE "date"=?`, iso);
       return { mode, date: iso, employees, rows };
     }
@@ -158,7 +160,9 @@ export class EmployeesController {
       ref = fromCalendar(y, mo, 1, mode);
     }
     const bucket = monthBucket(ref, mode);
-    const days = daysBetween(bucket.start, bucket.end);
+    let days: string[] = [];
+    try { days = daysBetween(bucket.start, bucket.end); }
+    catch (e: any) { throw new HttpException(e.message, 400); }
     const rows: any[] = await db().$queryRawUnsafe(
       `SELECT * FROM "Attendance" WHERE "date" >= ? AND "date" <= ? ORDER BY "date"`,
       bucket.start,
@@ -189,7 +193,9 @@ export class EmployeesController {
     const p = db();
     let saved = 0;
     for (const it of body?.items || []) {
-      const iso = parseUserDate(it.date, mode);
+      let iso = '';
+      try { iso = parseUserDate(it.date, mode); }
+      catch (e: any) { throw new HttpException(e.message, 400); }
       await p.$executeRawUnsafe(
         `INSERT INTO "Attendance" ("employeeId","date","status","checkIn","checkOut","overtime","note")
          VALUES (?,?,?,?,?,?,?)
@@ -207,7 +213,9 @@ export class EmployeesController {
   @Post('attendance/mark-day')
   async markDay(@Body() body: { date: string; employeeIds: number[]; status: string }) {
     const mode = await this.cal();
-    const iso = parseUserDate(body.date, mode);
+    let iso = '';
+    try { iso = parseUserDate(body.date, mode); }
+    catch (e: any) { throw new HttpException(e.message, 400); }
     const p = db();
     for (const id of body.employeeIds || []) {
       await p.$executeRawUnsafe(

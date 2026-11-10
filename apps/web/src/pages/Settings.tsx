@@ -52,9 +52,19 @@ export default function SettingsPage() {
 
   return (
     <div className="col" style={{ gap: 16 }}>
+      {!isManager ? (
+        <div className="card"><div className="card-b">
+          <p className="small" style={{ color: 'var(--warn)' }}>
+            ⚠ تغییر تنظیمات فقط توسط مدیر سیستم ممکن است. می‌توانید مقادیر را ببینید، اما ذخیره فقط برای مدیر فعال است.
+          </p>
+        </div></div>
+      ) : null}
+
       <div className="card">
-        <div className="card-h"><h3>تقویم و نمایش</h3><div style={{ flex: 1 }} />
-          <button className="btn primary" onClick={save} disabled={busy}>{busy ? 'ذخیره…' : 'ذخیره تنظیمات'}</button></div>
+        <div className="card-h"><h3>تقویم و نمایش</h3>
+          <span className="small muted">تغییرات بعد از ذخیره فوراً روی همه صفحات اعمال می‌شود</span>
+          <div style={{ flex: 1 }} />
+          {isManager ? <button className="btn primary" onClick={save} disabled={busy}>{busy ? 'ذخیره…' : 'ذخیره تنظیمات'}</button> : null}</div>
         <div className="card-b">
           <div className="form-grid">
             <Field label="تقویم سیستم" hint="تاریخ‌ها در دیتابیس میلادی ذخیره می‌شوند؛ فقط نمایش و راپورها عوض می‌شود.">
@@ -81,10 +91,20 @@ export default function SettingsPage() {
               <Select value={s.cashMode} onChange={(v) => setS({ ...s, cashMode: v })}
                 options={[{ value: 'simple', label: 'ساده (پیش‌فرض)' }, { value: 'accurate', label: 'دقیق' }]} />
             </Field>
-            <Field label="ساعت کاری روزانه"><input className="input input-num" value={s.attendanceWorkHours || '8'}
-              onChange={(e) => setS({ ...s, attendanceWorkHours: e.target.value })} /></Field>
-            <Field label="پیشوند بل فروش"><input className="input" value={s.docPrefixSale || 'S'} onChange={(e) => setS({ ...s, docPrefixSale: e.target.value })} /></Field>
-            <Field label="پیشوند سند مصرف"><input className="input" value={s.docPrefixExpense || 'E'} onChange={(e) => setS({ ...s, docPrefixExpense: e.target.value })} /></Field>
+            <Field label="ساعت کاری روزانه" hint="برای محاسبه اضافه کاری">
+              <input className="input input-num" value={s.attendanceWorkHours || '8'}
+                onChange={(e) => setS({ ...s, attendanceWorkHours: e.target.value })} /></Field>
+            <Field label="پیشوند بل فروش" hint={`نمونه: ${s.docPrefixSale || 'S'}-1405-0001`}>
+              <input className="input" value={s.docPrefixSale || 'S'} onChange={(e) => setS({ ...s, docPrefixSale: e.target.value.toUpperCase().slice(0, 3) })} /></Field>
+            <Field label="پیشوند سند مصرف" hint={`نمونه: ${s.docPrefixExpense || 'E'}-1405-0001`}>
+              <input className="input" value={s.docPrefixExpense || 'E'} onChange={(e) => setS({ ...s, docPrefixExpense: e.target.value.toUpperCase().slice(0, 3) })} /></Field>
+            <Field label="پیشوند رسید" hint={`نمونه: ${s.docPrefixReceipt || 'R'}-1405-0001`}>
+              <input className="input" value={s.docPrefixReceipt || 'R'} onChange={(e) => setS({ ...s, docPrefixReceipt: e.target.value.toUpperCase().slice(0, 3) })} /></Field>
+            <Field label="پیشوند سند معاش" hint={`نمونه: ${s.docPrefixSalary || 'P'}-1405-0001`}>
+              <input className="input" value={s.docPrefixSalary || 'P'} onChange={(e) => setS({ ...s, docPrefixSalary: e.target.value.toUpperCase().slice(0, 3) })} /></Field>
+            <Field label="سهم اضافه کاری" hint="نرخ هر ساعت اضافه کاری نسبت به ساعت عادی">
+              <input className="input input-num" value={s.overtimeRate || '1.25'}
+                onChange={(e) => setS({ ...s, overtimeRate: e.target.value })} /></Field>
           </div>
 
           <div className="section-title">رنگ اصلی</div>

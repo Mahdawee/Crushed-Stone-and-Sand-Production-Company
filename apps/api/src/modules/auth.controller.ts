@@ -101,6 +101,10 @@ export class AuthController {
   @ManagerOnly()
   async create(@Req() req: any, @Body() body: any) {
     if (!body?.username || !body?.password) throw new HttpException('نام کاربری و رمز لازم است.', 400);
+    if (String(body.password).length < 5) throw new HttpException('رمز عبور باید حداقل ۵ حرف باشد.', 400);
+    if (!/^[a-zA-Z0-9._-]{3,}$/.test(String(body.username).trim())) {
+      throw new HttpException('نام کاربری حداقل ۳ حرف و فقط انگلیسی/عدد/نقطه باشد.', 400);
+    }
     try {
       await db().$executeRawUnsafe(
         `INSERT INTO "User" ("username","fullName","passwordHash","role","active") VALUES (?,?,?,?,?)`,
@@ -121,6 +125,19 @@ export class AuthController {
   @ManagerOnly()
   async update(@Req() req: any, @Param('id') id: string, @Body() body: any) {
     const p = db();
+    const current: any[] = await p.$queryRawUnsafe(`SELECT * FROM "User" WHERE "id"=?`, Number(id));
+    if (!current?.length) throw new HttpException('کاربر پیدا نشد.', 404);
+    const becomingNonManager = current[0].role === 'manager' && body.role === 'employee';
+    const becomingInactive = current[0].active && body.active === false;
+    if ((becomingNonManager || becomingInactive) && current[0].role === 'manager') {
+      const man: any[] = await p.$queryRawUnsafe(`SELECT COUNT(*) c FROM "User" WHERE "role"='manager' AND "active"=1`);
+      if (Number(man?.[0]?.c ?? 0) <= 1) {
+        throw new HttpException('این تنها مدیر فعال سیستم است — اول مدیر دیگری بسازید.', 400);
+      }
+    }
+    if (body.password && String(body.password).length < 5) {
+      throw new HttpException('رمز عبور باید حداقل ۵ حرف باشد.', 400);
+    }
     await p.$executeRawUnsafe(
       `UPDATE "User" SET "fullName"=?, "role"=?, "active"=? WHERE "id"=?`,
       body.fullName || '',

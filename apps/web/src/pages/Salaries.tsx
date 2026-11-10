@@ -89,13 +89,13 @@ export default function SalariesPage() {
 
             <div className="card">
               <div className="card-h"><h3>ورق معاش — {sheet.label}</h3><div style={{ flex: 1 }} />
-                <span className="small muted">اضافه کاری از شیت حضور و غیاب خودکار محاسبه می‌شود</span></div>
+                <span className="small muted">اضافه کاری و روز کسر از شیت حضور و غیاب خودکار می‌آید</span></div>
               <div className="card-b tight">
                 <div style={{ overflowX: 'auto' }}>
                   <table className="tbl compact">
                     <thead><tr>
                       <th>#</th><th>کد</th><th>نام</th><th>معاش ثابت</th><th>پاداش</th><th>جریمه</th>
-                      <th>ساعت اضافه</th><th>مبلغ اضافه کاری</th><th>مجموع پرداخت</th><th>پرداخت‌کننده</th><th>نوع</th><th>سند</th>
+                      <th>ساعت اضافه</th><th>روز کسر</th><th>مبلغ اضافه کاری</th><th>مجموع پرداخت</th><th className="hide-sm">پرداخت‌کننده</th><th>نوع</th><th>سند</th>
                     </tr></thead>
                     <tbody>
                       {rows.map((r, i) => (
@@ -106,10 +106,13 @@ export default function SalariesPage() {
                           <td style={{ width: 110 }}><Num value={r.baseSalary} onChange={(v) => edit(i, { baseSalary: v })} /></td>
                           <td style={{ width: 100 }}><Num value={r.bonus} onChange={(v) => edit(i, { bonus: v })} /></td>
                           <td style={{ width: 100 }}><Num value={r.penalty} onChange={(v) => edit(i, { penalty: v })} /></td>
-                          <td className="num">{r.overtimeHours}{r.absentDays ? <span className="badge bad" style={{ marginInlineStart: 6 }}>غ {r.absentDays}</span> : null}</td>
+                          <td className="num">{r.overtimeHours}</td>
+                          <td className="num">
+                            {r.deductionDays ? <span className="badge bad" title="غیبت، رخصت یا مریضی — در جریمه دستی حساب کنید">{r.deductionDays}</span> : <span className="muted">—</span>}
+                          </td>
                           <td style={{ width: 110 }}><Num value={r.overtimeAmount} onChange={(v) => edit(i, { overtimeAmount: v })} /></td>
                           <td className="num" style={{ fontWeight: 800 }}>{money(r.total)}</td>
-                          <td style={{ width: 130 }}>
+                          <td style={{ width: 130 }} className="hide-sm">
                             <Select value={r.payerName} placeholder="—" onChange={(v) => {
                               const p = payers.find((x) => x.name === v);
                               edit(i, { payerName: v, payerId: p?.id });
@@ -124,7 +127,7 @@ export default function SalariesPage() {
                       ))}
                     </tbody>
                     <tfoot><tr>
-                      <td colSpan={8}>مجموع</td>
+                      <td colSpan={9}>مجموع</td>
                       <td className="num">{money(total)}</td>
                       <td colSpan={3} />
                     </tr></tfoot>

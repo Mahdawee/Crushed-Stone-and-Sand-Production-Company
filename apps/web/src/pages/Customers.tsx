@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, downloadCsv } from '../lib/api';
 import { useSession } from '../lib/session';
-import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner } from '../components/ui';
+import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, ListHead, SearchBox } from '../components/ui';
 import { money } from '../lib/calendar';
 
 export default function CustomersPage() {
@@ -45,32 +45,36 @@ export default function CustomersPage() {
 
   return (
     <div className="col" style={{ gap: 14 }}>
-      <div className="row between wrap">
-        <input className="input" style={{ width: 280 }} placeholder="جستجو: نام، کد، تماس، شخص رابط…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <div className="row wrap">
-          <span className="badge info">{(rows || []).length} مشتری</span>
-          <span className="badge bad">مجموع بدهی: {money(totalDebt)}</span>
-          <button className="btn" onClick={() => downloadCsv('customers')}>⤓ اکسل</button>
-          <button className="btn primary" onClick={openNew}>＋ مشتری نو</button>
-        </div>
-      </div>
-
+      <div className="card">
+        <ListHead actions={
+          <>
+            <span className="badge info">{(rows || []).length} مشتری</span>
+            <span className="badge bad">مجموع بدهی: {money(totalDebt)}</span>
+            <button className="btn" onClick={() => downloadCsv('customers')}>⤓ اکسل</button>
+            <button className="btn primary" onClick={openNew}>＋ مشتری نو</button>
+          </>
+        }>
+          <SearchBox value={q} onChange={setQ} placeholder="نام، کد، تماس، شخص رابط…" width={330} />
+        </ListHead>
+        <div className="card-b tight">
       {!rows ? <Spinner /> : (
-        <Table head={['#', 'کد', 'نام مشتری / شرکت', 'شخص رابط', 'تماس', 'پلیت موتر', 'فروش قرضه', 'رسیدات', 'باقی مانده بدهی', '']}>
+        <Table head={['#', 'کد', 'نام مشتری / شخص رابط', 'تماس', 'پلیت', 'فروش قرضه', 'رسیدات', 'باقی مانده بدهی', '']}>
           {rows.map((r, i) => (
             <tr key={r.id}>
-              <td>{i + 1}</td>
+              <td className="mono muted-cell">{i + 1}</td>
               <td className="mono">{r.code}</td>
-              <td><Link to={`/customers/${r.id}`} style={{ fontWeight: 600 }}>{r.name}</Link></td>
-              <td className="muted">{r.contactPerson}</td>
-              <td className="mono">{r.phone}</td>
-              <td className="mono">{r.truckPlate}</td>
+              <td>
+                <Link to={`/customers/${r.id}`} style={{ fontWeight: 600 }}>{r.name}</Link>
+                <div className="cell-sub">{r.contactPerson || '—'}</div>
+              </td>
+              <td className="mono hide-sm">{r.phone || '—'}</td>
+              <td className="mono hide-md">{r.truckPlate || '—'}</td>
               <td className="num">{money(r.creditSales)}</td>
-              <td className="num">{money(r.receipts)}</td>
+              <td className="num hide-sm">{money(r.receipts)}</td>
               <td className="num" style={{ fontWeight: 800, color: r.balance > 0 ? 'var(--danger)' : r.balance < 0 ? 'var(--ok)' : 'inherit' }}>
                 {money(r.balance)}
               </td>
-              <td><div className="actions">
+              <td><div className="actions hover-actions">
                 <Link className="btn sm" to={`/customers/${r.id}`}>کارت حساب</Link>
                 <button className="btn sm" onClick={() => setForm({ ...r })}>ویرایش</button>
                 {isManager ? <button className="btn sm danger" onClick={() => remove(r)}>حذف</button> : null}
@@ -79,6 +83,8 @@ export default function CustomersPage() {
           ))}
         </Table>
       )}
+        </div>
+      </div>
 
       {form ? (
         <Modal title={form.id ? 'ویرایش مشتری' : 'مشتری نو'} onClose={() => setForm(null)} size="md" footer={

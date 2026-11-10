@@ -44,8 +44,15 @@ export class SalariesController {
       `SELECT "employeeId", COUNT(*) as c FROM "Attendance" WHERE "date">=? AND "date"<=? AND "status"='absent' GROUP BY "employeeId"`,
       bucket.start, bucket.end,
     );
+    /* روزهای غایب بدون «رخصتی رسمی» و «جمعه» */
+    const absDayRows = (await db().$queryRawUnsafe(
+      `SELECT "employeeId", COUNT(*) as c FROM "Attendance" WHERE "date">=? AND "date"<=?
+        AND "status" NOT IN ('present','official_holiday','friday') GROUP BY "employeeId"`,
+      bucket.start, bucket.end,
+    )) as any[];
     const otMap = Object.fromEntries(ot.map((o) => [o.employeeId, Number(o.hours) || 0]));
     const absMap = Object.fromEntries(absences.map((o) => [o.employeeId, Number(o.c) || 0]));
+    const deductMap = Object.fromEntries(absDayRows.map((o: any) => [o.employeeId, Number(o.c) || 0]));
     const hours = Number(await settingsService.get('attendanceWorkHours')) || 8;
     const rows = employees.map((e) => {
       const ex = byEmp[e.id];
@@ -63,6 +70,7 @@ export class SalariesController {
         penalty: Number(ex?.penalty ?? 0),
         overtimeHours: otHours,
         absentDays: absMap[e.id] || 0,
+        deductionDays: deductMap[e.id] || 0,
         overtimeAmount: otAmount,
         total: Math.round((base + Number(ex?.bonus ?? 0) + otAmount - Number(ex?.penalty ?? 0)) * 100) / 100,
         payerName: ex?.payerName ?? '',
@@ -118,7 +126,9 @@ export class SalariesController {
     if (!m) throw new HttpException('ماه را انتخاب کنید.', 400);
     const ref = fromCalendar(Number(m[1]), Number(m[2]), 1, mode);
     const b = monthBucket(ref, mode);
-    const payDate = body.payDate ? parseUserDate(body.payDate, mode) : todayISO();
+    let payDate = todayISO();
+    try { if (body.payDate) payDate = parseUserDate(body.payDate, mode); }
+    catch (e: any) { throw new HttpException(e.message, 400); }
     const prefix = await settingsService.get('docPrefixSalary');
     const p = db();
     let saved = 0;

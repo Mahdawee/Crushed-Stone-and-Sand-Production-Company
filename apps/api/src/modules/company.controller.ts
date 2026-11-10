@@ -84,6 +84,7 @@ export class CompanyController {
   }
 
   @Put('settings')
+  @ManagerOnly()
   async saveSettings(@Body() body: Record<string, string>) {
     return settingsService.setMany(body);
   }

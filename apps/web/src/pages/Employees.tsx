@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, downloadCsv } from '../lib/api';
 import { useSession } from '../lib/session';
-import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select } from '../components/ui';
+import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, ListHead, SearchBox } from '../components/ui';
+import { useDebounced } from '../lib/useDebounced';
 import { money, formatDate, todayISO } from '../lib/calendar';
 import { DatePicker } from '../components/DatePicker';
 
@@ -22,10 +23,11 @@ export default function EmployeesPage() {
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
-    const r = await api.get(`/employees?q=${encodeURIComponent(q)}&status=${status}`);
+    const r = await api.get(`/employees?q=${encodeURIComponent(dq)}&status=${status}`);
     setRows(r.rows);
   };
-  useEffect(() => { load().catch((e) => toast.error('بارگذاری نشد', e.message)); }, [q, status]);
+  const dq = useDebounced(q);
+  useEffect(() => { load().catch((e) => toast.error('بارگذاری نشد', e.message)); }, [dq, status]);
 
   const openNew = async () => {
     const { code } = await api.get('/employees/next-code');
@@ -64,21 +66,21 @@ export default function EmployeesPage() {
 
   return (
     <div className="col" style={{ gap: 14 }}>
-      <div className="row between wrap">
-        <div className="row wrap" style={{ gap: 8 }}>
-          <input className="input" style={{ width: 240 }} placeholder="جستجو: نام، کد، وظیفه…" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="card">
+        <ListHead actions={
+          <>
+            <span className="badge ok">{totals.active} فعال</span>
+            <span className="badge muted">{totals.inactive} غیر فعال</span>
+            <span className="badge info">معاش ثابت: {money(totals.salary)}</span>
+            <button className="btn" onClick={() => downloadCsv('employees')}>⤓ اکسل</button>
+            <button className="btn primary" onClick={openNew}>＋ کارمند نو</button>
+          </>
+        }>
+          <SearchBox value={q} onChange={setQ} placeholder="نام، کد، وظیفه…" width={280} />
           <Select value={status} onChange={setStatus} placeholder="همه وضعیت‌ها"
             options={[{ value: 'active', label: 'فعال' }, { value: 'inactive', label: 'غیر فعال' }]} />
-        </div>
-        <div className="row wrap">
-          <span className="badge ok">{totals.active} فعال</span>
-          <span className="badge muted">{totals.inactive} غیر فعال</span>
-          <span className="badge info">مجموع معاش ثابت: {money(totals.salary)}</span>
-          <button className="btn" onClick={() => downloadCsv('employees')}>⤓ اکسل</button>
-          <button className="btn primary" onClick={openNew}>＋ کارمند نو</button>
-        </div>
-      </div>
-
+        </ListHead>
+        <div className="card-b tight">
       {!rows ? <Spinner /> : (
         <Table head={['#', 'کد', 'نام', 'نام پدر', 'وظیفه', 'تاریخ استخدام', 'معاش ثابت', 'تماس', 'وضعیت', '']}>
           {rows.map((r, i) => (
@@ -86,13 +88,13 @@ export default function EmployeesPage() {
               <td>{i + 1}</td>
               <td className="mono">{r.code}</td>
               <td><Link to={`/employees/${r.id}`} style={{ fontWeight: 600 }}>{r.name}</Link></td>
-              <td className="muted">{r.fatherName}</td>
+              <td className="muted hide-md">{r.fatherName}</td>
               <td>{r.position}</td>
-              <td className="mono">{formatDate(r.hireDate, calendar)}</td>
+              <td className="mono hide-sm">{formatDate(r.hireDate, calendar)}</td>
               <td className="num">{money(r.baseSalary)}</td>
-              <td className="mono">{r.phone}</td>
+              <td className="mono hide-sm">{r.phone}</td>
               <td><span className={`badge ${r.status === 'active' ? 'ok' : 'muted'}`}>{r.status === 'active' ? 'فعال' : 'غیر فعال'}</span></td>
-              <td><div className="actions">
+              <td><div className="actions hover-actions">
                 <Link className="btn sm" to={`/employees/${r.id}`}>پروفایل</Link>
                 <button className="btn sm" onClick={() => openEdit(r)}>ویرایش</button>
                 {isManager ? <button className="btn sm danger" onClick={() => remove(r)}>حذف</button> : null}
@@ -101,6 +103,8 @@ export default function EmployeesPage() {
           ))}
         </Table>
       )}
+        </div>
+      </div>
 
       {form ? (
         <Modal title={form.id ? 'ویرایش کارمند' : 'کارمند نو'} onClose={() => setForm(null)}
