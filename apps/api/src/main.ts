@@ -39,8 +39,20 @@ async function bootstrap() {
     join(__dirname, '..', '..', 'web', 'dist'), // dev: apps/api/dist → apps/web/dist
     join(__dirname, '..', 'web', 'dist'),
   ].filter(Boolean) as string[];
-  const webDist = candidates.find((c) => existsSync(join(c, 'index.html')));
-  if (webDist) {
+  const devMode = process.env.FD_DEV_MODE === '1';
+  const devUiUrl = `http://localhost:${process.env.FD_WEB_PORT || 5173}/`;
+  /* در حالت توسعه، رابط کاربری را Vite می‌سازد؛ build قدیمی را سرو نمی‌کنیم تا
+     کاربر نسخه کهنه نبیند و به‌جای آن به آدرس Vite هدایت می‌شود. */
+  const webDist = devMode ? undefined : candidates.find((c) => existsSync(join(c, 'index.html')));
+  if (devMode) {
+    const bare: any = app.getHttpAdapter().getInstance();
+    bare.get('/', (req: any, res: any) => {
+      if (!String(req.headers?.accept || '').includes('text/html')) {
+        return res.json({ ok: true, dev: true, ui: devUiUrl, api: '/api' });
+      }
+      res.redirect(302, devUiUrl);
+    });
+  } else if (webDist) {
     // register the static handler on the underlying express instance so it is
     // not affected by Nest's global prefix / router ordering
     const expressApp: any = app.getHttpAdapter().getInstance();
@@ -72,6 +84,14 @@ async function bootstrap() {
   const port = Number(process.env.FD_PORT || 4317);
   // loopback only — the office PC is the only machine that may reach the API
   await app.listen(port, process.env.FD_HOST || '127.0.0.1');
+  // Always tell the human where the app is. In dev the Vite server serves the UI;
+  // otherwise this very process serves the built app.
+  const host = process.env.FD_HOST || '127.0.0.1';
+  if (process.env.FD_DEV_MODE === '1') {
+    console.log(`FARDAY_OPEN_UI http://localhost:${process.env.FD_WEB_PORT || 5173}/`);
+  } else if (webDist) {
+    console.log(`FARDAY_OPEN_UI http://${host}:${port}/`);
+  }
   // Printed on purpose: the Tauri shell reads this line to know we are ready.
   console.log(`FARDAY_API_READY http://127.0.0.1:${port}/api  db=${databaseFile()}  data=${dataDir()}`);
 }

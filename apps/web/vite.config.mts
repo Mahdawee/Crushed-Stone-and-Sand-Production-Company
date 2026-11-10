@@ -7,13 +7,13 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: '0.0.0.0',
-    port: 5173,
+    port: Number(process.env.FD_WEB_PORT || 5173),
     strictPort: true,
     // allow the sandbox preview host (and any LAN host name)
     allowedHosts: true,
     hmr: { clientPort: 443, protocol: 'wss' },
     proxy: {
-      '/api': { target: 'http://127.0.0.1:4317', changeOrigin: true },
+      '/api': { target: process.env.FD_API_BASE || 'http://127.0.0.1:4317', changeOrigin: true },
     },
   },
   build: {

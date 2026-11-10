@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "nest start --watch",
+    "dev": "cross-env FD_DEV_MODE=1 nest start --watch",
     "start": "node dist/main.js",
     "build": "nest build",
     "db:generate": "prisma generate",
