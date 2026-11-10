@@ -236,13 +236,15 @@ export default function Layout() {
             <IconChevron dir={rail ? 'start' : 'end'} size={15} />
           </button>
 
-          {/* ② بستن کشو — فقط در حالت کشو */}
-          <button
-            className="sb-close" onClick={() => setOpen(false)} type="button"
-            title="بستن منو (Esc)" aria-label="بستن منو"
-          >
-            <IconClose size={16} />
-          </button>
+          {/* ② بستن کشو — فقط در حالت کشو (در دسکتاپ اصلاً ساخته نمی‌شود) */}
+          {drawer ? (
+            <button
+              className="sb-close" onClick={() => setOpen(false)} type="button"
+              title="بستن منو (Esc)" aria-label="بستن منو"
+            >
+              <IconClose size={16} />
+            </button>
+          ) : null}
         </div>
 
         <nav className="nav" onMouseLeave={railActive ? () => setHoverGroup('') : undefined}>
