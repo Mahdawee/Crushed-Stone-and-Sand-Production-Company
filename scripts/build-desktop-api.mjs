@@ -13,6 +13,7 @@ import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -21,6 +22,49 @@ const out = path.join(root, 'src-tauri/api');
 const noNode = process.argv.includes('--no-node');
 
 const run = (cmd, cwd) => execSync(cmd, { cwd, stdio: 'inherit' });
+
+/**
+ * استخراج «node.exe» از فایل zip رسمی نود — بدون نیاز به unzip یا tar.
+ *
+ * ویندوز به‌صورت پیش‌فرض `unzip` ندارد و `tar` هم روی همه نسخه‌ها نیست؛
+ * پس ساختار ZIP (central directory + deflate) را خودمان می‌خوانیم.
+ * اگر بعداً ساختار عوض شد، خطای روشن برمی‌گرداند تا پیام گمراه‌کننده ندهد.
+ */
+function extractFileFromZip(zipPath, wantedSuffix, destPath) {
+  const buf = fs.readFileSync(zipPath);
+  // پیدا کردن End Of Central Directory
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 66000); i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('ZIP نامعتبر است (EOCD پیدا نشد)');
+  const total = buf.readUInt16LE(eocd + 10);
+  let off = buf.readUInt32LE(eocd + 16);
+
+  for (let n = 0; n < total; n++) {
+    if (buf.readUInt32LE(off) !== 0x02014b50) throw new Error('ZIP نامعتبر است (central directory)');
+    const method = buf.readUInt16LE(off + 10);
+    const compSize = buf.readUInt32LE(off + 20);
+    const nameLen = buf.readUInt16LE(off + 28);
+    const extraLen = buf.readUInt16LE(off + 30);
+    const commentLen = buf.readUInt16LE(off + 32);
+    const localOff = buf.readUInt32LE(off + 42);
+    const name = buf.toString('utf8', off + 46, off + 46 + nameLen);
+
+    if (name.endsWith(wantedSuffix)) {
+      const lNameLen = buf.readUInt16LE(localOff + 26);
+      const lExtraLen = buf.readUInt16LE(localOff + 28);
+      const start = localOff + 30 + lNameLen + lExtraLen;
+      const data = buf.subarray(start, start + compSize);
+      const out = method === 0 ? data : zlib.inflateRawSync(data);
+      fs.writeFileSync(destPath, out);
+      return name;
+    }
+    off += 46 + nameLen + extraLen + commentLen;
+  }
+  throw new Error(`فایل ${wantedSuffix} در ZIP پیدا نشد`);
+}
+
 
 console.log('▶ 1/5 ساخت API (nest build)…');
 run('npx nest build', apiSrc);
@@ -72,6 +116,13 @@ for (const m of ['@prisma', '@libsql']) {
   }
 }
 // the built React app is served by the same local process
+// tauri.conf.json منابع «binaries/*» را اعلام می‌کند؛ اگر پوشه نباشد ساخت با خطا
+// «glob pattern binaries/* path not found» می‌شکند. یک placeholder کم‌حجم می‌گذاریم.
+const binDir = path.join(root, 'src-tauri', 'binaries');
+fs.mkdirSync(binDir, { recursive: true });
+fs.writeFileSync(path.join(binDir, 'README.txt'),
+  'این پوشه برای فایل‌های اجرایی جانبی (sidecar) است. ساخت نصب‌کننده به آن نیاز دارد.\n');
+
 const webDist = path.join(root, 'apps/web/dist');
 if (fs.existsSync(path.join(webDist, 'index.html'))) {
   fs.cpSync(webDist, path.join(out, 'web'), { recursive: true });
@@ -89,10 +140,9 @@ if (!noNode) {
   const zip = path.join(tmp, zipName);
   try {
     run(`curl -fL --retry 3 --connect-timeout 20 -o "${zip}" "${url}"`, tmp);
-    run(`unzip -o -q "${zip}" -d "${tmp}"`, tmp);
-    const exe = path.join(tmp, `node-v${ver}-win-x64`, 'node.exe');
-    fs.copyFileSync(exe, path.join(out, 'node.exe'));
-    console.log('   ✔ node.exe کاپی شد');
+    if (!fs.existsSync(zip) || fs.statSync(zip).size < 5_000_000) throw new Error('دانلود ناقص بود');
+    const found = extractFileFromZip(zip, 'node.exe', path.join(out, 'node.exe'));
+    console.log(`   ✔ node.exe کاپی شد (${found})`);
   } catch {
     // بدون انترنت هم باید بشود نصب‌کننده ساخت — فقط Node روی سیستم لازم می‌شود
     console.log('   ⚠ دانلود Node انجام نشد (انترنت نیست یا nodejs.org بسته است).');
@@ -125,5 +175,12 @@ const size = (dir) => {
   }
   return s;
 };
+const hasNode = fs.existsSync(path.join(out, 'node.exe'));
 console.log(`✔ آماده است — ${out}  (${(size(out) / 1024 / 1024).toFixed(1)} MB)`);
+if (!hasNode && process.platform !== 'win32') {
+  console.log('   ℹ node.exe فقط برای نصب‌کننده ویندوز لازم است.');
+} else if (!hasNode) {
+  console.log('   ⚠ node.exe داخل بسته نیست → کمپیوتر مقصد باید Node.js داشته باشد.');
+  console.log('     برای بسته مستقل، یک بار با انترنت همین دستور را اجرا کنید.');
+}
 console.log('   حالا بسازید:  npx tauri build');

@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "af.farday.roshan",
   "build": {
-    "beforeDevCommand": "npm run dev:web",
+    "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:5173",
     "beforeBuildCommand": "npm run build:desktop",
     "frontendDist": "http://127.0.0.1:4317"
@@ -42,8 +42,7 @@
       "icons/icon.png"
     ],
     "resources": [
-      "api/**/*",
-      "binaries/*"
+      "api/**/*"
     ],
     "windows": {
       "nsis": {

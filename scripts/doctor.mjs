@@ -30,8 +30,11 @@ console.log(`  سیستم: ${os.platform()} ${process.arch} — نود ${process
 
 console.log('\n— ۱) Node.js —');
 const [major] = process.versions.node.split('.').map(Number);
-if (major >= 20) ok(`Node ${process.version}`);
+if (major >= 20) ok(`Node ${process.version} (کافی است — ۲۲ یا بالاتر)`);
 else bad(`Node ${process.version} خیلی قدیمی است`, 'Node 22 LTS را از nodejs.org نصب کنید');
+
+/* «npm doctor» پیشنهاد می‌کند آخرین نسخه npm/node را نصب کنید؛ برای این پروژه لازم نیست */
+console.log('  ℹ اگر npm doctor نسخه نود/npm تازه‌تری پیشنهاد داد، نادیده بگیرید — این پروژه با Node 22 کار می‌کند.');
 
 console.log('\n— ۲) Rust و Cargo —');
 const rustc = run('rustc --version');
@@ -58,18 +61,17 @@ console.log('\n— ۵) بسته‌های پروژه —');
 // npm workspaces hoist to the root, but a missing workspace folder is the real signal.
 const nmRoot = path.join(root, 'node_modules');
 const have = (rel) => fs.existsSync(path.join(nmRoot, rel));
-const rootDeps = fs.existsSync(path.join(nmRoot, '.package-lock.json')) ||
-  fs.existsSync(path.join(root, 'package-lock.json'));
+const rootDeps = fs.existsSync(path.join(root, 'package-lock.json'));
 if (fs.existsSync(nmRoot) && have('@nestjs/core') && have('vite')) {
   ok('node_modules نصب است (api + web)');
 } else if (fs.existsSync(nmRoot)) {
   const missing = [!have('@nestjs/core') && '@nestjs/core', !have('vite') && 'vite'].filter(Boolean);
   bad(`بسته‌های پروژه ناقص است (${missing.join(', ')} پیدا نشد)`, 'در پوشه پروژه: npm install');
-} else if (rootDeps) {
-  ok('package-lock.json موجود است — برای نصب: npm ci');
-  bad('npm install اجرا نشده', 'در پوشه پروژه: npm install');
+} else if (fs.existsSync(path.join(root, 'apps/api/node_modules')) && fs.existsSync(path.join(root, 'apps/web/node_modules'))) {
+  /* ویندوز/workspaces گاهی به‌جای hoist کردن، داخل هر پکیج نصب می‌کند */
+  ok('بسته‌ها داخل apps/api و apps/web نصب شده‌اند');
 } else {
-  bad('npm install اجرا نشده', 'در پوشه پروژه: npm install');
+  bad('npm install اجرا نشده (یا ناقص است)', 'در پوشه پروژه: npm install   — یا: npm run setup');
 }
 
 console.log('\n— ۶) ساخته‌های API و رابط —');
@@ -83,10 +85,15 @@ if (!apiBuilt || !webBuilt) todos.push('npm run build');
 
 console.log('\n— ۷) بسته نصبی (src-tauri/api) —');
 const pkg = path.join(root, 'src-tauri/api/app.js');
+const binDir = path.join(root, 'src-tauri', 'binaries');
 if (fs.existsSync(pkg)) ok('بسته API آماده است');
-else { warn('آماده نشده — npm run package:api (قبل از desktop:build)'); todos.push('npm run package:api'); }
-if (isWin && !fs.existsSync(path.join(root, 'src-tauri/api/node.exe'))) {
-  warn('node.exe کاپی نشده — برای نصب‌کننده‌ای که به Node نیاز ندارد: npm run package:api');
+else warn('آماده نشده — npm run desktop:build این را خودکار می‌سازد');
+if (!fs.existsSync(binDir)) {
+  warn('پوشه src-tauri/binaries نیست (tauri.conf آن را منبع اعلام کرده) — npm run package:api می‌سازد');
+  todos.push('npm run package:api');
+}
+if (isWin && fs.existsSync(pkg) && !fs.existsSync(path.join(root, 'src-tauri/api/node.exe'))) {
+  warn('node.exe داخل بسته نیست — کمپیوتر مقصد باید Node.js داشته باشد (package:api با انترنت آن را دانلود می‌کند)');
 }
 
 console.log('\n— ۸) ابزار Tauri CLI —');
