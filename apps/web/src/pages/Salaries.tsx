@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, downloadCsv } from '../lib/api';
 import { useSession } from '../lib/session';
-import { useToast, Num, Table, Spinner, Select, Stat } from '../components/ui';
+import { useToast, Num, Table, Spinner, Select, Stat, InlineStat } from '../components/ui';
 import { DatePicker, MonthPicker } from '../components/DatePicker';
 import { money, monthKey, todayISO, formatDate } from '../lib/calendar';
 
@@ -55,42 +55,44 @@ export default function SalariesPage() {
 
   return (
     <div className="col" style={{ gap: 14 }}>
-      <div className="row between wrap">
-        <div className="row wrap">
+      <div className="card">
+        <div className="list-head">
           <div className="pill-tabs">
             <button className={tab === 'sheet' ? 'on' : ''} onClick={() => setTab('sheet')}>ورق معاش</button>
-            <button className={tab === 'history' ? 'on' : ''} onClick={() => setTab('history')}>سابقه اسناد</button>
+            <button className={tab === 'history' ? 'on' : ''} onClick={() => setTab('history')}>سابقه</button>
           </div>
           <MonthPicker value={month} onChange={setMonth} calendar={calendar} yearsBack={3} />
-          <span className="badge info">{sheet?.label || ''}</span>
-        </div>
-        <div className="row wrap">
-          <button className="btn" onClick={() => downloadCsv('salaries')}><IconDownload size={15} /> اکسل</button>
-          {tab === 'sheet' ? (
-            <>
-              <div className="field" style={{ minWidth: 150 }}>
-                <label style={{ fontSize: '.72rem' }}>تاریخ پرداخت</label>
-                <DatePicker value={payDate} onChange={setPayDate} calendar={calendar} width={150} />
-              </div>
-              <button className="btn primary" onClick={save} disabled={busy}>{busy ? 'ذخیره…' : 'ذخیره ورق معاش'}</button>
-            </>
-          ) : null}
+          <span className="badge muted">{sheet?.label || ''}</span>
+          <div style={{ flex: 1 }} />
+          <div className="list-actions">
+            <button className="btn" onClick={() => downloadCsv('salaries')}><IconDownload size={15} /> اکسل</button>
+            {tab === 'sheet' ? (
+              <>
+                <DatePicker compact value={payDate} onChange={setPayDate} calendar={calendar} width={140} title="تاریخ پرداخت" />
+                <button className="btn primary" onClick={save} disabled={busy}>{busy ? 'ذخیره…' : 'ذخیره ورق'}</button>
+              </>
+            ) : null}
+          </div>
         </div>
       </div>
 
       {tab === 'sheet' ? (
         !sheet ? <Spinner /> : (
           <>
-            <div className="grid c4">
-              <Stat label="کارمندان فعال" value={rows.length} icon={<IconUsers size={16} />} />
-              <Stat label="مجموع معاش ثابت" value={money(rows.reduce((a, r) => a + Number(r.baseSalary || 0), 0))} icon={<IconCoins size={16} />} />
-              <Stat label="اضافه کاری (ساعت)" value={rows.reduce((a, r) => a + Number(r.overtimeHours || 0), 0)} icon={<IconClock size={16} />} />
-              <Stat label="مجموع پرداخت این ماه" value={money(total)} kind="ok" icon={<IconCheck size={16} />} />
-            </div>
-
             <div className="card">
-              <div className="card-h"><h3>ورق معاش — {sheet.label}</h3><div style={{ flex: 1 }} />
-                <span className="small muted">اضافه کاری و روز کسر از شیت حضور و غیاب خودکار می‌آید</span></div>
+              <div className="card-h">
+                <h3>ورق معاش — {sheet.label}</h3>
+                <div style={{ flex: 1 }} />
+                <div className="list-summary">
+                  <InlineStat label="کارمند" value={rows.length} />
+                  <span className="sep" />
+                  <InlineStat label="معاش ثابت" value={money(rows.reduce((a, r) => a + Number(r.baseSalary || 0), 0))} />
+                  <span className="sep" />
+                  <InlineStat label="اضافه (ساعت)" value={rows.reduce((a, r) => a + Number(r.overtimeHours || 0), 0)} />
+                  <span className="sep" />
+                  <InlineStat label="مجموع پرداخت" value={money(total)} tone="ok" />
+                </div>
+              </div>
               <div className="card-b tight">
                 <div style={{ overflowX: 'auto' }}>
                   <table className="tbl compact">
