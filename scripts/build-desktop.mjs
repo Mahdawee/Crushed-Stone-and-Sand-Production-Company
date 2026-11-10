@@ -31,6 +31,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findMsvc, msvcEnv as msvcEnvOfMsvc, isFile as libIsFile } from './lib/msvc.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const isWin = process.platform === 'win32';
@@ -107,190 +108,26 @@ const cargoPath = cargoInPath || cargoOnDisk;
 const cargoCmd = cargoPath || 'cargo';
 
 /* ------------------------------------------------------------------ */
-/* ۱/ب) پیدا کردن لینکر C++ (link.exe) و Windows SDK                  */
+/* ۱/ب) پیدا کردن لینکر C++ (link.exe) — ماژول مشترک                  */
 /* ------------------------------------------------------------------ */
 /*
- * خطای دوم کاربر — متفاوت از خطای cargo:
+ * منطق در `scripts/lib/msvc.mjs` است تا این اسکریپت، `doctor` و
+ * `find-msvc` **دقیقاً یک رفتار** داشته باشند.
  *
- *   error: linker `link.exe` not found
- *     = note: the msvc targets depend on the msvc linker but `link.exe` was not found
- *
- * یعنی cargo/rustc اجرا می‌شوند ولی **لینکر C++** نیست. Rust برای ساختن
- * فایل .exe به link.exe از «Visual Studio C++ Build Tools» نیاز دارد.
- * نکته‌ی مهم: VS Code کافی نیست (پیام خودِ rustc هم همین را می‌گوید).
- *
- * درس گرفته‌شده از نسخه‌ی قبل: فقط اضافه‌کردن پوشه‌ی bin به PATH کافی
- * **نیست**؛ link.exe برای پیدا کردن kernel32.lib و بقیه به متغیرهای
- * LIB و INCLUDE هم نیاز دارد. راه درست، اجرای vcvars64.bat و برداشتن
- * محیط کامل آن است — که همین‌جا انجام می‌شود.
+ * درس دور سیزدهم: نسخه‌ی قبلی فقط پوشه‌های `…\2019\…` و `…\2022\…` را
+ * می‌گشت. کاربر Build Tools کامل نصب داشت (MSVC v143 + SDK) ولی نصب در
+ * مسیری بود که ما نمی‌گشتیم → پیام گمراه‌کننده‌ی «link.exe پیدا نشد».
+ * حالا: vswhere -all -format json، سپس vswhere -find (مستقل از چیدمان)،
+ * سپس پیمایش هر نام نسخه، سپس جست‌وجوی محدود داخل نصب.
  */
-
-/** مسیرهای ممکن نصب Visual Studio / Build Tools */
-const VS_ROOTS = [
-  'C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools',
-  'C:\\Program Files\\Microsoft Visual Studio\\2022\\BuildTools',
-  'C:\\Program Files\\Microsoft Visual Studio\\2022\\Community',
-  'C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional',
-  'C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise',
-  'C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\BuildTools',
-  'C:\\Program Files\\Microsoft Visual Studio\\2019\\Community',
-];
-
-const VSW_HERE = 'C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe';
-
-/**
- * مرتب‌ترین نسخه‌ی MSVC را برمی‌گرداند (`VC\\Tools\\MSVC\\14.4x.xxxxx`).
- * از readdir استفاده می‌کنیم تا نسخه‌ی آینده هم کار کند (قبلاً نسخه
- * دستی حدس زده می‌شد که شکننده بود).
- */
-function newestMsvcVersion(vsPath) {
-  try {
-    const list = fs.readdirSync(path.join(vsPath, 'VC', 'Tools', 'MSVC'))
-      .filter((v) => /^14\./.test(v))
-      .sort((a, b) => {
-        const n = (x) => x.split('.').map(Number);
-        const [a1, a2, a3] = n(a);
-        const [b1, b2, b3] = n(b);
-        return a1 - b1 || a2 - b2 || (a3 || 0) - (b3 || 0);
-      });
-    return list.pop() || '';
-  } catch { return ''; }
-}
-
-/** آیا مسیر vcvars64.bat (یا vcvarsall.bat) در این نصب هست؟ */
-function vcvarsIn(vsPath) {
-  for (const rel of [
-    ['VC', 'Auxiliary', 'Build', 'vcvars64.bat'],
-    ['VC', 'Auxiliary', 'Build', 'vcvarsall.bat'],
-  ]) {
-    const p = path.join(vsPath, ...rel);
-    if (isFile(p)) return p;
-  }
-  return '';
-}
-
-/**
- * نتیجه‌ی جست‌وجوی MSVC:
- *   { found, vsPath, msvcVersion, linkExe, vcvars, sdkVersion, source }
- */
-function findMsvc() {
-  const result = {
-    found: false, vsPath: '', msvcVersion: '', linkExe: '',
-    vcvars: '', sdkVersion: '', source: '',
-    /* آیا اصلاً Visual Studio (هر نسخه‌ای) دیده شد؟ → برای تشخیص
-       «VS هست ولی کامپوننت C++ ندارد» که شایع‌ترین حالت است */
-    sawVisualStudio: false,
-  };
-  if (!isWin) return result;
-
-  const candidates = [];
-
-  /* الف) مسیر دستی — اگر Visual Studio در جای غیرمعمول نصب شده باشد:
-        set FD_MSVC_ROOT=D:\Tools\VS2022BuildTools
-        (می‌توان چند مسیر را با «;» جدا کرد) */
-  for (const p of (process.env.FD_MSVC_ROOT || '').split(';').filter(Boolean)) {
-    candidates.push({ p: p.trim(), s: 'FD_MSVC_ROOT' });
-  }
-
-  /* ب) vswhere — روش رسمی مایکروسافت. اول با شرط «کامپوننت C++ نصب باشد» */
-  const vswhereExe = process.env.FD_VSWHERE || VSW_HERE;
-  if (isFile(vswhereExe)) {
-    const q = spawnSync(vswhereExe, [
-      '-latest', '-products', '*',
-      '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
-      '-property', 'installationPath',
-    ], { encoding: 'utf8' });
-    const p1 = (q.stdout || '').split(/\r?\n/)[0].trim();
-    if (p1) candidates.push({ p: p1, s: 'vswhere (کامپوننت C++ دارد)' });
-
-    /* ب) اگر شرط بالا چیزی نداد، نصب‌های VS را بی‌شرط ببین (شاید کامپوننت
-       ناقص باشد — در آن صورت باید کاربر کامپوننت را اضافه کند) */
-    if (!candidates.some((c) => c.s.startsWith('vswhere'))) {
-      const q2 = spawnSync(vswhereExe, ['-latest', '-products', '*', '-property', 'installationPath'],
-        { encoding: 'utf8' });
-      for (const line of (q2.stdout || '').split(/\r?\n/)) {
-        const p = line.trim();
-        if (p) candidates.push({ p, s: 'vswhere (بدون کامپوننت C++)' });
-      }
-    }
-  }
-
-  /* ج) مسیرهای متداول — اگر vswhere نبود یا نصب قابل‌شناسایی نبود */
-  for (const p of VS_ROOTS) if (isFile(path.join(p, 'VC', 'Auxiliary', 'Build', 'vcvarsall.bat'))
-    || fs.existsSync(path.join(p, 'VC'))) candidates.push({ p, s: 'مسیر متداول' });
-
-  for (const { p, s } of candidates) {
-    /* اگر پوشه‌ی VC یا یک نصب VS دیده شد، یعنی VS نصب است */
-    if (fs.existsSync(path.join(p, 'VC')) || fs.existsSync(p)) result.sawVisualStudio = true;
-    const vcvars = vcvarsIn(p);
-    if (!vcvars) continue; /* VS نصب است ولی VC Tools ندارد → کمکی نمی‌کند */
-    const msvcVersion = newestMsvcVersion(p);
-    const linkExe = msvcVersion
-      ? path.join(p, 'VC', 'Tools', 'MSVC', msvcVersion, 'bin', 'Hostx64', 'x64', 'link.exe')
-      : '';
-    if (!linkExe || !isFile(linkExe)) continue;
-    return {
-      ...result,
-      found: true,
-      sawVisualStudio: true,
-      vsPath: p,
-      msvcVersion,
-      linkExe,
-      vcvars,
-      sdkVersion: newestWindowsSdk(),
-      source: s,
-    };
-  }
-  return result;
-}
-
-/** نسخه‌ی Windows SDK نصب‌شده (برای لاگ؛ بدون آن هم link.exe کار می‌کند اگر LIB درست باشد) */
-function newestWindowsSdk() {
-  for (const root of [
-    'C:\\Program Files (x86)\\Windows Kits\\10\\Lib',
-    'C:\\Program Files\\Windows Kits\\10\\Lib',
-  ]) {
-    try {
-      const dirs = fs.readdirSync(root).filter((d) => /^10\./.test(d)).sort();
-      if (dirs.length) return dirs.pop();
-    } catch { /* نیست */ }
-  }
-  return '';
-}
-
 const msvc = findMsvc();
 
-/**
- * محیط کامل MSVC از vcvars64.bat.
- *
- * چرا نه فقط PATH: link.exe برای پیوند دادن به `LIB` (مسیر kernel32.lib و…)
- * و `INCLUDE` نیاز دارد. مایکروسافت خودش این‌ها را با vcvars تنظیم می‌کند؛
- * پس همان را اجرا می‌کنیم و خروجی `set` را می‌خوانیم.
- */
+/* محیط کامل کامپایل (vcvars64 یا ساخت دستی LIB/INCLUDE) — یک بار */
+let msvcHow = '';
 let msvcEnvCache = null;
 function msvcEnv() {
-  if (msvcEnvCache !== null) return msvcEnvCache;
-  if (!isWin || !msvc.found) { msvcEnvCache = {}; return msvcEnvCache; }
-  if (inPath('link.exe')) { msvcEnvCache = {}; return msvcEnvCache; } /* از قبل در PATH است (Developer Command Prompt) */
-
-  const cmd = `call "${msvc.vcvars}" x64 >nul 2>&1 && set`;
-  const r = spawnSync('cmd.exe', ['/d', '/s', '/c', cmd], {
-    encoding: 'utf8',
-    maxBuffer: 8 * 1024 * 1024,
-    env: process.env,
-  });
-  const env = {};
-  for (const line of (r.stdout || '').split(/\r?\n/)) {
-    const i = line.indexOf('=');
-    if (i <= 0) continue;
-    const key = line.slice(0, i).trim();
-    /* فقط متغیرهایی که به کامپایل مربوط‌اند — تا محیط آلوده نشود */
-    if (/^(PATH|LIB|INCLUDE|LIBPATH|VCINSTALLDIR|VCToolsInstallDir|VSINSTALLDIR|WindowsSdkDir|WindowsSDKVersion|Platform|UCRTVersion|UniversalCRTSdkDir|VSCMD_ARG_TGT_ARCH)$/i.test(key)) {
-      env[key] = line.slice(i + 1);
-    }
-  }
-  msvcEnvCache = env;
-  return env;
+  if (msvcEnvCache === null) msvcEnvCache = msvcEnvOfMsvc(msvc);
+  return msvcEnvCache;
 }
 
 /**
@@ -308,13 +145,14 @@ function rustEnv({ offline = false } = {}) {
      * لینکر C++: اگر در PATH نبود، از vcvars64 محیط کامل می‌گیریم
      * (PATH + LIB + INCLUDE). فقط bin کافی نیست — خطای link.exe برمی‌گردد.
      */
-    const full = msvcEnv();
+    const { env: full, how } = msvcEnv();
     if (full.PATH) {
       /* `set` در vcvars مسیرها را با «;» می‌دهد؛ همه را جلو می‌گذاریم */
       for (const p of full.PATH.split(';').slice(0, 40)) if (p) prepend.push(p);
     } else if (msvc.found) {
       prepend.push(path.dirname(msvc.linkExe));
     }
+    msvcHow = how;
   }
   const seen = new Set();
   const parts = [...prepend, ...(process.env.PATH || '').split(sep)]
@@ -326,7 +164,7 @@ function rustEnv({ offline = false } = {}) {
   const env = { ...process.env, PATH: parts.join(sep) };
   if (isWin) {
     /* LIB و INCLUDE از vcvars — بدون این‌ها link.exe فایل‌های .lib را پیدا نمی‌کند */
-    const full = msvcEnv();
+    const { env: full } = msvcEnv();
     for (const k of ['LIB', 'INCLUDE', 'LIBPATH', 'WindowsSdkDir', 'WindowsSDKVersion',
       'UCRTVersion', 'UniversalCRTSdkDir', 'VCINSTALLDIR', 'VCToolsInstallDir', 'VSINSTALLDIR',
       'Platform', 'VSCMD_ARG_TGT_ARCH']) {
@@ -392,17 +230,42 @@ function linkerHelp(reason, detail) {
   }
 
   if (detail === 'vs-no-cpp') {
-    /* VS نصب است ولی کامپوننت C++ ندارد — شایع‌ترین حالت */
-    console.log(`  ${C.bold('علت:')} Visual Studio نصب است ولی کامپوننت ${C.bold('«Desktop development with C++')} را ندارد.`);
-    console.log(`  ${C.dim(`(نصب پیدا‌شده: ${msvc.vsPath || '—'}، ولی پوشه‌ی VC\\Tools\\MSVC یا link.exe ندارد)`)}`);
+    /*
+     * حالت واقعی دور سیزدهم: نصب هست، کامپوننت هم نصب است، ولی ما
+     * مسیرش را پیدا نکردیم. نسخه‌ی قبلی اینجا یک پیام قطعیِ **نادرست**
+     * می‌داد («کامپوننت را ندارد»). حالا فقط واقعیت را می‌گوییم:
+     * کدام مسیرها بررسی شد و در هر کدام چه بود.
+     */
+    console.log(`  ${C.bold('علت دقیق:')} یک نصب/پوشه‌ی Visual Studio دیده شد، ولی در مسیرهای ` +
+      `بررسی‌شده ${C.bold('link.exe')} پیدا نشد.`);
+    console.log(`  ${C.dim('این لزوماً یعنی نصب ناقص نیست — ممکن است چیدمان پوشه غیرمعمول باشد.')}`);
     console.log('');
-    console.log(`  ${C.bold('راه‌حل (ساده‌ترین):')}`);
-    console.log(`    ${C.bold('visualstudio.microsoft.com/visual-cpp-build-tools')} → نصب‌کننده → ${C.bold('Modify')}`);
-    console.log(`    تیک: ${C.bold('Desktop development with C++')} → Install (~۱٫۵ گیگابایت)`);
+    if (msvc.checked.length) {
+      console.log(`  ${C.bold('مسیرهایی که بررسی شد:')}`);
+      for (const c of msvc.checked.slice(0, 10)) {
+        console.log(`    • ${c.path}`);
+        console.log(`      ${C.dim(`${c.why} — ${c.source}`)}`);
+      }
+      if (msvc.checked.length > 10) console.log(`    ${C.dim(`… و ${msvc.checked.length - 10} مسیر دیگر`)}`);
+    }
+    if (msvc.instances.length) {
+      console.log(`\n  ${C.bold('نصب‌های ثبت‌شده در vswhere:')}`);
+      for (const it of msvc.instances.slice(0, 6)) {
+        console.log(`    • ${it.displayName || '?'} → ${it.path} ${C.dim(`(${it.version || '?'})`)}`);
+      }
+    }
     console.log('');
-    console.log(`  یا همین در یک دستور (اگر winget دارید — پارامترها را با نسخه‌ی خودتان چک کنید):`);
-    console.log(`    ${C.bold('winget install Microsoft.VisualStudio.2022.BuildTools')}`);
-    console.log(`    بعد از نصب: ${C.bold('npm run doctor')}`);
+    console.log(`  ${C.bold('قدم ۱ — عیب‌یابی دقیق (همین را بزنید):')}`);
+    console.log(`    ${C.bold('npm run find:msvc')}`);
+    console.log(`    ${C.dim('این دستور می‌گوید لینکر روی دیسک کجاست؛ اگر جای غیرمعمول باشد،')}`);
+    console.log(`    ${C.dim('دستور «set FD_MSVC_ROOT=…» را آماده چاپ می‌کند.')}`);
+    console.log('');
+    console.log(`  ${C.bold('قدم ۲ — اگر link.exe پیدا شد، مسیر را معرفی کنید:')}`);
+    console.log(`    ${C.bold('set FD_MSVC_ROOT=<ریشه‌ی نصب>')}   سپس ${C.bold('npm run desktop:build')}`);
+    console.log('');
+    console.log(`  ${C.bold('قدم ۳ — اگر واقعاً کامپوننت نیست:')}`);
+    console.log(`    Visual Studio Installer → ${C.bold('Modify')} → تیک ${C.bold('«Desktop development with C++')}`);
+    console.log(`    + «MSVC v143 …» + «Windows 11 SDK» → Modify`);
     console.log('');
     return;
   }
@@ -535,12 +398,16 @@ if (isWin) {
 
   /* لینکر C++ — منشأ خطای «linker link.exe not found» */
   if (msvc.found) {
-    const fromPath = inPath('link.exe');
-    console.log(`  ${C.ok('✔')} لینکر C++: MSVC ${msvc.msvcVersion}${msvc.sdkVersion ? ' · SDK ' + msvc.sdkVersion : ''}`);
+    console.log(`  ${C.ok('✔')} لینکر C++: MSVC ${msvc.msvcVersion || '?'}${msvc.sdkVersion ? ' · SDK ' + msvc.sdkVersion : ''}`);
     console.log(`     ${C.dim(msvc.linkExe)}`);
-    if (!fromPath) console.log(`     ${C.dim('(در PATH نبود — محیط کامل vcvars64 خودکار تنظیم می‌شود)')}`);
+    console.log(`     ${C.dim(`منبع: ${msvc.source}${msvc.how ? ' · ' + msvc.how : ''}`)}`);
+    const { how } = msvcEnv();
+    if (how === 'vcvars64') console.log(`     ${C.dim('محیط vcvars64 خودکار تنظیم شد (PATH + LIB + INCLUDE)')}`);
+    else if (how === 'ساخت دستی LIB/INCLUDE') console.log(`     ${C.warn('⚠ vcvars64 نبود — LIB/INCLUDE دستی ساخته شد')}`);
+    else if (how === 'ناموفق') console.log(`     ${C.bad('✘ محیط کامپایل تنظیم نشد — ساخت احتمالاً شکست می‌خورد')}`);
   } else {
     console.log(`  ${C.bad('✘')} لینکر C++ (link.exe): پیدا نشد — ساخت شکست می‌خورد`);
+    console.log(`     ${C.dim(`${msvc.checked.length} مسیر بررسی شد؛ جزئیات با: npm run find:msvc`)}`);
   }
 }
 

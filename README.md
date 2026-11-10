@@ -190,6 +190,7 @@ npm run desktop:build
 | ساخت نصب‌کننده | `npm run setup` → `npm run desktop:build` |
 | اگر `package.json` عوض شده | `npm install` → `npm run desktop:build` |
 | ساخت خطا داد | `npm run doctor` (راه‌حل هر مورد را فارسی می‌گوید) |
+| گفت «لینکر C++ پیدا نشد» ولی Build Tools نصب است | `npm run find:msvc` (مسیرهای بررسی‌شده + دستور رفع) |
 
 `npm run setup` خودش تشخیص می‌دهد چه چیزی کهنه است (بسته‌ها/API/رابط) و بقیه را رد می‌کند.
 

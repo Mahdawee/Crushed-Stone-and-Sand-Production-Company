@@ -29,6 +29,8 @@
     "test:api": "npm run test -w @farday/api",
     "desktop:setup": "npm i -D @tauri-apps/cli@2",
     "doctor": "node scripts/doctor.mjs",
+    "find:msvc": "node scripts/find-msvc.mjs",
+    "find:builder": "node scripts/find-msvc.mjs",
     "setup": "node scripts/setup.mjs",
     "test:ui": "node scripts/ui-check/layout.test.mjs && node scripts/ui-check/dom.test.mjs && node scripts/ui-check/sidebar.test.mjs && node scripts/ui-check/theme.test.mjs && node scripts/ui-check/form.test.mjs",
     "test:nsis": "node scripts/ui-check/nsis-langs.test.mjs",

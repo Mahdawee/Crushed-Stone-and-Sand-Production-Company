@@ -36,6 +36,8 @@ const doctor = read('scripts/doctor.mjs');
 const docs = read('docs/TAURI-BUILD.md');
 const apiPack = read('scripts/build-desktop-api.mjs');
 const ps1 = read('scripts/install-rust.ps1');
+const msvcLib = read('scripts/lib/msvc.mjs');
+const findMsvc = read('scripts/find-msvc.mjs');
 
 let pass = 0;
 let fail = 0;
@@ -98,12 +100,12 @@ ok('به اینکه VS Code کافی نیست اشاره می‌شود', /VS Cod
 ok('لینک دانلود Build Tools داده می‌شود', /visual-cpp-build-tools/.test(build));
 ok('نام کامپوننت دقیق گفته می‌شود', /Desktop development with C\+\+/.test(build));
 ok('Windows SDK هم یادآوری می‌شود', /Windows 11 SDK|Windows 10 SDK/.test(build));
-ok('نسخه MSVC از روی پوشه خوانده می‌شود (نه حدس)', /function newestMsvcVersion/.test(build));
-ok('link.exe واقعاً وجودش چک می‌شود', /Hostx64['"],\s*'x64['"],\s*'link\.exe'/.test(build));
-ok('vcvars64.bat استفاده می‌شود (نه فقط PATH)', /vcvars64\.bat/.test(build));
-ok('LIB و INCLUDE از vcvars برداشته می‌شود', /'LIB', 'INCLUDE'/.test(build) && /call "\$\{msvc\.vcvars\}"/.test(build));
-ok('vswhere با شرط کامپوننت C++ صدا زده می‌شود', /Microsoft\.VisualStudio\.Component\.VC\.Tools\.x86\.x64/.test(build));
-ok('اگر vswhere نبود، مسیرهای متداول گشته می‌شوند', /VS_ROOTS/.test(build));
+ok('نسخه MSVC از روی پوشه خوانده می‌شود (نه حدس)', /function newestMsvcVersion/.test(msvcLib) || /readdirSync\(msvcRoot\)/.test(msvcLib));
+ok('link.exe واقعاً وجودش چک می‌شود', /Hostx64['"],\s*'x64['"],\s*'link\.exe'/.test(msvcLib));
+ok('vcvars64.bat استفاده می‌شود (نه فقط PATH)', /vcvars64\.bat/.test(msvcLib) && /call "\$\{msvc\.vcvars\}"/.test(msvcLib));
+ok('LIB و INCLUDE از vcvars برداشته می‌شود', /LIB\|INCLUDE/.test(msvcLib) && /env\.LIB = libs\.join/.test(msvcLib));
+ok('vswhere با همه‌ی نصب‌ها صدا زده می‌شود', /'-all', '-products', '\*', '-format', 'json'/.test(msvcLib));
+ok('اگر vswhere نبود، مسیرهای متداول گشته می‌شوند', /scanVsDirs/.test(msvcLib));
 ok('مسیر دستی FD_MSVC_ROOT پشتیبانی می‌شود', /FD_MSVC_ROOT/.test(build));
 ok('پیش‌بررسی لینکر قبل از شروع ساخت انجام می‌شود', /پیش‌بررسی لینکر/.test(build));
 ok('خطای لینکر در خروجی ساخت خودکار تشخیص داده می‌شود', /msvc linker but/.test(build));
@@ -111,10 +113,30 @@ ok('خروجی ساخت برای تشخیص نگه داشته می‌شود', /f
 ok('خروجی هم‌زمان چاپ و ذخیره می‌شود (تجربه کاربر عوض نشده)', /process\.stdout\.write\(b\)/.test(build));
 ok('حجم بافر لاگ محدود است', /LOG_LIMIT/.test(build));
 ok('راه «x64 Native Tools Command Prompt» هم گفته می‌شود', /Native Tools Command Prompt/.test(build));
-ok('doctor وجود واقعی link.exe را می‌سنجد', /Hostx64['"],\s*'x64['"],\s*'link\.exe'/.test(doctor));
-ok('doctor حالت «VS بدون کامپوننت C++» را جدا می‌گوید', /Desktop development with C\+\+».*ندارد|کامپوننت «Desktop/.test(doctor));
-ok('doctor وجود Windows SDK را چک می‌کند', /Windows Kits/.test(doctor));
+ok('doctor وجود واقعی link.exe را می‌سنجد', /findMsvc\(\)/.test(doctor) && /Hostx64['"],\s*'x64['"],\s*'link\.exe'/.test(msvcLib));
+ok('doctor حالت «VS بدون کامپوننت C++» را جدا می‌گوید', /sawVisualStudio \|\| msvc\.instances\.length/.test(doctor));
+ok('doctor وجود Windows SDK را چک می‌کند', /sdkVersion/.test(doctor) && /Windows Kits/.test(msvcLib));
 ok('doctor خطای لینکر را در راه‌حل ذکر می‌کند', /linker link\.exe not found/.test(doctor));
+
+console.log('\n— کشف MSVC: چیدمان‌های غیر ۲۰۲۲ (درس دور سیزدهم) —');
+/* کاربر همه‌ی کامپوننت‌ها را داشت ولی نسخه‌ی قبلی فقط …\\2019\\… و …\\2022\\… را می‌گشت */
+ok('پوشه‌های VS دیگر هارد‌کد ۲۰۲۲/۲۰۱۹ نیستند', /scanVsDirs/.test(msvcLib) && !/Visual Studio\\\\2022\\\\BuildTools/.test(msvcLib));
+ok('هر نام نسخه‌ای پیمایش می‌شود (نه فقط ۲۰۲۲)', /نسخه: «2022»، «18»/.test(msvcLib) || /به عدد بودنش تکیه نمی‌کنیم/.test(msvcLib));
+ok('vswhere با -all همه‌ی نصب‌ها را می‌گیرد (نه فقط -latest)', /'-all', '-products', '\*', '-format', 'json'/.test(msvcLib));
+ok('vswhere -find برای پیدا کردن link.exe مستقل از چیدمان', /'-find', pat/.test(msvcLib) || /-find/.test(msvcLib));
+ok('جست‌وجوی محدود (BFS) داخل نصب وجود دارد', /function searchFile/.test(msvcLib));
+ok('اگر vcvars نبود، LIB/INCLUDE دستی ساخته می‌شود', /function manualEnv/.test(msvcLib));
+ok('نتیجه فهرست «مسیرهای بررسی‌شده» را نگه می‌دارد', /checked: \[\]/.test(msvcLib) && /result\.checked\.push/.test(msvcLib));
+ok('مسیر سفارشی با FD_MSVC_ROOT', /FD_MSVC_ROOT/.test(msvcLib));
+ok('ریشه‌ی VS قابل تغییر با FD_VS_BASE', /FD_VS_BASE/.test(msvcLib));
+ok('build-desktop از ماژول مشترک استفاده می‌کند (نه کد تکراری)', /from '\.\/lib\/msvc\.mjs'/.test(build));
+ok('doctor از ماژول مشترک استفاده می‌کند', /from '\.\/lib\/msvc\.mjs'/.test(doctor));
+ok('دستور عیب‌یابی npm run find:msvc وجود دارد', /find-msvc\.mjs/.test(scripts['find:msvc'] || ''));
+ok('مسیر نسخه‌های MSVC عددی مقایسه می‌شوند (۱۴٫۹ < ۱۴٫۴۴)', /function newerVersion/.test(msvcLib) && /Number\(v\) \|\| 0/.test(msvcLib));
+ok('پیام «پیدا نشد» مسیرهای بررسی‌شده را چاپ می‌کند', /مسیرهایی که بررسی شد/.test(build));
+ok('پیام «پیدا نشد» دیگر ادعای قطعی «کامپوننت ندارد» نمی‌کند', /این لزوماً یعنی نصب ناقص نیست/.test(build));
+ok('find-msvc پنج بخش تشخیص دارد', /۱\) آیا link\.exe در PATH/.test(findMsvc) && /۵\) Windows SDK/.test(findMsvc));
+ok('find-msvc دستور FD_MSVC_ROOT را آماده چاپ می‌کند', /set FD_MSVC_ROOT=/.test(findMsvc));
 
 console.log('\n— doctor —');
 ok('حالت «cargo روی دیسک ولی نه در PATH» تشخیص داده می‌شود', /cargoOnDisk/.test(doctor));
