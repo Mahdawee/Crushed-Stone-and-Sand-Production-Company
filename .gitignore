@@ -41,3 +41,8 @@ scripts/ui-check/.out*/
 
 # ZIP نود برای ساخت آفلاین (بزرگ است، نباید در گیت برود)
 .cache/
+
+# کلیدهای لایسنس — کلید خصوصی هرگز نباید در گیت برود
+license-keys/
+!license-keys/.gitkeep
+*.lic

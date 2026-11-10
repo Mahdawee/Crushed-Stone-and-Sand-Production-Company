@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthGuard } from './common/auth';
+import { LicenseGuard } from './common/license-guard';
 import { PrismaService } from './prisma.service';
 import { AuthController } from './modules/auth.controller';
 import { RootController } from './modules/root.controller';
@@ -15,13 +16,23 @@ import { LookupsController } from './modules/lookups.controller';
 import { ReportsController } from './modules/reports.controller';
 import { SystemController } from './modules/system.controller';
 import { ExportController } from './modules/importexport.controller';
+import { LicenseController } from './modules/license.controller';
 
 @Module({
   controllers: [
     RootController, AuthController, CompanyController, EmployeesController, CustomersController,
     SalesController, ReceiptsController, ExpensesController, SalariesController,
-    LookupsController, ReportsController, SystemController, ExportController,
+    LookupsController, ReportsController, SystemController, ExportController, LicenseController,
   ],
-  providers: [PrismaService, { provide: APP_GUARD, useClass: AuthGuard }],
+  providers: [
+    PrismaService,
+    { provide: APP_GUARD, useClass: AuthGuard },
+    /*
+     * ترتیب مهم است: AuthGuard اول (کاربر/نشست)، بعد LicenseGuard.
+     * به این ترتیب مسیر «فعال‌سازی لایسنس» بدون نشست هم کار می‌کند و
+     * پیام‌های خطا برای بقیه‌ی مسیرها روشن است.
+     */
+    { provide: APP_GUARD, useClass: LicenseGuard },
+  ],
 })
 export class AppModule {}

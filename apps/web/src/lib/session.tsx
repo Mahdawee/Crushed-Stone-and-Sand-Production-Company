@@ -16,6 +16,23 @@ type Ctx = {
   reloadSettings: () => Promise<void>;
   saveSettings: (patch: Settings) => Promise<void>;
   applyTheme: (s: Settings) => void;
+  /** وضعیت لایسنس این دستگاه (null = هنوز خوانده نشده) */
+  license: LicenseStatus | null;
+  reloadLicense: () => Promise<LicenseStatus | null>;
+};
+
+/** وضعیت لایسنس — همان شکل پاسخ `GET /api/license/status` */
+export type LicenseStatus = {
+  ok: boolean;
+  state: 'valid' | 'trial' | 'expired' | 'clock' | 'machine' | 'missing' | 'invalid';
+  message: string;
+  customer?: string;
+  kindLabel?: string;
+  startLabel?: string;
+  endLabel?: string;
+  daysLeft?: number | null;
+  machineKey?: string;
+  licenseId?: string;
 };
 
 const SessionCtx = createContext<Ctx>(null as any);
@@ -75,6 +92,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [settings, setSettings] = useState<Settings>({ calendar: 'jalali', theme: 'light', accent: 'teal' });
   const [ready, setReady] = useState(false);
+  const [license, setLicense] = useState<LicenseStatus | null>(null);
 
   const loadSettings = useCallback(async () => {
     try {
@@ -87,11 +105,27 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const reloadLicense = useCallback(async () => {
+    try {
+      const st = await api.get<LicenseStatus>('/license/status');
+      setLicense(st);
+      return st;
+    } catch {
+      return null;
+    }
+  }, []);
+
   useEffect(() => {
     (async () => {
       // theme can be restored before login for a smooth start
       const cached = localStorage.getItem('farday.settings');
       if (cached) { try { const s = JSON.parse(cached); setSettings((p) => ({ ...p, ...s })); applyThemeToDocument({ ...settings, ...s }); } catch { /* ignore */ } }
+      /*
+       * وضعیت لایسنس **قبل از** هر چیز دیگر خوانده می‌شود: اگر قفل باشد،
+       * Shell مستقیم صفحه‌ی لایسنس را نشان می‌دهد و کاربر با صفحه‌ی سفید یا
+       * خطای «وارد شوید» روبه‌رو نمی‌شود.
+       */
+      await reloadLicense();
       if (getToken()) {
         try {
           const me = await api.get<{ user: User }>('/auth/me');
@@ -105,8 +139,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
        prefers-color-scheme هم لازم نیست (کد مرده حذف شد). */
     const onUnauth = () => { setUser(null); setToken(''); };
     window.addEventListener('farday:unauthorized', onUnauth as any);
+    /* هر ۴۲۳ از API = وضعیت لایسنس دوباره خوانده شود (قفل/تمدید) */
+    const onLicense = (e: any) => {
+      if (e?.detail) setLicense(e.detail as LicenseStatus);
+      else void reloadLicense();
+    };
+    window.addEventListener('farday:license-required', onLicense as any);
     return () => {
       window.removeEventListener('farday:unauthorized', onUnauth as any);
+      window.removeEventListener('farday:license-required', onLicense as any);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -161,8 +202,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     calendar: (settings.calendar === 'gregorian' ? 'gregorian' : 'jalali') as CalendarMode,
     isManager: user?.role === 'manager',
     login, logout, reloadSettings: async () => { await loadSettings(); }, saveSettings,
-    applyTheme: applyThemeToDocument,
-  }), [user, settings, ready, login, logout, loadSettings, saveSettings]);
+    applyTheme: applyThemeToDocument, license, reloadLicense,
+  }), [user, settings, ready, login, logout, loadSettings, saveSettings, license, reloadLicense]);
 
   return <SessionCtx.Provider value={value}>{children}</SessionCtx.Provider>;
 }

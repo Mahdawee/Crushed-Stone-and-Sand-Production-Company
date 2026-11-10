@@ -333,6 +333,22 @@ if (!noNode) {
   console.log('▶ 4/5 (بدون کاپی نود — از نود نصب‌شده سیستم استفاده می‌شود)');
 }
 
+/*
+ * کلید عمومی لایسنس باید **داخل بسته** باشد، وگرنه نسخه‌ی نصب‌شده هیچ
+ * لایسنسی را نمی‌تواند بررسی کند (و همه‌ی مشتری‌ها روی «کلید عمومی نیست»
+ * گیر می‌کنند). منبع: `src-tauri/public-key/farday-public.b64` که با
+ * `npm run license:keygen` ساخته می‌شود.
+ */
+const pubSrc = path.join(root, 'src-tauri', 'public-key', 'farday-public.b64');
+if (!fs.existsSync(pubSrc)) {
+  console.error('⛔ کلید عمومی لایسنس پیدا نشد: src-tauri/public-key/farday-public.b64');
+  console.error('   اول این را اجرا کنید:  npm run license:keygen');
+  process.exit(1);
+}
+fs.mkdirSync(path.join(out, 'public-key'), { recursive: true });
+fs.copyFileSync(pubSrc, path.join(out, 'public-key', 'farday-public.b64'));
+console.log('   ✔ کلید عمومی لایسنس داخل بسته کاپی شد');
+
 console.log('▶ 5/5 حذف فایل‌های نقشه و تست…');
 const walk = (dir) => {
   for (const f of fs.readdirSync(dir)) {

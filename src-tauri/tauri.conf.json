@@ -32,7 +32,8 @@
       "icons/icon.png"
     ],
     "resources": [
-      "api/**/*"
+      "api/**/*",
+      "public-key/**/*"
     ],
     "windows": {
       "nsis": {

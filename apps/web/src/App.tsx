@@ -37,6 +37,7 @@ const ActivityPage = lazy(() => import('./pages/Activity'));
 const HelpPage = lazy(() => import('./pages/Help'));
 const PrintSale = lazy(() => import('./pages/PrintSale'));
 const PrintSalary = lazy(() => import('./pages/PrintSalary'));
+const LicensePage = lazy(() => import('./pages/License'));
 
 function Guard({ children, managerOnly }: { children: React.ReactNode; managerOnly?: boolean }) {
   const { user, ready, isManager } = useSession();
@@ -47,12 +48,29 @@ function Guard({ children, managerOnly }: { children: React.ReactNode; managerOn
 }
 
 function Shell() {
-  const { ready } = useSession();
+  const { ready, license } = useSession();
   if (!ready) return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}><Spinner label="آماده‌سازی سیستم…" /></div>;
+  /*
+   * قفل لایسنس — **قبل از** هر مسیر دیگری.
+   *
+   * فقط خانه‌ی لایسنس باز می‌ماند؛ این کار جلوی «صفحه‌ی سفید» و «چرخیدن
+   * بی‌پایان اسپینر» را می‌گیرد و کاربر را مستقیم به راه‌حل می‌برد.
+   */
+  if (license && !license.ok) {
+    return (
+      <Suspense fallback={<div style={{ padding: 24 }}><Spinner label="بارگذاری…" /></div>}>
+        <Routes>
+          <Route path="/license" element={<LicensePage />} />
+          <Route path="*" element={<Navigate to="/license" replace />} />
+        </Routes>
+      </Suspense>
+    );
+  }
   return (
     <Suspense fallback={<div style={{ padding: 24 }}><Spinner label="بارگذاری صفحه…" /></div>}>
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/license" element={<LicensePage />} />
       <Route path="/print/sale/:id" element={<PrintSale />} />
       <Route path="/print/salary/:id" element={<PrintSalary />} />
       <Route element={<Guard><Layout /></Guard>}>

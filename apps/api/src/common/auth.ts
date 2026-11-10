@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException, ForbiddenException, SetMetadata } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, UnauthorizedException, ForbiddenException, HttpException, SetMetadata } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import * as crypto from 'node:crypto';
 import { db } from '../db';
@@ -49,7 +49,7 @@ export const ManagerOnly = () => SetMetadata(MANAGER_ONLY, true);
 export class AuthGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(PUBLIC_KEY, [context.getHandler(), context.getClass()]);
     const req = context.switchToHttp().getRequest();
     const token = (req.headers['x-auth-token'] as string) || '';
@@ -65,6 +65,25 @@ export class AuthGuard implements CanActivate {
     }
     // First run with no users yet → the setup screen is reachable.
     if (isPublic) return true;
+    /*
+     * کاربر وارد نشده. اگر لایسنس مشکل دارد، پیام باید **همان** باشد نه
+     * «وارد شوید» — وگرنه کاربر در صفحه‌ی ورود گیر می‌کند و نمی‌فهمد مشکل
+     * لایسنس است. (LicenseGuard بعد از این نگهبان اجرا می‌شود.)
+     */
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { licenseStatus } = require('./license-state');
+      const st = await licenseStatus();
+      if (!st.ok) {
+        throw new HttpException(
+          { statusCode: 423, code: 'LICENSE_REQUIRED', licenseState: st.state, message: st.message, license: st },
+          423,
+        );
+      }
+    } catch (e: any) {
+      if (e instanceof HttpException) throw e;
+      /* خطای غیرمنتظره در خواندن لایسنس: پیام اصلی ورود را بده */
+    }
     throw new UnauthorizedException('برای ادامه وارد سیستم شوید.');
   }
 }

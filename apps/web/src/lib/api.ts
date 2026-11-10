@@ -22,9 +22,16 @@ export function setToken(t: string) {
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** بدنه‌ی ساختاریافته‌ی خطا (اگر سرور داده باشد) */
+  body?: any;
+  constructor(message: string, status: number, body?: any) {
     super(message);
     this.status = status;
+    this.body = body;
+  }
+  /** لایسنس لازم است؟ (کد ۴۲۳ از نگهبان لایسنس) */
+  get needsLicense(): boolean {
+    return this.status === 423 || this.body?.code === 'LICENSE_REQUIRED';
   }
 }
 
@@ -51,11 +58,19 @@ async function request<T>(method: string, path: string, body?: any, opts: { raw?
   if (!res.ok) {
     const txt = await res.text();
     let msg = 'خطا در انجام عملیات.';
+    let j: any = null;
     try {
-      const j = JSON.parse(txt);
+      j = JSON.parse(txt);
       msg = Array.isArray(j.message) ? j.message.join('، ') : j.message || msg;
     } catch { msg = txt.slice(0, 200) || msg; }
-    throw new ApiError(msg, res.status);
+    /*
+     * ۴۲۳ = «لایسنس معتبر نیست». برخلاف ۴۰۱ (نشست تمام شد) این خطا نباید
+     * کاربر را از سیستم بیرون بیندازد — فقط باید صفحه‌ی لایسنس باز شود.
+     */
+    if (res.status === 423 || j?.code === 'LICENSE_REQUIRED') {
+      window.dispatchEvent(new CustomEvent('farday:license-required', { detail: j?.license || null }));
+    }
+    throw new ApiError(msg, res.status, j);
   }
   if (opts.raw) return res as any;
   const ct = res.headers.get('content-type') || '';

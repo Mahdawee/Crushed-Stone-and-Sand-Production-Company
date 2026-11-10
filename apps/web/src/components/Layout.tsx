@@ -63,6 +63,7 @@ const NAV: NavGroup[] = [
     id: 'system', title: 'مدیریت سیستم', icon: IconSettings,
     items: [
       { to: '/settings', label: 'تنظیمات', icon: IconSettings },
+      { to: '/license', label: 'لایسنس', icon: IconLock, managerOnly: true },
       { to: '/users', label: 'کاربران', icon: IconLock, managerOnly: true },
       { to: '/backup', label: 'پشتیبان‌گیری', icon: IconDatabase, managerOnly: true },
       { to: '/activity', label: 'سابقه فعالیت', icon: IconHistory },
@@ -87,6 +88,7 @@ const PAGE_TITLES: Record<string, { t: string; s: string }> = {
   '/reports/detail': { t: 'راپورهای تفصیلی', s: 'به مواد، مشتری، مصرف و بدهی' },
   '/reports/cashbox': { t: 'حرکت دخل', s: 'سند به سند صندوق' },
   '/settings': { t: 'تنظیمات', s: 'ظاهر، تقویم، فهرست‌ها و دیتابیس' },
+  '/license': { t: 'لایسنس', s: 'وضعیت، کلید دستگاه و فعال‌سازی' },
   '/users': { t: 'کاربران سیستم', s: 'سطح دسترسی مدیر و کارمند' },
   '/backup': { t: 'پشتیبان‌گیری', s: 'کاپی، دانلود و بازگردانی' },
   '/activity': { t: 'سابقه فعالیت', s: 'چه کسی، چه وقت، چه کرد' },

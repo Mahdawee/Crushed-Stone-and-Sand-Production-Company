@@ -24,7 +24,7 @@ const THEMES = [
 ];
 
 export default function SettingsPage() {
-  const { settings, saveSettings, calendar, isManager } = useSession();
+  const { settings, saveSettings, calendar, isManager, license } = useSession();
   const toast = useToast();
   const [s, setS] = useState<any>(settings);
   const [health, setHealth] = useState<any>(null);
@@ -246,6 +246,43 @@ export default function SettingsPage() {
               <button className="btn primary" onClick={changePw} disabled={!pw.currentPassword || !pw.newPassword}>تغییر رمز</button>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* وضعیت لایسنس — خلاصه؛ مدیریت کامل در /license */}
+      <div className="card">
+        <div className="card-h">
+          <h3>لایسنس و قفل دستگاه</h3>
+          <div style={{ flex: 1 }} />
+          <Link className="btn sm" to="/license">مدیریت لایسنس</Link>
+        </div>
+        <div className="card-b">
+          {license ? (
+            <>
+              <div className="row between" style={{ marginBottom: 10 }}>
+                <span>وضعیت</span>
+                <span className={`badge ${license.ok ? (license.state === 'trial' ? 'warn' : 'ok') : 'bad'}`}>
+                  {license.ok ? (license.state === 'trial' ? 'دوره‌ی آزمایشی' : 'معتبر') : 'نیاز به لایسنس'}
+                </span>
+              </div>
+              <dl className="kv">
+                <dt>کلید دستگاه</dt>
+                <dd className="mono small" dir="ltr">{license.machineKey || '—'}</dd>
+                {license.customer ? <><dt>مشتری</dt><dd>{license.customer}</dd></> : null}
+                {license.kindLabel ? <><dt>نوع لایسنس</dt><dd>{license.kindLabel}</dd></> : null}
+                <dt>پایان اعتبار</dt>
+                <dd>
+                  {license.endLabel || '—'}
+                  {typeof license.daysLeft === 'number' ? (
+                    <span className="small muted"> ({license.daysLeft} روز مانده)</span>
+                  ) : null}
+                </dd>
+              </dl>
+              <p className="small muted" style={{ marginTop: 10, lineHeight: 2 }}>
+                {license.message}
+              </p>
+            </>
+          ) : <Spinner label="خواندن وضعیت لایسنس…" />}
         </div>
       </div>
 
