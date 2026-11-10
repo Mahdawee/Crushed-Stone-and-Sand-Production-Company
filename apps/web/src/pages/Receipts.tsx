@@ -1,12 +1,15 @@
-import { IconDownload, IconPlus } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, downloadCsv } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useDebounced } from '../lib/useDebounced';
-import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, Pager, ListHead, SearchBox, SummaryBar, K } from '../components/ui';
+import {
+  useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, Pager,
+  ListHead, SearchBox, FilterButton, FilterPanel, FilterChip, InlineStat,
+} from '../components/ui';
+import { IconDownload, IconPlus } from '../components/icons';
 import { DatePicker } from '../components/DatePicker';
-import { money, todayISO } from '../lib/calendar';
+import { money, todayISO, formatDate } from '../lib/calendar';
 
 type Filters = { q: string; from: string; to: string; source: string };
 
@@ -23,6 +26,7 @@ export default function ReceiptsPage() {
   const [form, setForm] = useState<any>(null);
   const [dateISO, setDateISO] = useState('');
   const [busy, setBusy] = useState(false);
+  const [fOpen, setFOpen] = useState(false);
 
   const load = async (p = page) => {
     const qs = new URLSearchParams({ page: String(p), pageSize: '25' });
@@ -75,31 +79,47 @@ export default function ReceiptsPage() {
   return (
     <div className="col" style={{ gap: 12 }}>
       <div className="card">
-        <ListHead actions={
-          <>
+        <ListHead
+          summary={<>
+            <InlineStat label="رسید" value={(data?.total ?? 0).toLocaleString('en-US')} />
+            <span className="sep" />
+            <InlineStat label="مجموع" value={`${money(data?.sum ?? 0)} ؋`} tone="ok" />
+          </>}
+          actions={<>
             <button className="btn" onClick={() => downloadCsv('receipts')}><IconDownload size={15} /> اکسل</button>
-            <button className="btn primary" onClick={openNew}><IconPlus size={15} /> رسید نو</button>
-          </>
-        }>
+            <button className="btn primary" onClick={openNew}><IconPlus size={15} /> رسید</button>
+          </>}
+        >
           <SearchBox value={filters.q} onChange={(v) => patch({ q: v })} placeholder="شماره، مشتری، بل…" width={300} />
-          <div className="filters">
-            <DatePicker compact value={filters.from} onChange={(v) => patch({ from: v })} calendar={calendar} clearable placeholder="از تاریخ" width={132} />
-            <DatePicker compact value={filters.to} onChange={(v) => patch({ to: v })} calendar={calendar} clearable placeholder="تا تاریخ" width={132} />
-            <Select value={filters.source} onChange={(v) => patch({ source: v })} placeholder="همه منابع"
-              options={sources.map((s) => ({ value: s.name, label: s.name }))} />
-            {hasFilter ? <button className="btn ghost sm" onClick={() => setFilters({ q: '', from: '', to: '', source: '' })}>پاک کردن</button> : null}
-          </div>
+          <FilterButton count={[filters.from, filters.to, filters.source].filter(Boolean).length}
+            open={fOpen} onClick={() => setFOpen((v) => !v)} />
+          <FilterPanel open={fOpen} footer={
+            <>
+              <button className="btn sm primary" onClick={() => setFOpen(false)}>اعمال</button>
+              <button className="btn sm ghost" onClick={() => setFilters({ q: filters.q, from: '', to: '', source: '' })}>پاک کردن</button>
+            </>
+          }>
+            <div className="grid c2" style={{ gap: 10 }}>
+              <div className="field"><label>از تاریخ</label>
+                <DatePicker value={filters.from} onChange={(v) => patch({ from: v })} calendar={calendar} clearable /></div>
+              <div className="field"><label>تا تاریخ</label>
+                <DatePicker value={filters.to} onChange={(v) => patch({ to: v })} calendar={calendar} clearable /></div>
+            </div>
+            <div className="field"><label>منبع رسید</label>
+              <Select value={filters.source} onChange={(v) => patch({ source: v })} placeholder="همه منابع"
+                options={sources.map((x) => ({ value: x.name, label: x.name }))} /></div>
+          </FilterPanel>
         </ListHead>
 
-        <div className="card-b tight">
-          <div style={{ padding: '0 4px 6px' }}>
-            <SummaryBar>
-              <K label="رسیدها" value={(data?.total ?? 0).toLocaleString('en-US')} />
-              <span className="sep" />
-              <K label="مجموع دریافتی" value={`${money(data?.sum ?? 0)} افغانی`} tone="ok" />
-            </SummaryBar>
+        {[filters.from, filters.to, filters.source].some(Boolean) ? (
+          <div className="chip-row">
+            {filters.from ? <FilterChip label="از" value={formatDate(filters.from, calendar)} onClear={() => patch({ from: '' })} /> : null}
+            {filters.to ? <FilterChip label="تا" value={formatDate(filters.to, calendar)} onClear={() => patch({ to: '' })} /> : null}
+            {filters.source ? <FilterChip label="منبع" value={filters.source} onClear={() => patch({ source: '' })} /> : null}
           </div>
+        ) : null}
 
+        <div className="card-b tight">
           {!data ? <Spinner /> : (<>
             <Table head={['شماره', 'تاریخ', 'مشتری', 'مبلغ رسید', 'بل مربوط', 'از درک', 'توسط', 'توضیحات', '']}>
               {data.rows.map((r: any) => (

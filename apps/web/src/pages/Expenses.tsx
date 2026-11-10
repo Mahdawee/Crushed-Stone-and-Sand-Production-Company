@@ -1,12 +1,15 @@
-import { IconDownload, IconPlus } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, downloadCsv } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useDebounced } from '../lib/useDebounced';
-import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, Pager, ListHead, SearchBox, SummaryBar, K } from '../components/ui';
+import {
+  useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, Pager,
+  ListHead, SearchBox, FilterButton, FilterPanel, FilterChip, InlineStat,
+} from '../components/ui';
+import { IconDownload, IconPlus } from '../components/icons';
 import { DatePicker } from '../components/DatePicker';
-import { money, todayISO } from '../lib/calendar';
+import { money, todayISO, formatDate } from '../lib/calendar';
 
 type Filters = { q: string; from: string; to: string; category: string; payer: string; paymentType: string };
 
@@ -22,6 +25,7 @@ export default function ExpensesPage() {
   const [form, setForm] = useState<any>(null);
   const [dateISO, setDateISO] = useState('');
   const [busy, setBusy] = useState(false);
+  const [fOpen, setFOpen] = useState(false);
 
   const load = async (p = page) => {
     const qs = new URLSearchParams({ page: String(p), pageSize: '25' });
@@ -83,38 +87,56 @@ export default function ExpensesPage() {
   return (
     <div className="col" style={{ gap: 12 }}>
       <div className="card">
-        <ListHead actions={
-          <>
+        <ListHead
+          summary={<>
+            <InlineStat label="سند" value={(data?.total ?? 0).toLocaleString('en-US')} />
+            <span className="sep" />
+            <InlineStat label="افغانی" value={money(data?.sumAfn ?? 0)} tone="bad" />
+            {data?.sumUsd ? <><span className="sep" /><InlineStat label="دالری" value={`$${money(data.sumUsd)}`} tone="warn" /></> : null}
+          </>}
+          actions={<>
             <button className="btn" onClick={() => downloadCsv('expenses')}><IconDownload size={15} /> اکسل</button>
-            <button className="btn primary" onClick={openNew}><IconPlus size={15} /> مصرف نو</button>
-          </>
-        }>
+            <button className="btn primary" onClick={openNew}><IconPlus size={15} /> مصرف</button>
+          </>}
+        >
           <SearchBox value={filters.q} onChange={(v) => patch({ q: v })} placeholder="شرح، فروشگاه، بل…" width={280} />
-          <div className="filters">
-            <DatePicker compact value={filters.from} onChange={(v) => patch({ from: v })} calendar={calendar} clearable placeholder="از تاریخ" width={132} />
-            <DatePicker compact value={filters.to} onChange={(v) => patch({ to: v })} calendar={calendar} clearable placeholder="تا تاریخ" width={132} />
-            <Select value={filters.category} onChange={(v) => patch({ category: v })} placeholder="همه انواع"
-              options={(lk.expense_category || []).map((c: any) => ({ value: c.name, label: c.name }))} />
-            <Select value={filters.payer} onChange={(v) => patch({ payer: v })} placeholder="همه پرداخت‌کننده‌ها"
-              options={(lk.payer || []).map((c: any) => ({ value: c.name, label: c.name }))} />
-            <Select value={filters.paymentType} onChange={(v) => patch({ paymentType: v })} placeholder="نقده / باقی"
-              options={[{ value: 'cash', label: 'نقده' }, { value: 'credit', label: 'باقی' }]} />
-            {hasFilter ? <button className="btn ghost sm" onClick={() => setFilters({ q: '', from: '', to: '', category: '', payer: '', paymentType: '' })}>پاک کردن</button> : null}
-          </div>
+          <FilterButton count={[filters.from, filters.to, filters.category, filters.payer, filters.paymentType].filter(Boolean).length}
+            open={fOpen} onClick={() => setFOpen((v) => !v)} />
+          <FilterPanel open={fOpen} footer={
+            <>
+              <button className="btn sm primary" onClick={() => setFOpen(false)}>اعمال</button>
+              <button className="btn sm ghost" onClick={() => setFilters({ q: filters.q, from: '', to: '', category: '', payer: '', paymentType: '' })}>پاک کردن</button>
+            </>
+          }>
+            <div className="grid c2" style={{ gap: 10 }}>
+              <div className="field"><label>از تاریخ</label>
+                <DatePicker value={filters.from} onChange={(v) => patch({ from: v })} calendar={calendar} clearable /></div>
+              <div className="field"><label>تا تاریخ</label>
+                <DatePicker value={filters.to} onChange={(v) => patch({ to: v })} calendar={calendar} clearable /></div>
+            </div>
+            <div className="field"><label>نوع مصرف</label>
+              <Select value={filters.category} onChange={(v) => patch({ category: v })} placeholder="همه انواع"
+                options={(lk.expense_category || []).map((c: any) => ({ value: c.name, label: c.name }))} /></div>
+            <div className="field"><label>پرداخت‌کننده</label>
+              <Select value={filters.payer} onChange={(v) => patch({ payer: v })} placeholder="همه"
+                options={(lk.payer || []).map((c: any) => ({ value: c.name, label: c.name }))} /></div>
+            <div className="field"><label>روش پرداخت</label>
+              <Select value={filters.paymentType} onChange={(v) => patch({ paymentType: v })} placeholder="همه"
+                options={[{ value: 'cash', label: 'نقده' }, { value: 'credit', label: 'باقی' }]} /></div>
+          </FilterPanel>
         </ListHead>
 
-        <div className="card-b tight">
-          <div style={{ padding: '0 4px 6px' }}>
-            <SummaryBar>
-              <K label="اسناد" value={(data?.total ?? 0).toLocaleString('en-US')} />
-              <span className="sep" />
-              <K label="مجموع افغانی" value={money(data?.sumAfn ?? 0)} tone="bad" />
-              {data?.sumUsd ? <><span className="sep" /><K label="مجموع دالری" value={`$${money(data.sumUsd)}`} tone="warn" /></> : null}
-              <span className="sep" />
-              <span className="muted">دالری تبدیل نمی‌شود و در سود/زیان نمی‌آید</span>
-            </SummaryBar>
+        {[filters.from, filters.to, filters.category, filters.payer, filters.paymentType].some(Boolean) ? (
+          <div className="chip-row">
+            {filters.from ? <FilterChip label="از" value={formatDate(filters.from, calendar)} onClear={() => patch({ from: '' })} /> : null}
+            {filters.to ? <FilterChip label="تا" value={formatDate(filters.to, calendar)} onClear={() => patch({ to: '' })} /> : null}
+            {filters.category ? <FilterChip label="نوع" value={filters.category} onClear={() => patch({ category: '' })} /> : null}
+            {filters.payer ? <FilterChip label="پرداخت‌کننده" value={filters.payer} onClear={() => patch({ payer: '' })} /> : null}
+            {filters.paymentType ? <FilterChip label="روش" value={filters.paymentType === 'cash' ? 'نقده' : 'باقی'} onClear={() => patch({ paymentType: '' })} /> : null}
           </div>
+        ) : null}
 
+        <div className="card-b tight">
           {!data ? <Spinner /> : (<>
             <Table head={['شماره', 'تاریخ', 'شرح', 'نوع', 'مربوط', 'فروشگاه', 'افغانی', 'دالری', 'پرداخت‌کننده', 'روش', '']}>
               {data.rows.map((r: any) => (
