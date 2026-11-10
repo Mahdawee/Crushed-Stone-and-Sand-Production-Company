@@ -87,11 +87,21 @@ if (!noNode) {
   const url = `https://nodejs.org/dist/v${ver}/${zipName}`;
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'farday-node-'));
   const zip = path.join(tmp, zipName);
-  run(`curl -fL --retry 3 -o "${zip}" "${url}"`, tmp);
-  run(`unzip -o -q "${zip}" -d "${tmp}"`, tmp);
-  const exe = path.join(tmp, `node-v${ver}-win-x64`, 'node.exe');
-  fs.copyFileSync(exe, path.join(out, 'node.exe'));
-  console.log('   ✔ node.exe کاپی شد');
+  try {
+    run(`curl -fL --retry 3 --connect-timeout 20 -o "${zip}" "${url}"`, tmp);
+    run(`unzip -o -q "${zip}" -d "${tmp}"`, tmp);
+    const exe = path.join(tmp, `node-v${ver}-win-x64`, 'node.exe');
+    fs.copyFileSync(exe, path.join(out, 'node.exe'));
+    console.log('   ✔ node.exe کاپی شد');
+  } catch {
+    // بدون انترنت هم باید بشود نصب‌کننده ساخت — فقط Node روی سیستم لازم می‌شود
+    console.log('   ⚠ دانلود Node انجام نشد (انترنت نیست یا nodejs.org بسته است).');
+    console.log('     نصب‌کننده ساخته می‌شود، ولی کمپیوتر مقصد باید Node.js نصب داشته باشد.');
+    console.log('     راه‌حل کامل: یک بار با انترنت همین دستور را اجرا کنید، یا فایل node-v' + ver + '-win-x64.zip');
+    console.log('     را دستی در ' + path.join(out, 'node.exe') + ' کاپی کنید.');
+  } finally {
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
 } else {
   console.log('▶ 4/5 (بدون کاپی نود — از نود نصب‌شده سیستم استفاده می‌شود)');
 }
