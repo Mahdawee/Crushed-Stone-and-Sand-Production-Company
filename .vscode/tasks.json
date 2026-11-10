@@ -1,0 +1,17 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "۱) سرویس API", "type": "shell", "command": "npm run dev:api", "isBackground": true, "problemMatcher": [] },
+    { "label": "۲) وب (Vite)", "type": "shell", "command": "npm run dev:web", "isBackground": true, "problemMatcher": [] },
+    {
+      "label": "شروع کامل (API + وب)",
+      "dependsOn": ["۱) سرویس API", "۲) وب (Vite)"],
+      "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    { "label": "Desktop (Tauri dev)", "type": "shell", "command": "npm run desktop:dev", "problemMatcher": [] },
+    { "label": "معلومات نمونه (demo)", "type": "shell", "command": "npm run seed:demo", "problemMatcher": [] },
+    { "label": "ساخت نصب‌کننده ویندوز", "type": "shell", "command": "npm run desktop:build", "problemMatcher": [] }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "name": "farday-roshan-sand",
+  "private": true,
+  "version": "0.1.0",
+  "description": "سیستم مدیریت شرکت تولیدی فردای روشن (سنگ، کرش، جغل و ریگ) — آفلاین و محلی",
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n API,WEB -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev -w @farday/api",
+    "dev:web": "npm run dev -w @farday/web",
+    "build": "npm run build -w @farday/api && npm run build -w @farday/web",
+    "typecheck": "npm run typecheck -w @farday/web && npx tsc -p apps/api/tsconfig.json --noEmit",
+    "db:generate": "npm run db:generate -w @farday/api",
+    "seed": "npm run db:seed -w @farday/api --",
+    "seed:demo": "npm run build -w @farday/api && npm run db:seed:demo -w @farday/api --",
+    "start:api": "npm run start -w @farday/api",
+    "tauri": "tauri",
+    "build:desktop": "npm run build -w @farday/api && npm run build -w @farday/web",
+    "package:api": "node scripts/build-desktop-api.mjs",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "npm run package:api && tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4",
+    "concurrently": "^9.2.5"
+  }
+}

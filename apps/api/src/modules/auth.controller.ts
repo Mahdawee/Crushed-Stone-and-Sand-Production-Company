@@ -1,0 +1,154 @@
+import { Body, Controller, Get, Post, Req, Delete, Param, HttpException } from '@nestjs/common';
+import { db } from '../db';
+import { ensureSchemaAsync } from '../schema';
+import {
+  AuthGuard, Public, ManagerOnly, hashPassword, createSession, destroySession, getSession,
+} from '../common/auth';
+import { logActivity } from '../common/activity';
+import { UseGuards } from '@nestjs/common';
+
+@UseGuards(AuthGuard)
+@Controller()
+export class AuthController {
+  @Public()
+  @Get('health')
+  async health() {
+    await ensureSchemaAsync();
+    const rows: any[] = await db().$queryRawUnsafe(`SELECT COUNT(*) as c FROM "User"`);
+    return {
+      ok: true,
+      needsSetup: Number(rows?.[0]?.c ?? 0) === 0,
+      version: '0.1.0',
+      time: new Date().toISOString(),
+    };
+  }
+
+  @Public()
+  @Post('auth/login')
+  async login(@Body() body: { username: string; password: string }) {
+    await ensureSchemaAsync();
+    const rows: any[] = await db().$queryRawUnsafe(
+      `SELECT * FROM "User" WHERE "username" = ?`,
+      String(body?.username || '').trim(),
+    );
+    const u = rows?.[0];
+    if (!u || !u.active) throw new HttpException('نام کاربری یا رمز اشتباه است.', 401);
+    if (u.passwordHash !== hashPassword(body?.password || '')) {
+      throw new HttpException('نام کاربری یا رمز اشتباه است.', 401);
+    }
+    await db().$executeRawUnsafe(
+      `UPDATE "User" SET "lastLoginAt" = CURRENT_TIMESTAMP WHERE "id" = ?`,
+      u.id,
+    );
+    const session = createSession(u);
+    await logActivity({ username: u.username, action: 'login', entity: 'User', entityId: u.id, detail: 'ورود به سیستم' });
+    return {
+      token: session.token,
+      user: { id: u.id, username: u.username, fullName: u.fullName, role: u.role },
+    };
+  }
+
+  @Public()
+  @Post('auth/logout')
+  async logout(@Req() req: any) {
+    const token = (req.headers['x-auth-token'] as string) || '';
+    const s = getSession(token);
+    if (s) await logActivity({ username: s.username, action: 'logout', detail: 'خروج از سیستم' });
+    destroySession(token);
+    return { ok: true };
+  }
+
+  @Get('auth/me')
+  async me(@Req() req: any) {
+    return { user: req.session ?? null };
+  }
+
+  @Post('auth/change-password')
+  async changePassword(
+    @Req() req: any,
+    @Body() body: { currentPassword: string; newPassword: string },
+  ) {
+    const rows: any[] = await db().$queryRawUnsafe(
+      `SELECT * FROM "User" WHERE "id" = ?`,
+      req.session.userId,
+    );
+    const u = rows?.[0];
+    if (!u || u.passwordHash !== hashPassword(body?.currentPassword || '')) {
+      throw new HttpException('رمز فعلی اشتباه است.', 400);
+    }
+    if (!body?.newPassword || body.newPassword.length < 5) {
+      throw new HttpException('رمز تازه باید حداقل ۵ حرف باشد.', 400);
+    }
+    await db().$executeRawUnsafe(
+      `UPDATE "User" SET "passwordHash" = ? WHERE "id" = ?`,
+      hashPassword(body.newPassword),
+      u.id,
+    );
+    await logActivity({ username: u.username, action: 'update', entity: 'User', entityId: u.id, detail: 'تغییر رمز خود' });
+    return { ok: true };
+  }
+
+  // ------------------------------ users (manager) --------------------------
+  @Get('users')
+  @ManagerOnly()
+  async list() {
+    return db().$queryRawUnsafe(
+      `SELECT "id","username","fullName","role","active","lastLoginAt","createdAt" FROM "User" ORDER BY "id"`,
+    );
+  }
+
+  @Post('users')
+  @ManagerOnly()
+  async create(@Req() req: any, @Body() body: any) {
+    if (!body?.username || !body?.password) throw new HttpException('نام کاربری و رمز لازم است.', 400);
+    try {
+      await db().$executeRawUnsafe(
+        `INSERT INTO "User" ("username","fullName","passwordHash","role","active") VALUES (?,?,?,?,?)`,
+        body.username.trim(),
+        body.fullName || '',
+        hashPassword(body.password),
+        body.role === 'employee' ? 'employee' : 'manager',
+        body.active === false ? 0 : 1,
+      );
+    } catch {
+      throw new HttpException('این نام کاربری قبلاً ثبت شده است.', 400);
+    }
+    await logActivity({ username: req.session.username, action: 'create', entity: 'User', detail: `کاربر ${body.username}` });
+    return { ok: true };
+  }
+
+  @Post('users/:id')
+  @ManagerOnly()
+  async update(@Req() req: any, @Param('id') id: string, @Body() body: any) {
+    const p = db();
+    await p.$executeRawUnsafe(
+      `UPDATE "User" SET "fullName"=?, "role"=?, "active"=? WHERE "id"=?`,
+      body.fullName || '',
+      body.role === 'employee' ? 'employee' : 'manager',
+      body.active === false ? 0 : 1,
+      Number(id),
+    );
+    if (body.password) {
+      await p.$executeRawUnsafe(`UPDATE "User" SET "passwordHash"=? WHERE "id"=?`, hashPassword(body.password), Number(id));
+    }
+    await logActivity({ username: req.session.username, action: 'update', entity: 'User', entityId: Number(id), detail: `کاربر ${body.username || ''}` });
+    return { ok: true };
+  }
+
+  @Delete('users/:id')
+  @ManagerOnly()
+  async remove(@Req() req: any, @Param('id') id: string) {
+    const target: any[] = await db().$queryRawUnsafe(`SELECT * FROM "User" WHERE "id"=?`, Number(id));
+    if (!target?.length) throw new HttpException('کاربر پیدا نشد.', 404);
+    if (target[0].id === req.session.userId) {
+      throw new HttpException('حساب خودتان را نمی‌توانید حذف کنید.', 400);
+    }
+    if (target[0].role === 'manager') {
+      const man: any[] = await db().$queryRawUnsafe(`SELECT COUNT(*) c FROM "User" WHERE "role"='manager' AND "active"=1`);
+      if (Number(man?.[0]?.c ?? 0) <= 1) throw new HttpException('آخرین مدیر فعال را نمی‌توان حذف کرد.', 400);
+    }
+    await db().$executeRawUnsafe(`DELETE FROM "User" WHERE "id"=?`, Number(id));
+    await logActivity({ username: req.session.username, action: 'delete', entity: 'User', entityId: Number(id) });
+    return { ok: true };
+  }
+}

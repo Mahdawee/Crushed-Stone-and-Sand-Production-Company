@@ -1,0 +1,133 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { api, downloadCsv } from '../lib/api';
+import { useSession } from '../lib/session';
+import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select } from '../components/ui';
+import { money, formatDate, toInputDate, parseInputDate, normalizeDigits } from '../lib/calendar';
+
+const empty = {
+  code: '', name: '', fatherName: '', position: '', hireDate: '', baseSalary: 0,
+  phone: '', nationalId: '', address: '', contractPeriod: 'یک سال', status: 'active', note: '',
+};
+
+export default function EmployeesPage() {
+  const { calendar, isManager } = useSession();
+  const toast = useToast();
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [q, setQ] = useState('');
+  const [status, setStatus] = useState('');
+  const [form, setForm] = useState<any>(null);
+  const [hire, setHire] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    const r = await api.get(`/employees?q=${encodeURIComponent(q)}&status=${status}`);
+    setRows(r.rows);
+  };
+  useEffect(() => { load().catch((e) => toast.error('بارگذاری نشد', e.message)); }, [q, status]);
+
+  const openNew = async () => {
+    const { code } = await api.get('/employees/next-code');
+    setForm({ ...empty, code });
+    setHire(toInputDate(new Date().toISOString().slice(0, 10), calendar));
+  };
+  const openEdit = (r: any) => { setForm({ ...r }); setHire(r.hireDate ? toInputDate(r.hireDate, calendar) : ''); };
+
+  const save = async () => {
+    if (!form.name?.trim()) { toast.warn('نام کارمند را وارد کنید.'); return; }
+    let hireDate = '';
+    try { hireDate = hire ? parseInputDate(hire, calendar) : ''; }
+    catch (e: any) { toast.error('تاریخ استخدام', e.message); return; }
+    setBusy(true);
+    try {
+      if (form.id) await api.put(`/employees/${form.id}`, { ...form, hireDate });
+      else await api.post('/employees', { ...form, hireDate });
+      toast.success('کارمند ذخیره شد');
+      setForm(null); await load();
+    } catch (e: any) { toast.error('ذخیره نشد', e.message); }
+    finally { setBusy(false); }
+  };
+
+  const remove = (r: any) => toast.confirm({
+    title: 'حذف کارمند؟', body: `«${r.name}» کاملاً حذف شود؟ اگر سابقه معاش دارد، سیستم اجازه حذف نمی‌دهد.`,
+    confirmText: 'حذف کن',
+    onConfirm: async () => {
+      try { await api.del(`/employees/${r.id}`); await load(); toast.success('حذف شد'); }
+      catch (e: any) { toast.error('حذف نشد', e.message); }
+    },
+  });
+
+  const totals = useMemo(() => ({
+    active: (rows || []).filter((r) => r.status === 'active').length,
+    inactive: (rows || []).filter((r) => r.status !== 'active').length,
+    salary: (rows || []).filter((r) => r.status === 'active').reduce((a, r) => a + Number(r.baseSalary || 0), 0),
+  }), [rows]);
+
+  return (
+    <div className="col" style={{ gap: 14 }}>
+      <div className="row between wrap">
+        <div className="row wrap" style={{ gap: 8 }}>
+          <input className="input" style={{ width: 240 }} placeholder="جستجو: نام، کد، وظیفه…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Select value={status} onChange={setStatus} placeholder="همه وضعیت‌ها"
+            options={[{ value: 'active', label: 'فعال' }, { value: 'inactive', label: 'غیر فعال' }]} />
+        </div>
+        <div className="row wrap">
+          <span className="badge ok">{totals.active} فعال</span>
+          <span className="badge muted">{totals.inactive} غیر فعال</span>
+          <span className="badge info">مجموع معاش ثابت: {money(totals.salary)}</span>
+          <button className="btn" onClick={() => downloadCsv('employees')}>⤓ اکسل</button>
+          <button className="btn primary" onClick={openNew}>＋ کارمند نو</button>
+        </div>
+      </div>
+
+      {!rows ? <Spinner /> : (
+        <Table head={['#', 'کد', 'نام', 'نام پدر', 'وظیفه', 'تاریخ استخدام', 'معاش ثابت', 'تماس', 'وضعیت', '']}>
+          {rows.map((r, i) => (
+            <tr key={r.id}>
+              <td>{i + 1}</td>
+              <td className="mono">{r.code}</td>
+              <td><Link to={`/employees/${r.id}`} style={{ fontWeight: 600 }}>{r.name}</Link></td>
+              <td className="muted">{r.fatherName}</td>
+              <td>{r.position}</td>
+              <td className="mono">{formatDate(r.hireDate, calendar)}</td>
+              <td className="num">{money(r.baseSalary)}</td>
+              <td className="mono">{r.phone}</td>
+              <td><span className={`badge ${r.status === 'active' ? 'ok' : 'muted'}`}>{r.status === 'active' ? 'فعال' : 'غیر فعال'}</span></td>
+              <td><div className="actions">
+                <Link className="btn sm" to={`/employees/${r.id}`}>پروفایل</Link>
+                <button className="btn sm" onClick={() => openEdit(r)}>ویرایش</button>
+                {isManager ? <button className="btn sm danger" onClick={() => remove(r)}>حذف</button> : null}
+              </div></td>
+            </tr>
+          ))}
+        </Table>
+      )}
+
+      {form ? (
+        <Modal title={form.id ? 'ویرایش کارمند' : 'کارمند نو'} onClose={() => setForm(null)}
+          footer={<><button className="btn primary" onClick={save} disabled={busy}>{busy ? 'ذخیره…' : 'ذخیره'}</button>
+            <button className="btn" onClick={() => setForm(null)}>انصراف</button></>}>
+          <div className="form-grid">
+            <Field label="کد کارمند" required><Text value={form.code} onChange={(v) => setForm({ ...form, code: v })} /></Field>
+            <Field label="نام" required><Text value={form.name} onChange={(v) => setForm({ ...form, name: v })} /></Field>
+            <Field label="نام پدر"><Text value={form.fatherName} onChange={(v) => setForm({ ...form, fatherName: v })} /></Field>
+            <Field label="وظیفه"><Text value={form.position} onChange={(v) => setForm({ ...form, position: v })} placeholder="راننده، کارگر، اپراتور…" /></Field>
+            <Field label="تاریخ استخدام" hint={calendar === 'jalali' ? 'شمسی — نمونه: ۱۴۰۴/۰۵/۱۲' : 'میلادی — نمونه: 2025/05/12'}>
+              <Text value={hire} onChange={setHire} placeholder={calendar === 'jalali' ? '۱۴۰۴/۰۵/۱۲' : '2025/05/12'} />
+            </Field>
+            <Field label="معاش ثابت (افغانی)"><Num value={form.baseSalary} onChange={(v) => setForm({ ...form, baseSalary: v })} /></Field>
+            <Field label="شماره تماس"><Text value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} /></Field>
+            <Field label="شماره تذکره"><Text value={form.nationalId} onChange={(v) => setForm({ ...form, nationalId: v })} /></Field>
+            <Field label="مدت قرارداد"><Text value={form.contractPeriod} onChange={(v) => setForm({ ...form, contractPeriod: v })} /></Field>
+            <Field label="وضعیت">
+              <Select value={form.status} onChange={(v) => setForm({ ...form, status: v })}
+                options={[{ value: 'active', label: 'فعال' }, { value: 'inactive', label: 'غیر فعال' }]} />
+            </Field>
+            <Field label="آدرس" span={2}><Text value={form.address} onChange={(v) => setForm({ ...form, address: v })} /></Field>
+            <Field label="توضیحات" span={3}><TextArea value={form.note} onChange={(v) => setForm({ ...form, note: v })} /></Field>
+          </div>
+        </Modal>
+      ) : null}
+    </div>
+  );
+}

@@ -1,0 +1,35 @@
+# dependencies
+node_modules/
+.pnp.*
+.npm/
+
+# builds
+dist/
+build/
+out/
+apps/api/dist/
+apps/web/dist/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/api/
+
+# local data (never commit the company database or backups)
+data/
+*.db
+*.db-shm
+*.db-wal
+backups/
+
+# env & editor
+.env
+.env.local
+.vscode/*
+!.vscode/extensions.json
+!.vscode/tasks.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
+npm-debug.log*

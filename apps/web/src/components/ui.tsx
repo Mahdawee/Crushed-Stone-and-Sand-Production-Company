@@ -1,0 +1,233 @@
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+
+/* =============================== toasts =============================== */
+type ToastKind = 'ok' | 'bad' | 'warn' | 'info';
+type Toast = { id: number; kind: ToastKind; title: string; body?: string };
+type ToastApi = {
+  push: (kind: ToastKind, title: string, body?: string) => void;
+  success: (t: string, b?: string) => void;
+  error: (t: string, b?: string) => void;
+  warn: (t: string, b?: string) => void;
+  info: (t: string, b?: string) => void;
+  confirm: (opts: { title: string; body?: string; confirmText?: string; kind?: 'danger' | 'primary'; onConfirm: () => void }) => void;
+};
+const ToastCtx = createContext<ToastApi>(null as any);
+export const useToast = () => useContext(ToastCtx);
+
+export function ToastProvider({ children }: { children: React.ReactNode }) {
+  const [items, setItems] = useState<Toast[]>([]);
+  const [ask, setAsk] = useState<any>(null);
+  const idRef = useRef(1);
+
+  const push = useCallback((kind: ToastKind, title: string, body?: string) => {
+    const id = idRef.current++;
+    setItems((prev) => [...prev.slice(-4), { id, kind, title, body }]);
+    const ttl = kind === 'bad' ? 9000 : kind === 'warn' ? 7500 : 5500;
+    setTimeout(() => setItems((prev) => prev.filter((t) => t.id !== id)), ttl);
+  }, []);
+
+  const api = useMemo<ToastApi>(() => ({
+    push,
+    success: (t, b) => push('ok', t, b),
+    error: (t, b) => push('bad', t, b),
+    warn: (t, b) => push('warn', t, b),
+    info: (t, b) => push('info', t, b),
+    confirm: (opts) => setAsk({ ...opts, kind: opts.kind || 'danger' }),
+  }), [push]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setAsk(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const ico: Record<ToastKind, string> = { ok: '✔', bad: '⛔', warn: '⚠', info: 'ℹ' };
+  return (
+    <ToastCtx.Provider value={api}>
+      {children}
+      <div className="toasts no-print">
+        {items.map((t) => (
+          <div key={t.id} className={`toast ${t.kind}`} onClick={() => setItems((p) => p.filter((x) => x.id !== t.id))}>
+            <div className="t-ico">{ico[t.kind]}</div>
+            <div className="t-body"><strong>{t.title}</strong>{t.body ? <span>{t.body}</span> : null}</div>
+          </div>
+        ))}
+      </div>
+      {ask ? (
+        <div className="modal-back no-print" onClick={() => setAsk(null)}>
+          <div className="modal sm" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-h"><h3>{ask.title}</h3></div>
+            <div className="modal-b"><p className="small" style={{ color: 'var(--text-2)' }}>{ask.body}</p></div>
+            <div className="modal-f">
+              <button className={`btn ${ask.kind === 'danger' ? 'danger' : 'primary'}`}
+                onClick={() => { const f = ask.onConfirm; setAsk(null); f?.(); }}>
+                {ask.confirmText || 'تأیید'}
+              </button>
+              <button className="btn" onClick={() => setAsk(null)}>انصراف</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </ToastCtx.Provider>
+  );
+}
+
+/* ================================ modal =============================== */
+export function Modal({ title, onClose, children, footer, size = '' }: {
+  title: React.ReactNode; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; size?: '' | 'sm' | 'md';
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = ''; };
+  }, [onClose]);
+  return (
+    <div className="modal-back no-print" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className={`modal ${size}`}>
+        <div className="modal-h"><h3>{title}</h3><div style={{ flex: 1 }} />
+          <button className="btn ghost icon" onClick={onClose} title="بستن">✕</button>
+        </div>
+        <div className="modal-b">{children}</div>
+        {footer ? <div className="modal-f">{footer}</div> : null}
+      </div>
+    </div>
+  );
+}
+
+/* =============================== fields =============================== */
+export function Field({ label, children, hint, span, required }: {
+  label: string; children: React.ReactNode; hint?: string; span?: 2 | 3; required?: boolean;
+}) {
+  return (
+    <div className={`field ${span === 2 ? 'span2' : span === 3 ? 'span3' : ''}`}>
+      <label>{label}{required ? <span className="req"> *</span> : null}</label>
+      {children}
+      {hint ? <span className="hint">{hint}</span> : null}
+    </div>
+  );
+}
+
+export function Text({
+  value, onChange, placeholder, type = 'text', readOnly, className = '', onEnter, autoFocus, dir,
+}: {
+  value: any; onChange?: (v: string) => void; placeholder?: string; type?: string; readOnly?: boolean;
+  className?: string; onEnter?: () => void; autoFocus?: boolean; dir?: 'rtl' | 'ltr';
+}) {
+  return (
+    <input
+      className={`input ${className}`} type={type} value={value ?? ''} readOnly={readOnly} dir={dir}
+      placeholder={placeholder} autoFocus={autoFocus}
+      onChange={(e) => onChange?.(e.target.value)}
+      onKeyDown={(e) => { if (e.key === 'Enter' && onEnter) onEnter(); }}
+    />
+  );
+}
+
+export function Num({ value, onChange, placeholder, readOnly, className = '' }: {
+  value: any; onChange?: (v: number) => void; placeholder?: string; readOnly?: boolean; className?: string;
+}) {
+  const [raw, setRaw] = useState(String(value ?? ''));
+  useEffect(() => {
+    const norm = (s: string) => String(s ?? '').replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/,/g, '');
+    if (Number(norm(raw)) !== Number(value ?? 0)) setRaw(value === 0 || value === '' || value == null ? '' : String(value));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  return (
+    <input
+      className={`input input-num ${className}`} inputMode="decimal" value={raw} readOnly={readOnly} placeholder={placeholder}
+      onChange={(e) => {
+        const v = e.target.value.replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+        setRaw(v);
+        const n = Number(v.replace(/,/g, ''));
+        onChange?.(Number.isFinite(n) ? n : 0);
+      }}
+    />
+  );
+}
+
+export function Select({ value, onChange, options, placeholder, disabled }: {
+  value: any; onChange?: (v: any) => void;
+  options: { value: any; label: string }[]; placeholder?: string; disabled?: boolean;
+}) {
+  return (
+    <select className="input" value={value ?? ''} disabled={disabled}
+      onChange={(e) => onChange?.(e.target.value)}>
+      {placeholder ? <option value="">{placeholder}</option> : null}
+      {options.map((o) => <option key={String(o.value)} value={o.value}>{o.label}</option>)}
+    </select>
+  );
+}
+
+export function TextArea({ value, onChange, placeholder, rows = 2 }: {
+  value: any; onChange?: (v: string) => void; placeholder?: string; rows?: number;
+}) {
+  return <textarea className="input" rows={rows} value={value ?? ''} placeholder={placeholder} onChange={(e) => onChange?.(e.target.value)} />;
+}
+
+/* =============================== table =============================== */
+export function Table({ head, children, empty, zebra = true, compact, foot }: {
+  head: React.ReactNode[]; children: React.ReactNode; empty?: string; zebra?: boolean; compact?: boolean; foot?: React.ReactNode;
+}) {
+  const hasRows = React.Children.count(children) > 0;
+  return (
+    <div className="table-wrap">
+      <table className={`tbl ${zebra ? 'zebra' : ''} ${compact ? 'compact' : ''}`}>
+        <thead><tr>{head.map((h, i) => <th key={i}>{h}</th>)}</tr></thead>
+        <tbody>{children}</tbody>
+        {foot ? <tfoot>{foot}</tfoot> : null}
+      </table>
+      {!hasRows ? <div className="tbl-empty">{empty || 'ردیفی موجود نیست.'}</div> : null}
+    </div>
+  );
+}
+
+/* ============================== pager =============================== */
+export function Pager({ page, pageSize, total, onPage }: {
+  page: number; pageSize: number; total: number; onPage: (p: number) => void;
+}) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  return (
+    <div className="pager no-print">
+      <button className="btn sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>قبلی</button>
+      <span>صفحه {page} از {pages} — {total.toLocaleString('en-US')} ردیف</span>
+      <button className="btn sm" disabled={page >= pages} onClick={() => onPage(page + 1)}>بعدی</button>
+    </div>
+  );
+}
+
+/* ============================== empty state ========================= */
+export function Empty({ icon = '📄', title, hint, action }: { icon?: string; title: string; hint?: string; action?: React.ReactNode }) {
+  return (
+    <div style={{ textAlign: 'center', padding: '40px 16px', color: 'var(--text-3)' }}>
+      <div style={{ fontSize: 38, marginBottom: 8, opacity: .7 }}>{icon}</div>
+      <div style={{ fontWeight: 700, color: 'var(--text-2)' }}>{title}</div>
+      {hint ? <div className="small" style={{ marginTop: 4 }}>{hint}</div> : null}
+      {action ? <div style={{ marginTop: 14 }}>{action}</div> : null}
+    </div>
+  );
+}
+
+export function Spinner({ label = 'در حال بارگذاری…' }: { label?: string }) {
+  return (
+    <div className="row" style={{ padding: 26, justifyContent: 'center', color: 'var(--text-3)' }}>
+      <span className="spin" style={{
+        width: 16, height: 16, border: '2px solid var(--border-strong)', borderTopColor: 'var(--accent)',
+        borderRadius: '50%', display: 'inline-block', animation: 'spin .8s linear infinite',
+      }} />
+      <span className="small">{label}</span>
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+    </div>
+  );
+}
+
+export function Stat({ label, value, foot, kind = '', icon }: { label: string; value: React.ReactNode; foot?: React.ReactNode; kind?: '' | 'ok' | 'bad' | 'warn'; icon?: string }) {
+  return (
+    <div className={`card stat ${kind}`}>
+      {icon ? <div className="spark">{icon}</div> : null}
+      <div className="label">{label}</div>
+      <div className="value">{value}</div>
+      {foot ? <div className="foot">{foot}</div> : null}
+    </div>
+  );
+}

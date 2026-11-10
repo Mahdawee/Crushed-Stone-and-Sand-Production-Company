@@ -1,0 +1,126 @@
+import { Body, Controller, Get, Post, Query, UseGuards, HttpException, Res } from '@nestjs/common';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { db, databaseFile, BACKUP_DIR } from '../db';
+import { ensureSchemaAsync, TABLE_LIST } from '../schema';
+import { AuthGuard, ManagerOnly } from '../common/auth';
+import { logActivity } from '../common/activity';
+import { settingsService } from '../common/settings';
+
+@UseGuards(AuthGuard)
+@Controller('system')
+export class SystemController {
+  // ------------------------------- activity --------------------------------
+  @Get('activity')
+  async activity(@Query('limit') limit = '200', @Query('entity') entity?: string) {
+    await ensureSchemaAsync();
+    const args: any[] = [];
+    let where = '';
+    if (entity) { where = `WHERE "entity"=?`; args.push(entity); }
+    const rows: any[] = await db().$queryRawUnsafe(
+      `SELECT * FROM "ActivityLog" ${where} ORDER BY "id" DESC LIMIT ?`,
+      ...args, Math.min(2000, Number(limit) || 200),
+    );
+    return rows;
+  }
+
+  // -------------------------------- backup ---------------------------------
+  @Get('backup/list')
+  @ManagerOnly()
+  async listBackups() {
+    const dir = BACKUP_DIR();
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith('.db') || f.endsWith('.bak'));
+    const rows = files.map((f) => {
+      const st = fs.statSync(path.join(dir, f));
+      return { file: f, size: st.size, createdAt: st.mtime.toISOString() };
+    });
+    rows.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    return { dir, rows };
+  }
+
+  @Post('backup')
+  @ManagerOnly()
+  async backup(@Body() body: { note?: string }) {
+    await ensureSchemaAsync();
+    const src = databaseFile();
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const file = path.join(BACKUP_DIR(), `farday-${stamp}.db`);
+    // checkpoint the WAL so the copy is consistent
+    try { await db().$executeRawUnsafe('PRAGMA wal_checkpoint(TRUNCATE)'); } catch { /* ignore */ }
+    fs.copyFileSync(src, file);
+    // keep the last 30 backups
+    const all = fs.readdirSync(BACKUP_DIR()).filter((f) => f.endsWith('.db')).sort();
+    while (all.length > 30) {
+      const old = all.shift();
+      if (old) fs.rmSync(path.join(BACKUP_DIR(), old!), { force: true });
+    }
+    await logActivity({ action: 'backup', entity: 'System', detail: file });
+    return { ok: true, file: path.basename(file), dir: BACKUP_DIR(), size: fs.statSync(file).size };
+  }
+
+  @Post('restore')
+  @ManagerOnly()
+  async restore(@Body() body: { file: string }) {
+    const name = path.basename(String(body?.file || ''));
+    const full = path.join(BACKUP_DIR(), name);
+    if (!fs.existsSync(full)) throw new HttpException('فایل پشتیبان پیدا نشد.', 404);
+    const target = databaseFile();
+    // safety copy of the current database before overwriting
+    const safety = path.join(BACKUP_DIR(), `before-restore-${Date.now()}.db`);
+    try { fs.copyFileSync(target, safety); } catch { /* ignore */ }
+    try { await db().$executeRawUnsafe('PRAGMA wal_checkpoint(TRUNCATE)'); } catch { /* ignore */ }
+    fs.copyFileSync(full, target);
+    await logActivity({ action: 'restore', entity: 'System', detail: name });
+    return { ok: true, restored: name, safetyCopy: path.basename(safety), restartRequired: true };
+  }
+
+  // ------------------------------ diagnostics ------------------------------
+  @Get('health')
+  async health() {
+    const started = Date.now();
+    let tables: any[] = [];
+    try {
+      tables = await db().$queryRawUnsafe(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
+      );
+    } catch { /* ignore */ }
+    const names = tables.map((t) => t.name);
+    const missing = TABLE_LIST.filter((t) => !names.includes(t));
+    let userCount = 0;
+    try {
+      const u: any[] = await db().$queryRawUnsafe(`SELECT COUNT(*) c FROM "User"`);
+      userCount = Number(u?.[0]?.c ?? 0);
+    } catch { /* ignore */ }
+    return {
+      dbFile: databaseFile(),
+      tables: names,
+      missingTables: missing,
+      schemaOk: missing.length === 0,
+      userCount,
+      ms: Date.now() - started,
+      version: process.versions.node,
+      calendar: await settingsService.calendar(),
+    };
+  }
+
+  @Post('health/repair')
+  @ManagerOnly()
+  async repair() {
+    await ensureSchemaAsync();
+    return this.health();
+  }
+
+  @Get('info')
+  async info() {
+    const st = fs.existsSync(databaseFile()) ? fs.statSync(databaseFile()) : null;
+    return {
+      dbFile: databaseFile(),
+      dbSize: st?.size ?? 0,
+      backupDir: BACKUP_DIR(),
+      node: process.versions.node,
+      platform: process.platform,
+      uptimeSeconds: Math.round(process.uptime()),
+      dataDir: process.env.FD_DATA_DIR || '(local ./data)',
+    };
+  }
+}
