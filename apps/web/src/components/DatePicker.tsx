@@ -164,10 +164,11 @@ export function DatePicker({
   return (
     <div className={`dp-host ${compact ? 'dp-compact' : ''}`} ref={hostRef} style={{ width }} title={title}>
       <div className="dp-input-wrap">
+        {/* کلیک روی هر جای کادر (including آیکن) تقویم را باز می‌کند */}
         <button
           type="button" className="dp-icon" tabIndex={-1} disabled={disabled}
           onClick={() => (open ? setOpen(false) : openCal())}
-          aria-label="باز کردن تقویم" title="تقویم"
+          aria-label="باز کردن تقویم" title="تقویم" aria-expanded={open}
         ><IconCalendar size={16} /></button>
         <input
           id={id}
