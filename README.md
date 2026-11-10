@@ -191,6 +191,7 @@ npm run desktop:build
 | اگر `package.json` عوض شده | `npm install` → `npm run desktop:build` |
 | ساخت خطا داد | `npm run doctor` (راه‌حل هر مورد را فارسی می‌گوید) |
 | گفت «لینکر C++ پیدا نشد» ولی Build Tools نصب است | `npm run find:msvc` (مسیرهای بررسی‌شده + دستور رفع) |
+| `fatal error C1083: Cannot open include file: 'winapifamily.h'` | `npm run desktop:env` (فهرست INCLUDE/LIB + خودآزمایی) |
 
 `npm run setup` خودش تشخیص می‌دهد چه چیزی کهنه است (بسته‌ها/API/رابط) و بقیه را رد می‌کند.
 

@@ -664,6 +664,103 @@ npm run desktop:build
 |---|---|---|
 | `link.exe not found` | همان بخش بالا | راه ۱ یا ۲ |
 | `LNK1104: cannot open file 'kernel32.lib'` | `LIB` تنظیم نشده یا **Windows SDK** نصب نیست | در Visual Studio Installer کامپوننت «Windows 11 SDK» را اضافه کنید |
+| `windows.h(1): fatal error C1083: Cannot open include file: 'winapifamily.h'` | `INCLUDE` پوشه‌ی **`shared`** ویندوز SDK را ندارد این فایل آنجاست | **حل شد** (دور ۱۵) — اسکریپت حالا `ucrt`+`shared`+`um`+`winrt` را می‌گذارد و محیط را قبل از ساخت خودآزمایی می‌کند → بخش ۱۵ |
 | `LNK1181: cannot open input file '...lib'` | نسخه‌ی SDK با MSVC هم‌خوان نیست | هر دو را از یک نصب‌کننده نصب کنید |
 | `error: could not compile ... (build script)` همراه با خطای لینکر | همان مشکل لینکر؛ خطای واقعی چند خط بالاتر است | بالای خروجی را بخوانید |
 | `failed to run custom build command` برای `proc-macro2` / `quote` | این crateها build-script دارند و اولین جاهایی هستند که به لینکر می‌خورند — **نشانه‌ی مشکل لینکر است، نه مشکل crate** | راه ۱ یا ۲ |
+
+---
+
+## ۱۵) خطای `C1083: Cannot open include file: 'winapifamily.h'`
+
+پیام واقعی:
+
+```
+vswhom.cpp
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\windows.h(1):
+  fatal error C1083: Cannot open include file: 'winapifamily.h': No such file or directory
+error occurred in cc-rs: command did not execute successfully:
+  "...\MSVC\14.44.35207\bin\HostX64\x64\cl.exe" ... "-c" "ext/vswhom.cpp"
+```
+
+### معنی
+
+کامپایلر C++ **پیدا شده** و شروع به کار کرده (این پیشرفت است!)، ولی
+`INCLUDE` — فهرست پوشه‌های هدر — کامل نیست.
+
+`windows.h` در پوشه‌ی `um` است و در خط اول خودش این را دارد:
+
+```c
+#include <winapifamily.h>
+```
+
+و `winapifamily.h` در پوشه‌ی **`shared`** ویندوز SDK است. پس `INCLUDE` باید
+**هر چهار** پوشه را داشته باشد، به همین ترتیب:
+
+```
+…\Windows Kits\10\Include\10.0.26100.0\ucrt      ← هدرهای C runtime
+…\Windows Kits\10\Include\10.0.26100.0\shared    ← winapifamily.h  ★
+…\Windows Kits\10\Include\10.0.26100.0\um        ← windows.h
+…\Windows Kits\10\Include\10.0.26100.0\winrt
+```
+
+دقیقاً همین ترتیب را `vcvars64.bat` می‌سازد. اسکریپت قبلی در حالت پشتیبان
+(وقتی `vcvars` کار نمی‌کرد) فقط `um` و `ucrt` را می‌گذاشت — و همین خطا
+پیش می‌آمد.
+
+### چه چیزی درست شد
+
+1. `INCLUDE` حالا `ucrt` + **`shared`** + `um` + `winrt` را با ترتیب درست دارد
+2. `LIB` حالا `ucrt` + `um` (x64) را دارد
+3. `VCINSTALLDIR` به پوشه‌ی `VC` اشاره می‌کند (قبلاً `VC\Tools` بود — چند
+   build script همین را می‌خوانند)
+4. `WindowsSDKVersion` / `WindowsSdkDir` / `VCToolsVersion` / `Platform` هم تنظیم می‌شوند
+5. **نسخه‌ی SDK عددی مرتب می‌شود:** قبلاً `10.0.19041.0` بر `10.0.26100.0`
+   ترجیح داده می‌شد (مقایسه‌ی رشته‌ای) و `shared` قدیمی‌تر پیدا نمی‌شد
+6. **موفقیت `vcvars` واقعاً سنجیده می‌شود:** قبلاً فقط وجود `PATH` در خروجی
+   چک می‌شد — که همیشه هست. حالا `LIB` پر بودن و وجود `shared` در `INCLUDE`
+   شرط است؛ اگر نبود، دلیلش چاپ و به روش پشتیبان (که حالا کامل است) سوییچ می‌شود
+
+### دستور تشخیص: `npm run desktop:env`
+
+قبل از ساخت، ببینید کامپایلر چه چیزی می‌گیرد:
+
+```powershell
+npm run desktop:env
+```
+
+خروجی نمونه (سالم):
+
+```
+۲) روش تنظیم محیط
+  ✔ vcvarsall x64
+۳) INCLUDE — هدرهای C++ و ویندوز
+  ✔ …\VC\Tools\MSVC\14.44.35207\include
+  ✔ …\Windows Kits\10\Include\10.0.26100.0\ucrt
+  ✔ …\Windows Kits\10\Include\10.0.26100.0\shared
+  ✔ …\Windows Kits\10\Include\10.0.26100.0\um
+  ✔ …\Windows Kits\10\Include\10.0.26100.0\winrt
+۵) خودآزمایی — فایل‌هایی که کامپایل واقعاً می‌خواهد
+  ✔ windows.h
+  ✔ winapifamily.h
+  ✔ stdio.h
+  ✔ kernel32.lib
+  ✔ ucrt.lib
+=== نتیجه ===
+✔ محیط کامپایل کامل است.
+```
+
+### خودآزمایی خودکار در `desktop:build`
+
+`npm run desktop:build` حالا **قبل از** شروع کامپایل، وجود `windows.h`،
+`winapifamily.h` و `kernel32.lib` را می‌سنجد. اگر کم بود، همان اول می‌گوید —
+نه بعد از ده دقیقه انتظار.
+
+### اگر گفت `winapifamily.h` نیست
+
+| حالت | راه‌حل |
+|---|---|
+| پوشه‌ی `shared` در SDK نیست | Visual Studio Installer → Modify → «Windows 11 SDK» را تیک بزنید (کامل نصب شود) |
+| SDK روی درایو دیگر است | `set FD_SDK_ROOT=D:\Windows Kits\10` |
+| چند نسخه SDK هست و قدیمی انتخاب می‌شود | دیگر نباید پیش بیاید؛ `npm run desktop:env` نسخه‌ی انتخابی را نشان می‌دهد |
+| `INCLUDE` خالی است | `npm run find:msvc` — یعنی `vcvarsall.bat` پیدا نشده (بخش ۱۴/۰) |

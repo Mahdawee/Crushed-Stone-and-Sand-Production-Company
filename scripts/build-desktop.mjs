@@ -376,6 +376,41 @@ async function runTauriBuild(env) {
 }
 
 /* ------------------------------------------------------------------ */
+/* خودآزمایی محیط کامپایل                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * آیا می‌توان یک فایل C++ که `windows.h` را include می‌کند کامپایل کرد؟
+ *
+ * چرا لازم است: بدون این بررسی، اولین خطای واقعی بعد از ~۱۰ دقیقه کامپایل
+ * ظاهر می‌شود (`fatal error C1083: Cannot open include file: 'winapifamily.h'`).
+ * اینجا فقط چند وجود فایل را می‌سنجیم — ارزان و سریع.
+ */
+function checkCompileEnv(vars) {
+  const incs = (vars.INCLUDE || '').split(';').filter(Boolean);
+  const libs = (vars.LIB || '').split(';').filter(Boolean);
+  const has = (dirs, file) => dirs.some((d) => isFile(path.join(d, file)));
+
+  const fatal = [];
+  const checked = [];
+
+  if (!incs.length) fatal.push('INCLUDE خالی است (هدرهای C++ تنظیم نشده)');
+  else {
+    /* windows.h خودش در `um` است و winapifamily.h را از `shared` می‌خواند */
+    if (has(incs, 'windows.h')) checked.push('windows.h');
+    else fatal.push('windows.h پیدا نشد — پوشه‌ی «um» ویندوز SDK در INCLUDE نیست');
+    if (has(incs, 'winapifamily.h')) checked.push('winapifamily.h');
+    else fatal.push('winapifamily.h پیدا نشد — پوشه‌ی «shared» ویندوز SDK در INCLUDE نیست (خطای C1083)');
+  }
+
+  if (!libs.length) fatal.push('LIB خالی است (کتابخانه‌های ویندوز تنظیم نشده)');
+  else if (!has(libs, 'kernel32.lib')) fatal.push('kernel32.lib پیدا نشد — پوشه‌ی «um\\x64» ویندوز SDK در LIB نیست');
+  else checked.push('kernel32.lib');
+
+  return { fatal, checked };
+}
+
+/* ------------------------------------------------------------------ */
 /* ۴) گزارش محیط                                                       */
 /* ------------------------------------------------------------------ */
 
@@ -401,12 +436,31 @@ if (isWin) {
     console.log(`  ${C.ok('✔')} لینکر C++: MSVC ${msvc.msvcVersion || '?'}${msvc.sdkVersion ? ' · SDK ' + msvc.sdkVersion : ''}`);
     console.log(`     ${C.dim(msvc.linkExe)}`);
     console.log(`     ${C.dim(`منبع: ${msvc.source}${msvc.how ? ' · ' + msvc.how : ''}`)}`);
-    const { how } = msvcEnv();
+    const { how, env: msvcVars, vcvarsReason } = msvcEnv();
     if (how === 'vcvars64') console.log(`     ${C.dim('محیط vcvars64 خودکار تنظیم شد (PATH + LIB + INCLUDE)')}`);
     else if (how === 'vcvarsall x64') console.log(`     ${C.dim('محیط vcvarsall x64 خودکار تنظیم شد (PATH + LIB + INCLUDE)')}`);
-    else if (how === 'ساخت دستی LIB/INCLUDE') console.log(`     ${C.warn('⚠ vcvars نبود — LIB/INCLUDE دستی ساخته شد')}`);
+    else if (how === 'ساخت دستی LIB/INCLUDE') console.log(`     ${C.warn('⚠ vcvars تنظیم نشد — LIB/INCLUDE دستی ساخته شد')}`);
     else if (how === 'link.exe از قبل در PATH') console.log(`     ${C.dim('link.exe از قبل در PATH بود (Developer Command Prompt)')}`);
     else if (how === 'ناموفق') console.log(`     ${C.bad('✘ محیط کامپایل تنظیم نشد — ساخت احتمالاً شکست می‌خورد')}`);
+    if (vcvarsReason) console.log(`     ${C.dim('دلیل: ' + vcvarsReason)}`);
+
+    /*
+     * خودآزمایی محیط کامپایل.
+     *
+     * درس دور پانزدهم: `vswhom-sys` با این خطا شکست خورد
+     *   windows.h(1): fatal error C1083: Cannot open include file: 'winapifamily.h'
+     * چون INCLUDE پوشه‌ی `shared` ویندوز SDK را نداشت. این خطا **ده دقیقه
+     * بعد** از شروع کامپایل ظاهر می‌شود؛ بهتر است همین اول معلوم شود.
+     * پس وجود هدرهای کلیدی و پوشه‌های LIB را قبل از ساخت می‌سنجیم.
+     */
+    const missing = checkCompileEnv(msvcVars);
+    if (missing.fatal.length) {
+      console.log(`  ${C.bad('✘')} محیط کامپایل ناقص است — ساخت شکست می‌خورد:`);
+      for (const m of missing.fatal) console.log(`       • ${m}`);
+      console.log(`     ${C.dim('راه‌حل: npm run desktop:env   (تشخیص کامل) یا نصب «Windows 11 SDK» در Build Tools')}`);
+      process.exit(1);
+    }
+    console.log(`     ${C.ok('✔')} هدرهای کلیدی ویندوز پیدا شد${missing.checked.length ? ` (${missing.checked.join(', ')})` : ''}`);
   } else {
     console.log(`  ${C.bad('✘')} لینکر C++ (link.exe): پیدا نشد — ساخت شکست می‌خورد`);
     console.log(`     ${C.dim(`${msvc.checked.length} مسیر بررسی شد؛ جزئیات با: npm run find:msvc`)}`);
@@ -516,7 +570,21 @@ code = await runTauriBuild(env);
 if (code !== 0) {
   console.log(`\n${C.bad('⛔ ساخت نصب‌کننده ناموفق بود.')}`);
   /* تشخیص خودکار نوع خطا از نسخه‌ی باستان — کاربر لازم نباشد دنبال جدول بگردد */
-  if (buildLogHas(/link\.exe.*not found|msvc linker but .*link\.exe/i)) {
+  if (buildLogHas(/C1083|Cannot open include file/i)) {
+    /* هدرهای ویندوز SDK در INCLUDE نیست — خطای واقعی دور پانزدهم */
+    const inc = (msvcEnv().env.INCLUDE || '').split(';').filter(Boolean);
+    const missingFile = (tauriLog.match(/Cannot open include file: '([^']+)'/) || [])[1] || '';
+    console.log(`  ${C.bold('علت:')} هدرهای ویندوز SDK به کامپایلر نمی‌رسند${missingFile ? ` (${missingFile})` : ''}.`);
+    console.log(`  ${C.dim('این خطا از LIB/INCLUDE می‌آید، نه از کد پروژه.')}`);
+    console.log('');
+    console.log(`  ${C.dim('INCLUDE فعلی:')}`);
+    for (const d of inc) console.log(`    ${isFile(path.join(d, missingFile || 'windows.h')) ? C.ok('✔') : C.bad('✘')} ${d}`);
+    console.log('');
+    console.log(`  ${C.bold('قدم ۱ — تشخیص دقیق:')}  ${C.bold('npm run desktop:env')}`);
+    console.log(`  ${C.bold('قدم ۲ — اگر «shared» یا «ucrt» نبود:')}`);
+    console.log(`     Visual Studio Installer → Modify → تیک ${C.bold('«Windows 11 SDK')} (با Include، نه فقط Lib)`);
+    console.log(`     ${C.dim('اگر SDK روی درایو دیگری است: set FD_SDK_ROOT=D:\\Windows Kits\\10')}`);
+  } else if (buildLogHas(/link\.exe.*not found|msvc linker but .*link\.exe/i)) {
     linkerHelp('خروجی ساخت همین را نشان داد.', vsInstalled() ? 'vs-no-cpp' : 'no-vs');
   } else if (buildLogHas(/Persian\.nlf|MUI_LANGUAGEEX/i)) {
     console.log(`  ${C.bold('علت: تنظیم زبان نصب‌کننده (Persian.nlf).')} راه‌حل: ${C.bold('git pull')} — NSIS زبان فارسی را «Farsi» می‌شناسد.`);

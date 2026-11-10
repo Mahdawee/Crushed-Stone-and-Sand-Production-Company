@@ -38,6 +38,7 @@ const apiPack = read('scripts/build-desktop-api.mjs');
 const ps1 = read('scripts/install-rust.ps1');
 const msvcLib = read('scripts/lib/msvc.mjs');
 const findMsvc = read('scripts/find-msvc.mjs');
+const envScript = read('scripts/show-msvc-env.mjs');
 
 let pass = 0;
 let fail = 0;
@@ -152,6 +153,31 @@ ok('فقط پوشه‌های عددی (18 / 2022) به‌عنوان نسخه پ�
   /if \(!\/\^\\d\+\(\\\.\\d\+\)\*\$\/\.test\(v\)\) continue;/.test(msvcLib));
 ok('گزارش per-version می‌گوید «این نسخه link.exe ندارد» نه «کامپوننت نصب نشده»', /link\.exe ندارد \(این نسخه ناقص است/.test(findMsvc));
 ok('گزارش نشان می‌دهد کدام نسخه استفاده می‌شود', /← استفاده می‌شود/.test(findMsvc));
+
+console.log('\n— خطای C1083 / winapifamily.h (دور پانزدهم) —');
+ok('INCLUDE شامل پوشه‌ی shared است (محل winapifamily.h)', /'ucrt', 'shared', 'um', 'winrt'/.test(msvcLib));
+ok('ترتیب INCLUDE مثل vcvars64 است (ucrt → shared → um → winrt)', /\[\s*'ucrt',\s*'shared',\s*'um',\s*'winrt'\s*\]/.test(msvcLib));
+ok('LIB شامل ucrt و um x64 است', /for \(const sub of \['ucrt', 'um'\]\)/.test(msvcLib));
+ok('VCINSTALLDIR به پوشه‌ی VC اشاره می‌کند (نه VC\\Tools)', /vcRoot = path\.resolve\(msvcDir, '\.\.', '\.\.', '\.\.'\)/.test(msvcLib));
+ok('VCINSTALLDIR/ToolsVersion/Platform به محیط اضافه می‌شوند', /env\.VCToolsVersion/.test(msvcLib) && /env\.Platform = 'x64'/.test(msvcLib));
+ok('WindowsSDKVersion و WindowsSdkDir تنظیم می‌شوند', /env\.WindowsSdkDir/.test(msvcLib) && /env\.WindowsSDKVersion/.test(msvcLib));
+ok('موفقیت vcvars با LIB/INCLUDE سنجیده می‌شود (نه فقط PATH)', /libOk && incOk/.test(msvcLib));
+ok('اگر vcvars کار نکرد، دلیلش نگه داشته می‌شود', /vcvarsFailed/.test(msvcLib) && /vcvarsReason/.test(msvcLib));
+ok('بازگشت به ساخت دستی وقتی vcvars ناقص است', /const fb = manualEnv\(msvc\)/.test(msvcLib));
+ok('نسخه‌های SDK عددی مرتب می‌شوند (26100 > 19041)', /versions\.sort\(\(a, b\) => -newerVersion\(a, b\)\)/.test(msvcLib));
+ok('مسیر SDK روی درایو دیگر با FD_SDK_ROOT', /FD_SDK_ROOT/.test(msvcLib));
+
+console.log('\n— خودآزمایی محیط قبل از ساخت —');
+ok('وجود windows.h بررسی می‌شود', /windows\.h/.test(build) && /checkCompileEnv/.test(build));
+ok('وجود winapifamily.h بررسی می‌شود', /winapifamily\.h/.test(build));
+ok('وجود kernel32.lib بررسی می‌شود', /kernel32\.lib/.test(build));
+ok('کمبود محیط قبل از کامپایل متوقف می‌کند (نه بعد از ۱۰ دقیقه)', /محیط کامپایل ناقص است/.test(build));
+ok('دستور npm run desktop:env وجود دارد', /show-msvc-env\.mjs/.test(scripts['desktop:env'] || ''));
+ok('desktop:env فهرست INCLUDE/LIB را با ✔/✘ چاپ می‌کند', /existsDir\(d\)/.test(envScript));
+ok('desktop:env پنج فایل کلیدی را می‌سنجد', /winapifamily\.h/.test(envScript) && /kernel32\.lib/.test(envScript) && /ucrt\.lib/.test(envScript));
+ok('desktop:env راه‌حل Modify در Visual Studio Installer می‌دهد', /Modify/.test(envScript));
+ok('خطای C1083 در خروجی ساخت خودکار تشخیص داده می‌شود', /C1083\|Cannot open include file/.test(build));
+ok('نام هدر گم‌شده از خروجی استخراج و چاپ می‌شود', /Cannot open include file: '\(\[\^'\]\+\)'/.test(build));
 
 console.log('\n— doctor —');
 ok('حالت «cargo روی دیسک ولی نه در PATH» تشخیص داده می‌شود', /cargoOnDisk/.test(doctor));

@@ -80,15 +80,30 @@ export function newerVersion(a, b) {
 
 export function sdkLibRoots() {
   const roots = [];
-  for (const base of [
+  /*
+   * مسیر پیش‌فرض + override:
+   *   set FD_SDK_ROOT=D:\Windows Kits\10
+   * (SDK روی درایو دیگر، یا برای تست در محیط غیرویندوز)
+   */
+  const bases = [];
+  const override = process.env.FD_SDK_ROOT;
+  if (override) bases.push(path.join(override, 'Lib'));
+  bases.push(
     'C:\\Program Files (x86)\\Windows Kits\\10\\Lib',
     'C:\\Program Files\\Windows Kits\\10\\Lib',
-  ]) {
+  );
+  for (const base of bases) {
     if (!isDir(base)) continue;
     let versions = [];
     try { versions = fs.readdirSync(base).filter((d) => /^10\./.test(d)); } catch { /* ignore */ }
-    versions.sort(newerVersion);
-    for (const v of versions.reverse()) roots.push({ base, version: v, dir: path.join(base, v) });
+    /*
+     * مرتب‌سازی عددی — نه رشته‌ای.
+     * باگ واقعی (دور پانزدهم): `sort()` پیش‌فرض رشته‌ای است، پس
+     * «10.0.19041.0» بزرگ‌تر از «10.0.26100.0» شناخته می‌شد و SDK قدیمی
+     * انتخاب می‌شد؛ در نتیجه `shared` (محل winapifamily.h) پیدا نمی‌شد.
+     */
+    versions.sort((a, b) => -newerVersion(a, b));
+    for (const v of versions) roots.push({ base, version: v, dir: path.join(base, v) });
   }
   return roots;
 }
@@ -489,7 +504,32 @@ export function msvcEnv(msvc) {
       const key = line.slice(0, i).trim();
       if (ENV_KEYS.test(key)) env[key] = line.slice(i + 1);
     }
-    if (env.PATH) return { env, how: isAll ? 'vcvarsall x64' : 'vcvars64' };
+
+    /*
+     * آیا vcvars واقعاً کار کرد؟
+     *
+     * «PATH دارد» کافی نیست — `cmd.exe /s /c "... && set"` همیشه PATH خودش را
+     * چاپ می‌کند، حتی اگر `call vcvars64.bat` شکست بخورد. پس همان شرطی را
+     * می‌سنجیم که برای کامپایل لازم است: LIB و INCLUDE پر باشند و INCLUDE
+     * پوشه‌ی `shared` را داشته باشد (محل `winapifamily.h`).
+     *
+     * اگر vcvars کار نکرد → به ساخت دستی می‌رویم (که همان LIB/INCLUDE کامل
+     * را می‌سازد) و دلیلش را برای نمایش در لاگ برمی‌گردانیم.
+     */
+    const libOk = !!env.LIB && env.LIB.split(';').filter(Boolean).length >= 2;
+    const incOk = !!env.INCLUDE && /[\\/]shared(;|$)/i.test(env.INCLUDE);
+    if (libOk && incOk) {
+      return { env, how: isAll ? 'vcvarsall x64' : 'vcvars64' };
+    }
+    /* ناموفق — دلیل را نگه دار و پشتیبان را استفاده کن */
+    const why = (r.stderr || '').split(/\r?\n/).filter(Boolean).slice(-1)[0] || '';
+    const fb = manualEnv(msvc);
+    return {
+      env: fb,
+      how: Object.keys(fb).length ? 'ساخت دستی LIB/INCLUDE' : 'ناموفق',
+      vcvarsFailed: true,
+      vcvarsReason: why || `LIB=${env.LIB ? 'دارد' : 'خالی'} · INCLUDE shared=${incOk ? 'دارد' : 'ندارد'}`,
+    };
   }
 
   /* پشتیبان: ساخت دستی LIB/INCLUDE از مسیرهایی که می‌شناسیم */
@@ -505,34 +545,66 @@ export function manualEnv(msvc) {
   const env = {};
   if (!msvc || !msvc.linkExe) return env;
 
-  /* …\VC\Tools\MSVC\<ver>\bin\Hostx64\x64\link.exe → …\VC\Tools\MSVC\<ver> */
+  /* …\VC\Tools\MSVC\<ver>\bin\HostX64\x64\link.exe → …\VC\Tools\MSVC\<ver> */
   const binDir = path.dirname(msvc.linkExe);
-  const msvcDir = path.resolve(binDir, '..', '..', '..');
-  const vcDir = path.resolve(msvcDir, '..', '..');
+  const msvcDir = path.resolve(binDir, '..', '..', '..');   /* …\VC\Tools\MSVC\<ver> */
+  /* …\VC\Tools\MSVC\<ver> → up1: MSVC → up2: Tools → up3: VC */
+  const vcRoot = path.resolve(msvcDir, '..', '..', '..');    /* …\BuildTools\VC  ← درست */
 
+  /* ---- کتابخانه‌های MSVC ---- */
   const libs = [];
-  const incs = [];
-  const msvcLib = resolveCi(msvcDir, 'lib', 'x64');
-  const msvcInc = resolveCi(msvcDir, 'include');
-  if (msvcLib) libs.push(msvcLib);
-  if (msvcInc) incs.push(msvcInc);
+  for (const rel of [['lib', 'x64']]) {
+    const p = resolveCi(msvcDir, ...rel);
+    if (p) libs.push(p);
+  }
 
-  for (const sdk of sdkLibRoots()) {
-    for (const sub of ['ucrt', 'um']) {
-      const l = path.join(sdk.dir, sub, 'x64');
-      if (isDir(l)) libs.push(l);
-      const i = path.join(sdk.dir, sub, 'x64'); /* include در Include نه Lib */
-      const inc = path.join(sdk.base.replace(/\\Lib$/, '\\Include'), sdk.version, sub);
-      if (isDir(inc)) incs.push(inc);
-      void i;
+  /* ---- هدرهای MSVC (شامل ATL/MFC اگر نصب باشد) ---- */
+  const incs = [];
+  for (const rel of [['include'], ['atlmfc', 'include']]) {
+    const p = resolveCi(msvcDir, ...rel);
+    if (p) incs.push(p);
+  }
+
+  /*
+   * ---- Windows SDK ----
+   *
+   * باگ واقعی (دور پانزدهم): خطای
+   *   windows.h(1): fatal error C1083: Cannot open include file: 'winapifamily.h'
+   * یعنی INCLUDE فقط `um` و `ucrt` را داشت. فایل `winapifamily.h` در
+   * پوشه‌ی `shared` است. ترتیب همان ترتیب vcvars64 است:
+   *   ucrt → shared → um → winrt
+   * و LIB فقط ucrt و um را لازم دارد.
+   */
+  const sdk = sdkLibRoots()[0];
+  if (sdk) {
+    /* …\Windows Kits\10\Lib\<ver> → …\Windows Kits\10\Include\<ver> */
+    const kitsRoot = path.dirname(path.dirname(sdk.dir));
+    const incRoot = resolveCi(kitsRoot, 'Include', sdk.version);
+    for (const sub of ['ucrt', 'shared', 'um', 'winrt']) {
+      const p = incRoot ? resolveCi(incRoot, sub) : '';
+      if (p && !incs.includes(p)) incs.push(p);
     }
+    for (const sub of ['ucrt', 'um']) {
+      const p = resolveCi(sdk.dir, sub, 'x64');
+      if (p && !libs.includes(p)) libs.push(p);
+    }
+    env.WindowsSdkDir = kitsRoot + '\\';
+    env.WindowsSDKVersion = sdk.version.endsWith('\\') ? sdk.version : sdk.version + '\\';
+    env.UCRTVersion = sdk.version;
+    env.UniversalCRTSdkDir = kitsRoot + '\\';
   }
 
   if (libs.length) env.LIB = libs.join(';');
   if (incs.length) env.INCLUDE = incs.join(';');
   env.PATH = [binDir, process.env.PATH || ''].join(';');
+
+  /* VCINSTALLDIR باید به پوشه‌ی «VC» اشاره کند، نه «VC\Tools» —
+     چند build script (از جمله vswhom-sys) همین را می‌خوانند. */
+  env.VCINSTALLDIR = vcRoot + '\\';
   env.VCToolsInstallDir = msvcDir + '\\';
-  if (vcDir) env.VCINSTALLDIR = vcDir + '\\';
+  env.VCToolsVersion = msvc.msvcVersion || '';
+  env.Platform = 'x64';
+  env.VSCMD_ARG_TGT_ARCH = 'x64';
   return env;
 }
 
