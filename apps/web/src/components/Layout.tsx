@@ -123,6 +123,8 @@ export default function Layout() {
   useEffect(() => {
     const onAlt = (e: KeyboardEvent) => {
       if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName))) return;
       const k = e.key.toLowerCase();
       if (k === 's') { e.preventDefault(); setRail((v) => !v); }
       if (k === 'g') {
