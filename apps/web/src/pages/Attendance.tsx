@@ -89,43 +89,44 @@ export default function AttendancePage() {
 
   return (
     <div className="col" style={{ gap: 14 }}>
-      <div className="row between wrap">
-        <div className="row wrap">
+      <div className="card">
+        <div className="list-head">
           <div className="pill-tabs">
-            <button className={mode === 'month' ? 'on' : ''} onClick={() => setMode('month')}>نمای ماهانه</button>
-            <button className={mode === 'day' ? 'on' : ''} onClick={() => setMode('day')}>ورق روزانه</button>
+            <button className={mode === 'month' ? 'on' : ''} onClick={() => setMode('month')}>ماهانه</button>
+            <button className={mode === 'day' ? 'on' : ''} onClick={() => setMode('day')}>روزانه</button>
           </div>
-          {mode === 'month' ? (
-            <MonthPicker value={month} onChange={setMonth} calendar={calendar} yearsBack={4} />
-          ) : (
-            <DatePicker value={day} onChange={setDay} calendar={calendar} width={152} />
-          )}
-          <span className="badge info">{data?.label || ''}</span>
+          {mode === 'month'
+            ? <MonthPicker value={month} onChange={setMonth} calendar={calendar} yearsBack={4} />
+            : <DatePicker value={day} onChange={setDay} calendar={calendar} width={150} />}
+          <span className="badge muted">{data?.label || ''}</span>
+          <div style={{ flex: 1 }} />
+          <div className="list-actions">
+            {mode === 'month' ? (
+              <>
+                <DatePicker compact value={bulkDate} onChange={setBulkDate} calendar={calendar} width={132} placeholder="روز" />
+                <Select value={bulkStatus} onChange={setBulkStatus} options={STATUSES.map((x) => ({ value: x.value, label: x.label }))} />
+                <button className="btn" onClick={markAll}>ثبت گروهی</button>
+                <button className="btn primary" onClick={saveMonth} disabled={busy || !Object.keys(dirty).length}>
+                  ذخیره{Object.keys(dirty).length ? ` (${Object.keys(dirty).length})` : ''}
+                </button>
+              </>
+            ) : null}
+          </div>
         </div>
-        <div className="row wrap">
-          {mode === 'month' ? (
-            <>
-              <div className="row wrap" style={{ gap: 6 }}>
-                <DatePicker compact value={bulkDate} onChange={setBulkDate} calendar={calendar} width={138} placeholder="روز" />
-                <Select value={bulkStatus} onChange={setBulkStatus} options={STATUSES.map((s) => ({ value: s.value, label: s.label }))} />
-                <button className="btn" onClick={markAll}>ثبت گروهی همه</button>
-              </div>
-              <button className="btn primary" onClick={saveMonth} disabled={busy || !Object.keys(dirty).length}>
-                ذخیره تغییرات {Object.keys(dirty).length ? `(${Object.keys(dirty).length})` : ''}
-              </button>
-            </>
-          ) : null}
-        </div>
-      </div>
-
+        {mode === 'month' ? (
+          <div className="att-legend">
+            {STATUSES.map((x) => (
+              <span key={x.value} className="att-key">
+                <i style={{ background: `var(--${x.color}-soft)`, color: `var(--${x.color})` }}>{x.short}</i>{x.label}
+              </span>
+            ))}
+            <span className="muted">— روی هر خانه کلیک کنید تا وضعیت عوض شود</span>
+          </div>
+        ) : null}
+        <div className="card-b tight">
       {mode === 'month' ? (
         !data ? <Spinner /> : (
-          <div className="card">
-            <div className="card-h">
-              <h3>{data.label}</h3>
-              <span className="small muted">روی هر خانه کلیک کنید — ترتیب: حاضر ← غایب ← رخصت ← مریض ← رخصتی ← جمعه</span>
-            </div>
-            <div className="card-b tight" style={{ overflowX: 'auto' }}>
+          <div style={{ overflowX: 'auto' }}>
               <table className="tbl compact">
                 <thead>
                   <tr>
@@ -192,15 +193,13 @@ export default function AttendancePage() {
                   })}
                 </tbody>
               </table>
-            </div>
           </div>
         )
       ) : (
         !dayData ? <Spinner /> : (
-          <div className="card">
-            <div className="card-h"><h3>ورق روزانه — {formatDate(dayData.date, calendar, true)}</h3><div style={{ flex: 1 }} />
+          <>
+            <div className="att-legend"><b>ورق روزانه — {formatDate(dayData.date, calendar, true)}</b>
               <span className="badge info">{dayData.employees.length} کارمند</span></div>
-            <div className="card-b tight">
               <Table head={['#', 'کد', 'نام', 'وضعیت', 'ورود', 'خروج', 'اضافه کاری']}>
                 {dayData.employees.map((e: any, i: number) => {
                   const row = dayData.rows.find((r: any) => r.employeeId === e.id);
@@ -224,10 +223,11 @@ export default function AttendancePage() {
                   );
                 })}
               </Table>
-            </div>
-          </div>
+          </>
         )
       )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -587,3 +587,20 @@ html[data-theme='dark'] .user-chip .avatar { color: #8ff0e2; }
 table.tbl td.num { font-weight: 500; }
 table.tbl tfoot td { border-top: 1px solid var(--border-strong); }
 .dp-hint { font-size: .68rem; color: var(--ok); }
+
+/* ============================ attendance sheet ======================== */
+.att-legend {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 7px 10px;
+  border-bottom: 1px solid var(--border); background: var(--surface-2); font-size: .74rem; color: var(--text-2);
+}
+.att-key { display: inline-flex; align-items: center; gap: 5px; }
+.att-key i {
+  font-style: normal; width: 18px; height: 18px; border-radius: 5px; display: inline-grid; place-items: center;
+  font-size: .66rem; font-weight: 700;
+}
+.att-cell {
+  width: 26px; height: 26px; border-radius: 7px; border: 1px solid var(--border); display: grid; place-items: center;
+  cursor: pointer; font-size: .68rem; background: var(--surface); transition: transform .1s, box-shadow .1s;
+}
+.att-cell:hover { transform: scale(1.08); box-shadow: var(--shadow); }
+table.tbl tbody tr:hover .att-cell.on { filter: brightness(.98); }

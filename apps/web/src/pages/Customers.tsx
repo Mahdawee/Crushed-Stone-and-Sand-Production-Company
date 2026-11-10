@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, downloadCsv } from '../lib/api';
 import { useSession } from '../lib/session';
-import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, ListHead, SearchBox } from '../components/ui';
+import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, ListHead, SearchBox, InlineStat } from '../components/ui';
 import { money } from '../lib/calendar';
 
 export default function CustomersPage() {
@@ -47,14 +47,17 @@ export default function CustomersPage() {
   return (
     <div className="col" style={{ gap: 14 }}>
       <div className="card">
-        <ListHead actions={
-          <>
-            <span className="badge info">{(rows || []).length} مشتری</span>
-            <span className="badge bad">مجموع بدهی: {money(totalDebt)}</span>
+        <ListHead
+          summary={<>
+            <InlineStat label="مشتری" value={(rows || []).length} />
+            <span className="sep" />
+            <InlineStat label="مجموع بدهی" value={`${money(totalDebt)} ؋`} tone="bad" />
+          </>}
+          actions={<>
             <button className="btn" onClick={() => downloadCsv('customers')}><IconDownload size={15} /> اکسل</button>
-            <button className="btn primary" onClick={openNew}><IconPlus size={15} /> مشتری نو</button>
-          </>
-        }>
+            <button className="btn primary" onClick={openNew}><IconPlus size={15} /> مشتری</button>
+          </>}
+        >
           <SearchBox value={q} onChange={setQ} placeholder="نام، کد، تماس، شخص رابط…" width={330} />
         </ListHead>
         <div className="card-b tight">

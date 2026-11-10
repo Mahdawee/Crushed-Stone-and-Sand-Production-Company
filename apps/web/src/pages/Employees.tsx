@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, downloadCsv } from '../lib/api';
 import { useSession } from '../lib/session';
-import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, ListHead, SearchBox } from '../components/ui';
+import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, ListHead, SearchBox, InlineStat } from '../components/ui';
 import { useDebounced } from '../lib/useDebounced';
 import { money, formatDate, todayISO } from '../lib/calendar';
 import { DatePicker } from '../components/DatePicker';
@@ -68,15 +68,19 @@ export default function EmployeesPage() {
   return (
     <div className="col" style={{ gap: 14 }}>
       <div className="card">
-        <ListHead actions={
-          <>
-            <span className="badge ok">{totals.active} فعال</span>
-            <span className="badge muted">{totals.inactive} غیر فعال</span>
-            <span className="badge info">معاش ثابت: {money(totals.salary)}</span>
+        <ListHead
+          summary={<>
+            <InlineStat label="فعال" value={totals.active} tone="ok" />
+            <span className="sep" />
+            <InlineStat label="غیر فعال" value={totals.inactive} />
+            <span className="sep" />
+            <InlineStat label="معاش ثابت" value={`${money(totals.salary)} ؋`} />
+          </>}
+          actions={<>
             <button className="btn" onClick={() => downloadCsv('employees')}><IconDownload size={15} /> اکسل</button>
-            <button className="btn primary" onClick={openNew}><IconPlus size={15} /> کارمند نو</button>
-          </>
-        }>
+            <button className="btn primary" onClick={openNew}><IconPlus size={15} /> کارمند</button>
+          </>}
+        >
           <SearchBox value={q} onChange={setQ} placeholder="نام، کد، وظیفه…" width={280} />
           <Select value={status} onChange={setStatus} placeholder="همه وضعیت‌ها"
             options={[{ value: 'active', label: 'فعال' }, { value: 'inactive', label: 'غیر فعال' }]} />
