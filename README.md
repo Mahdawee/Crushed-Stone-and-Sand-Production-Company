@@ -246,12 +246,16 @@ sudo apt update && sudo apt install -y build-essential curl wget file \
 ### گام ۴ — بسته‌های پروژه و ابزار Tauri
 
 ```bash
-npm install
-npm run desktop:setup      # نصب @tauri-apps/cli (یک بار)
+npm install                # @tauri-apps/cli حالا جزو devDependencies است و با همین نصب می‌آید
+npx tauri --version        # باید ۲.x چاپ شود
 ```
-> اگر شبکه محدود است و npm نصب نشد، می‌توانید ابزار را از
-> <https://crates.io/crates/tauri-cli> با `cargo install tauri-cli --version "^2"` هم نصب کنید
-> و به جای `npm run desktop:dev` از `cargo tauri dev` استفاده کنید.
+> `npm run desktop:setup` هم هنوز کار می‌کند (همان بسته را دوباره نصب می‌کند)؛ اگر خواستید
+> بدون npm بسازید: `cargo install tauri-cli --version "^2"` و سپس `cargo tauri dev` / `cargo tauri build`.
+
+> **آیا نصب Tauri ضروری است؟** برای **استفاده روزمره نه**. خود اپ وب + API محلی همین حالا کار می‌کند
+> (`npm run dev` یا `npm run build && npm start` → <http://127.0.0.1:4317>). Tauri فقط برای ساختن
+> **نصب‌کننده ویندوز/دبیان** لازم است، یعنی وقتی می‌خواهید فایل `*-setup.exe` را روی کمپیوتر شرکت ببرید.
+> اگر کاربر همان کمپیوتر را با مرورگر باز می‌کند، از این مرحله‌ها رد شوید.
 
 ### گام ۵ — اجرای حالت دسکتاپ (آزمایش)
 
