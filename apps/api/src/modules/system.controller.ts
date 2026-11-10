@@ -6,6 +6,74 @@ import { ensureSchemaAsync, TABLE_LIST } from '../schema';
 import { AuthGuard, ManagerOnly } from '../common/auth';
 import { logActivity } from '../common/activity';
 import { settingsService } from '../common/settings';
+import { dataDir } from '../db';
+
+/**
+ * خودآزمایی «بدون نصب چیز اضافه» — همان چیزی که روی کمپیوتر کاربر مهم است.
+ *
+ * چرا در خود برنامه: بسته‌بندی می‌تواند روی کمپیوتر دیگری (مثلاً لینوکس) انجام
+ * شود. اگر باینری ویندوزی libSQL جا افتاده باشد، برنامه روی ویندوز بالا
+ * نمی‌آید؛ با این بررسی، مشکل **قبل از تحویل** و از داخل خود برنامه دیده
+ * می‌شود: node همراه، باینری libSQL، و قابلیت نوشتن در پوشه داده.
+ */
+function runtimeCheck() {
+  const os = require('node:os') as typeof import('node:os');
+
+  /**
+   * باینری‌های از پیش ساخته شده در **چند** جا ممکن است باشند:
+   *   • نسخه‌ی نصب‌شده: `<app.js کنار node.exe>/node_modules`
+   *   • حالت توسعه:   `<repo>/node_modules`
+   *   • اجرا از داخل repo: `process.cwd()/node_modules`
+   */
+  const searchDirs = [
+    path.join(__dirname, 'node_modules'),
+    path.join(__dirname, '..', '..', 'node_modules'),
+    path.join(process.cwd(), 'node_modules'),
+    path.join(process.cwd(), '..', 'node_modules'),
+  ];
+
+  const findBinary = (pkgs: string[]): string | null => {
+    for (const pkg of pkgs) {
+      for (const base of searchDirs) {
+        const p = path.join(base, ...pkg.split('/'), 'index.node');
+        if (fs.existsSync(p)) return pkg;
+      }
+    }
+    return null;
+  };
+
+  const wanted =
+    process.platform === 'win32'
+      ? ['@libsql/win32-x64-msvc']
+      : process.platform === 'linux'
+        ? ['@libsql/linux-x64-gnu', '@libsql/linux-x64-musl']
+        : [];
+  const found = wanted.length ? findBinary(wanted) : 'native/n-a';
+  const sqlite = wanted.length === 0 ? 'ok (پلتفرم بدون باینری از پیش‌ساخته)' : found ? 'ok' : `missing (${wanted.join(' / ')})`;
+
+  let writable = false;
+  try {
+    const probe = path.join(dataDir(), `.write-test-${Date.now()}`);
+    fs.writeFileSync(probe, 'ok');
+    fs.rmSync(probe, { force: true });
+    writable = true;
+  } catch { /* ignore */ }
+
+  /* node.exe همراه برنامه؟ در نسخه‌ی نصب‌شده کنار app.js است */
+  const bundledNode =
+    fs.existsSync(path.join(__dirname, process.platform === 'win32' ? 'node.exe' : 'node')) ||
+    fs.existsSync(path.join(__dirname, '..', process.platform === 'win32' ? 'node.exe' : 'node'));
+
+  return {
+    bundledNode,
+    sqlite,
+    sqliteBinary: found,
+    platform: `${process.platform}-${process.arch}`,
+    arch: os.arch(),
+    totalMemGb: Math.round((os.totalmem() / 1024 ** 3) * 10) / 10,
+    writableDataDir: writable,
+  };
+}
 
 @UseGuards(AuthGuard)
 @Controller('system')
@@ -140,6 +208,7 @@ export class SystemController {
       platform: process.platform,
       uptimeSeconds: Math.round(process.uptime()),
       dataDir: process.env.FD_DATA_DIR || '(local ./data)',
+      runtime: runtimeCheck(),
     };
   }
 }

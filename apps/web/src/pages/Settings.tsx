@@ -200,6 +200,38 @@ export default function SettingsPage() {
                   <dt>زمان پاسخ</dt><dd>{health.ms} ms</dd>
                   <dt>حجم</dt><dd>{(Number(info?.dbSize || 0) / 1024).toFixed(0)} KB</dd>
                 </dl>
+
+                {/*
+                  * «بدون نصب چیز اضافه» — خودآزمایی نسخه‌ی نصب‌شده.
+                  * اگر باینری ویندوزی یا node.exe همراه بسته جا افتاده باشد،
+                  * همین‌جا قرمز دیده می‌شود (به‌جای اینکه کاربر بعداً با
+                  * «برنامه باز نمی‌شود» روبه‌رو شود).
+                  */}
+                {info?.runtime ? (
+                  <div style={{ marginTop: 14 }}>
+                    <div className="row between" style={{ marginBottom: 8 }}>
+                      <span>اجرای بدون نصب اضافی</span>
+                      <span className={`badge ${info.runtime.sqlite === 'ok' && info.runtime.writableDataDir ? 'ok' : 'bad'}`}>
+                        {info.runtime.sqlite === 'ok' && info.runtime.writableDataDir ? 'آماده' : 'نیاز به بررسی'}
+                      </span>
+                    </div>
+                    <dl className="kv">
+                      <dt>موتور دیتابیس</dt>
+                      <dd>{info.runtime.sqlite === 'ok' ? 'درست' : info.runtime.sqlite}</dd>
+                      <dt>پوشه داده قابل نوشتن</dt>
+                      <dd>{info.runtime.writableDataDir ? 'بله' : 'نه — دسترسی را بررسی کنید'}</dd>
+                      <dt>پلتفرم</dt>
+                      <dd className="mono small">{info.runtime.platform} · Node {info.node}</dd>
+                      <dt>حافظه</dt>
+                      <dd>{info.runtime.totalMemGb} GB</dd>
+                    </dl>
+                    {info.runtime.sqlite !== 'ok' ? (
+                      <p className="small" style={{ color: 'var(--bad, #b91c1c)', marginTop: 8 }}>
+                        موتور دیتابیس این نسخه پیدا نشد. یک بار برنامه را دوباره نصب کنید یا از «ابزار نجات» کمک بگیرید.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
               </>
             )}
           </div>

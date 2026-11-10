@@ -29,6 +29,56 @@ const noNode = process.argv.includes('--no-node');
  * (`--require-node`). فقط تست‌های داخل مخزن از حالت سست استفاده می‌کنند.
  */
 const requireNode = process.argv.includes('--require-node');
+/**
+ * تضمین باینری ویندوزی libSQL.
+ *
+ * چرا: نصب‌کننده روی ویندوز اجرا می‌شود، ولی ساخت ممکن است روی لینوکس انجام
+ * شود (همان چیزی که در CI رخ می‌دهد). `npm install` در آن حالت فقط باینری
+ * لینوکسی `@libsql/linux-x64-gnu` را نصب می‌کند و بسته‌ی ویندوزی
+ * (`@libsql/win32-x64-msvc`) اصلاً وجود ندارد — نتیجه: نصب‌کننده روی ویندوز
+ * با «Cannot find module @libsql/win32-x64-msvc» و صفحه‌ی سفید بالا نمی‌آمد.
+ * این تابع آن بسته را (اگر نبود) از npm می‌گیرد و داخل بسته می‌گذارد.
+ */
+const WINDOWS_LIBSQL = '@libsql/win32-x64-msvc';
+
+function ensureWindowsLibsql(nmDir) {
+  const dest = path.join(nmDir, ...WINDOWS_LIBSQL.split('/'));
+  if (fs.existsSync(path.join(dest, 'index.node'))) return true;
+
+  let version = '';
+  try {
+    version = JSON.parse(
+      fs.readFileSync(path.join(root, 'node_modules', '@libsql', 'linux-x64-gnu', 'package.json'), 'utf8'),
+    ).version;
+  } catch { /* ignore */ }
+  if (!version) {
+    try {
+      version = JSON.parse(fs.readFileSync(path.join(root, 'node_modules', '@libsql', 'client', 'package.json'), 'utf8')).version;
+    } catch { /* ignore */ }
+  }
+  if (!version) version = '0.5.29';
+
+  const url = `https://registry.npmjs.org/${WINDOWS_LIBSQL}/-/win32-x64-msvc-${version}.tgz`;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'farday-libsql-'));
+  const tgz = path.join(tmp, 'win.tgz');
+  try {
+    run(`curl -fL --retry 3 --connect-timeout 20 -o "${tgz}" "${url}"`, tmp);
+    /* tarball npm = tar.gz با مسیرهای package/... — با tar سیستمی باز می‌شود */
+    run(`tar -xzf "${tgz}" -C "${tmp}"`, tmp);
+    const src = path.join(tmp, 'package');
+    if (!fs.existsSync(path.join(src, 'index.node'))) throw new Error('index.node در بسته نبود');
+    fs.mkdirSync(dest, { recursive: true });
+    fs.cpSync(src, dest, { recursive: true });
+    console.log(`   ✔ باینری ویندوزی libSQL اضافه شد (${WINDOWS_LIBSQL}@${version})`);
+    return true;
+  } catch (e) {
+    console.error(`   ⚠ باینری ویندوزی libSQL گرفته نشد: ${e instanceof Error ? e.message : e}`);
+    console.error('     نصب‌کننده روی ویندوز اجرا نخواهد شد (Cannot find module @libsql/win32-x64-msvc).');
+    return false;
+  } finally {
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+}
 
 const run = (cmd, cwd) => execSync(cmd, { cwd, stdio: 'inherit' });
 
@@ -74,6 +124,30 @@ function extractFileFromZip(zipPath, wantedSuffix, destPath) {
   throw new Error(`فایل ${wantedSuffix} در ZIP پیدا نشد`);
 }
 
+
+/**
+ * بررسی امضای فایل اجرایی ویندوز (PE).
+ *
+ * چرا: فایل ZIP نود ممکن است ناقص/اشتباه باشد (دانلود قطع‌شده، نسخه ۳۲ بیتی).
+ * اگر node.exe خراب داخل نصب‌کننده برود، کاربر فقط «برنامه باز نمی‌شود» می‌بیند.
+ * اینجا قبل از بسته‌بندی جلوی آن گرفته می‌شود.
+ */
+function assertWindowsExe(file, label = 'node.exe') {
+  let buf;
+  try { buf = fs.readFileSync(file); } catch { throw new Error(`${label} خوانده نشد`); }
+  if (buf.length < 1024 || buf[0] !== 0x4d || buf[1] !== 0x5a) {
+    throw new Error(`${label} فایل اجرایی ویندوز نیست (امضای MZ ندارد)`);
+  }
+  const peOff = buf.readUInt32LE(0x3c);
+  if (buf.length < peOff + 6 || buf.toString('latin1', peOff, peOff + 4) !== 'PE\u0000\u0000') {
+    throw new Error(`${label} ساختار PE معتبر ندارد`);
+  }
+  const machine = buf.readUInt16LE(peOff + 4);
+  if (machine !== 0x8664) {
+    throw new Error(`${label} برای x64 نیست (machine=0x${machine.toString(16)})`);
+  }
+  return true;
+}
 
 console.log('▶ 1/5 ساخت API (nest build)…');
 run('npx nest build', apiSrc);
@@ -179,6 +253,9 @@ for (const scope of ['@libsql', '@prisma']) {
   }
 }
 
+/* باینری ویندوزی libSQL — بدون آن نصب‌کننده روی ویندوز بالا نمی‌آید */
+const libsqlOk = ensureWindowsLibsql(nm);
+
 // the built React app is served by the same local process
 // tauri.conf.json منابع «binaries/*» را اعلام می‌کند؛ اگر پوشه نباشد ساخت با خطا
 // «glob pattern binaries/* path not found» می‌شکند. یک placeholder کم‌حجم می‌گذاریم.
@@ -208,7 +285,8 @@ if (!noNode) {
     console.log(`▶ 4/5 استفاده از فایل ZIP محلی نود: ${localZip}`);
     try {
       const found = extractFileFromZip(localZip, 'node.exe', path.join(out, 'node.exe'));
-      console.log(`   ✔ node.exe کاپی شد (${found})`);
+      assertWindowsExe(path.join(out, 'node.exe'));
+      console.log(`   ✔ node.exe کاپی شد و معتبر است (${found} · PE x64)`);
     } catch (e) {
       console.error(`⛔ استخراج node.exe از ${localZip} انجام نشد: ${e instanceof Error ? e.message : e}`);
       process.exit(1);
@@ -225,7 +303,8 @@ if (!noNode) {
     run(`curl -fL --retry 3 --connect-timeout 20 -o "${zip}" "${url}"`, tmp);
     if (!fs.existsSync(zip) || fs.statSync(zip).size < 5_000_000) throw new Error('دانلود ناقص بود');
     const found = extractFileFromZip(zip, 'node.exe', path.join(out, 'node.exe'));
-    console.log(`   ✔ node.exe کاپی شد (${found})`);
+    assertWindowsExe(path.join(out, 'node.exe'));
+    console.log(`   ✔ node.exe کاپی شد و معتبر است (${found} · PE x64)`);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (requireNode) {
@@ -276,6 +355,14 @@ const size = (dir) => {
 };
 const hasNode = fs.existsSync(path.join(out, 'node.exe'));
 console.log(`✔ آماده است — ${out}  (${(size(out) / 1024 / 1024).toFixed(1)} MB)`);
+const hasWinLibsql = fs.existsSync(path.join(nm, '@libsql', 'win32-x64-msvc', 'index.node'));
+if (requireNode && !hasWinLibsql) {
+  console.error('');
+  console.error('⛔ باینری ویندوزی libSQL داخل بسته نیست — ساخت متوقف شد.');
+  console.error('   برنامه روی ویندوز با خطای «Cannot find module @libsql/win32-x64-msvc» بالا نمی‌آید.');
+  console.error('   با انترنت بسازید، یا بسته را از npm بگیرید:  npm pack @libsql/win32-x64-msvc');
+  process.exit(1);
+}
 if (!hasNode && requireNode) {
   console.error('');
   console.error('⛔ node.exe داخل بسته نیست و حالت سخت‌گیر فعال است — ساخت متوقف شد.');

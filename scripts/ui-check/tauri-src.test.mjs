@@ -123,6 +123,20 @@ ok('ورودی دستور recovery محدود به مقادیر مجاز است'
 ok('کد برنامه هیچ منبع اینترنتی لازم ندارد (CSP فقط self و لوکال)',
   !/https:\/\//.test(conf.app?.security?.csp || ''));
 
+const packScript = fs.readFileSync(path.join(root, 'scripts/build-desktop-api.mjs'), 'utf8');
+ok('باینری ویندوزی libSQL در بسته‌بندی تضمین می‌شود (ساخت روی لینوکس!)',
+  /@libsql\/win32-x64-msvc/.test(packScript) && /ensureWindowsLibsql/.test(packScript));
+ok('نبودِ باینری ویندوزی در حالت سخت‌گیر ساخت را متوقف می‌کند',
+  /hasWinLibsql/.test(packScript) && /باینری ویندوزی libSQL داخل بسته نیست/.test(packScript));
+ok('node.exe قبل از بسته‌بندی اعتبار PE x64 بررسی می‌شود',
+  /function assertWindowsExe/.test(packScript) && /0x8664/.test(packScript));
+
+const sysCtrl = fs.readFileSync(path.join(root, 'apps/api/src/modules/system.controller.ts'), 'utf8');
+ok('خودآزمایی زمان اجرا در /system/info هست (باینری دیتابیس، پوشه قابل نوشتن)',
+  /function runtimeCheck/.test(sysCtrl) && /writableDataDir/.test(sysCtrl) && /sqliteBinary/.test(sysCtrl));
+ok('صفحه تنظیمات وضعیت «اجرای بدون نصب اضافی» را نشان می‌دهد',
+  /اجرای بدون نصب اضافی/.test(fs.readFileSync(path.join(root, 'apps/web/src/pages/Settings.tsx'), 'utf8')));
+
 console.log('\n— هم‌خوانی با API —');
 ok('API همان پورت 4317 را می‌خواند', /FD_PORT/.test(apiMain) && /4317/.test(side));
 ok('API مسیر داده را از FD_DATA_DIR می‌گیرد', /FD_DATA_DIR/.test(apiMain) || /FD_DATA_DIR/.test(fs.readFileSync(path.join(root, 'apps/api/src/db.ts'), 'utf8')));
