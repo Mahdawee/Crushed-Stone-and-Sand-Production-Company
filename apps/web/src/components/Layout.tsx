@@ -124,6 +124,15 @@ export default function Layout() {
   const groups = NAV.map((g) => ({ ...g, items: g.items.filter((i) => !i.managerOnly || isManager) }))
     .filter((g) => g.items.length);
 
+  /** آکاردئونی: باز کردن یک دسته بقیه را می‌بندد (منو کم‌شلوغ می‌ماند) */
+  const toggleGroup = (id: string, isOpen: boolean) => {
+    if (isOpen && activeGroup !== id) { setClosed({ ...closed, [id]: true }); return; }
+    const next: Record<string, boolean> = {};
+    NAV.forEach((g) => { next[g.id] = true; });
+    next[id] = false;
+    setClosed(next);
+  };
+
   return (
     <div className={`app ${open ? 'sidebar-open' : ''} ${rail ? 'rail' : ''}`}>
       <aside className={`sidebar no-print ${open ? 'open' : ''}`}>
@@ -143,13 +152,13 @@ export default function Layout() {
 
         <nav className="nav">
           {groups.map((g) => {
-            const isOpen = !closed[g.id] || activeGroup === g.id;
+            const isOpen = closed[g.id] === false || activeGroup === g.id;
             const GIcon = g.icon;
             return (
               <div className="nav-group" key={g.id}>
                 <button
                   className={`nav-group-head ${activeGroup === g.id ? 'has-active' : ''}`}
-                  onClick={() => setClosed((p) => ({ ...p, [g.id]: !closed[g.id] }))}
+                  onClick={() => toggleGroup(g.id, isOpen)}
                   title={rail ? g.title : undefined}
                 >
                   <GIcon size={14} />
