@@ -450,23 +450,72 @@ table.tbl.compact td, table.tbl.compact th { padding: 6px 8px; font-size: .78rem
 .dp-foot .btn { padding: 4px 9px; font-size: .74rem; border-radius: 7px; }
 
 /* ============================ list toolbar ============================ */
+/* یک ردیف، کم‌ارتفاع: جستجو · فیلتر · خلاصه · دکمه‌ها */
 .list-head {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--surface-2);
-  border-radius: var(--radius) var(--radius) 0 0;
+  padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--surface);
+  border-radius: var(--radius) var(--radius) 0 0; position: relative;
 }
-.list-head .search { flex: 1; min-width: 190px; max-width: 360px; position: relative; }
-.list-head .search .input { padding-inline-start: 31px; }
-.list-head .search .ico { position: absolute; inset-inline-start: 9px; top: 50%; transform: translateY(-50%); color: var(--text-3); font-size: .85rem; pointer-events: none; }
-.list-head .filters { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.list-head .sep { width: 1px; height: 22px; background: var(--border); margin: 0 2px; }
-.list-body { padding: 0; }
+.tb-search { position: relative; flex: 1 1 220px; min-width: 170px; max-width: 340px; }
+.tb-search .input { padding-inline-start: 31px; padding-inline-end: 26px; height: 32px; min-height: 32px; font-size: .82rem; }
+.tb-search .ico { position: absolute; inset-inline-start: 9px; top: 50%; transform: translateY(-50%); color: var(--text-3); pointer-events: none; }
+.tb-search-clear {
+  position: absolute; inset-inline-end: 4px; top: 50%; transform: translateY(-50%);
+  width: 20px; height: 20px; border: none; border-radius: 50%; background: var(--surface-3);
+  color: var(--text-2); display: grid; place-items: center; cursor: pointer;
+}
+.tb-search-clear:hover { background: var(--danger-soft); color: var(--danger); }
+
+.btn.tb-filter {
+  padding: 5px 10px; height: 32px; font-size: .8rem; gap: 6px; position: relative;
+  background: var(--surface); border-color: var(--border-strong); color: var(--text-2);
+}
+.btn.tb-filter.has { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.btn.tb-filter.open { border-color: var(--accent); }
+.tb-badge {
+  min-width: 16px; height: 16px; padding: 0 4px; border-radius: 99px; background: var(--accent);
+  color: #fff; font-size: .64rem; display: inline-grid; place-items: center; font-weight: 700;
+}
+.tb-panel {
+  position: absolute; top: calc(100% + 6px); inset-inline-start: 10px; z-index: 60;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: var(--shadow-lg); min-width: 280px; max-width: min(420px, calc(100vw - 30px));
+  animation: pop .13s ease;
+}
+.tb-panel-b { padding: 12px; display: grid; gap: 10px; }
+.tb-panel-f { display: flex; gap: 6px; padding: 9px 12px; border-top: 1px solid var(--border); background: var(--surface-2); border-radius: 0 0 12px 12px; }
+.tb-panel .field label { font-size: .74rem; }
+.tb-panel .input { height: 32px; min-height: 32px; font-size: .82rem; }
+
+.list-summary { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: .78rem; }
+.tb-stat { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.tb-stat b { font-variant-numeric: tabular-nums; }
+.list-actions { display: flex; align-items: center; gap: 6px; }
+.list-actions .btn { height: 32px; padding: 5px 11px; font-size: .8rem; }
+
+.tb-chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px 2px 9px; border-radius: 99px;
+  background: var(--surface-2); border: 1px solid var(--border); font-size: .74rem; color: var(--text-2);
+}
+.tb-chip .lbl { color: var(--text-3); }
+.tb-chip button {
+  width: 16px; height: 16px; border: none; border-radius: 50%; background: transparent;
+  color: var(--text-3); display: grid; place-items: center; cursor: pointer;
+}
+.tb-chip button:hover { background: var(--danger-soft); color: var(--danger); }
+.chip-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 0 10px 8px; margin-top: -2px; background: var(--surface); }
+
 .summary-bar {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 9px 2px;
-  font-size: .8rem; color: var(--text-2);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: .78rem; color: var(--text-2);
 }
 .summary-bar .k { display: inline-flex; align-items: center; gap: 5px; }
 .summary-bar b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+.empty-state { text-align: center; padding: 34px 16px; color: var(--text-3); }
+.empty-state .empty-ico {
+  width: 48px; height: 48px; margin: 0 auto 10px; border-radius: 14px; display: grid; place-items: center;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-3);
+}
 
 /* =============================== table 2.0 ============================ */
 table.tbl td.row-actions { width: 1%; white-space: nowrap; }

@@ -1,10 +1,13 @@
-import { IconDownload, IconPlus } from '../components/icons';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, downloadCsv } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useDebounced } from '../lib/useDebounced';
-import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, Pager, ListHead, SearchBox, SummaryBar, K } from '../components/ui';
+import {
+  useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, Pager,
+  ListHead, SearchBox, FilterButton, FilterPanel, FilterChip, InlineStat,
+} from '../components/ui';
+import { IconDownload, IconPlus } from '../components/icons';
 import { DatePicker } from '../components/DatePicker';
 import { money, num, todayISO, formatDate, addDaysISO } from '../lib/calendar';
 
@@ -23,6 +26,7 @@ export default function SalesPage() {
   const [form, setForm] = useState<any>(null);
   const [dateISO, setDateISO] = useState('');
   const [busy, setBusy] = useState(false);
+  const [fOpen, setFOpen] = useState(false);
 
   const load = async (p = page) => {
     const qs = new URLSearchParams({ page: String(p), pageSize: '25' });
@@ -95,35 +99,52 @@ export default function SalesPage() {
   return (
     <div className="col" style={{ gap: 12 }}>
       <div className="card">
-        <ListHead actions={
-          <>
+        <ListHead
+          summary={<>
+            <InlineStat label="بل" value={(data?.total ?? 0).toLocaleString('en-US')} />
+            <span className="sep" />
+            <InlineStat label="مجموع" value={`${money(data?.sum ?? 0)} ؋`} />
+            {data?.volumeSum ? <><span className="sep" /><InlineStat label="متراژ" value={`${money(data.volumeSum)} م³`} /></> : null}
+          </>}
+          actions={<>
             <button className="btn" onClick={() => downloadCsv('sales')} title="خروجی اکسل"><IconDownload size={15} /> اکسل</button>
-            <button className="btn primary" onClick={openNew}><IconPlus size={15} /> بل فروش نو</button>
-          </>
-        }>
-          <SearchBox value={filters.q} onChange={(v) => patch({ q: v })} placeholder="بل، مشتری، دریور، پلیت…" width={330} />
-          <div className="filters">
-            <DatePicker compact value={filters.from} onChange={(v) => patch({ from: v })} calendar={calendar} clearable placeholder="از تاریخ" width={132} title="از تاریخ" />
-            <DatePicker compact value={filters.to} onChange={(v) => patch({ to: v })} calendar={calendar} clearable placeholder="تا تاریخ" width={132} title="تا تاریخ" />
-            <Select value={filters.material} onChange={(v) => patch({ material: v })} placeholder="همه مواد"
-              options={(lookups.material || []).map((m: any) => ({ value: m.name, label: m.name }))} />
-            <Select value={filters.paymentType} onChange={(v) => patch({ paymentType: v })} placeholder="همه پرداخت‌ها"
-              options={[{ value: 'cash', label: 'نقده' }, { value: 'credit', label: 'باقی' }]} />
-            {hasFilter ? <button className="btn ghost sm" onClick={() => setFilters({ q: '', from: '', to: '', paymentType: '', material: '' })}>پاک کردن</button> : null}
-          </div>
+            <button className="btn primary" onClick={openNew}><IconPlus size={15} /> بل فروش</button>
+          </>}
+        >
+          <SearchBox value={filters.q} onChange={(v) => patch({ q: v })} placeholder="بل، مشتری، دریور، پلیت…" width={320} />
+          <FilterButton count={[filters.from, filters.to, filters.material, filters.paymentType].filter(Boolean).length}
+            open={fOpen} onClick={() => setFOpen((v) => !v)} />
+          <FilterPanel open={fOpen} footer={
+            <>
+              <button className="btn sm primary" onClick={() => setFOpen(false)}>اعمال</button>
+              <button className="btn sm ghost" onClick={() => setFilters({ q: filters.q, from: '', to: '', paymentType: '', material: '' })}>پاک کردن</button>
+            </>
+          }>
+            <div className="grid c2" style={{ gap: 10 }}>
+              <div className="field"><label>از تاریخ</label>
+                <DatePicker value={filters.from} onChange={(v) => patch({ from: v })} calendar={calendar} clearable /></div>
+              <div className="field"><label>تا تاریخ</label>
+                <DatePicker value={filters.to} onChange={(v) => patch({ to: v })} calendar={calendar} clearable /></div>
+            </div>
+            <div className="field"><label>نوع مواد</label>
+              <Select value={filters.material} onChange={(v) => patch({ material: v })} placeholder="همه مواد"
+                options={(lookups.material || []).map((m: any) => ({ value: m.name, label: m.name }))} /></div>
+            <div className="field"><label>نوع پرداخت</label>
+              <Select value={filters.paymentType} onChange={(v) => patch({ paymentType: v })} placeholder="همه"
+                options={[{ value: 'cash', label: 'نقده' }, { value: 'credit', label: 'باقی' }]} /></div>
+          </FilterPanel>
         </ListHead>
 
-        <div className="card-b tight">
-          <div className="row between wrap" style={{ padding: '0 4px 6px' }}>
-            <SummaryBar>
-              <K label="بل‌ها" value={(data?.total ?? 0).toLocaleString('en-US')} />
-              <span className="sep" />
-              <K label="مجموع مبلغ" value={`${money(data?.sum ?? 0)} افغانی`} />
-              {data?.volumeSum ? <><span className="sep" /><K label="متراژ" value={`${money(data.volumeSum)} م³`} /></> : null}
-            </SummaryBar>
-            <span className="small muted">کرایه در بل حساب شده است</span>
+        {[filters.from || filters.to || filters.material || filters.paymentType].some(Boolean) ? (
+          <div className="chip-row">
+            {filters.from ? <FilterChip label="از" value={formatDate(filters.from, calendar)} onClear={() => patch({ from: '' })} /> : null}
+            {filters.to ? <FilterChip label="تا" value={formatDate(filters.to, calendar)} onClear={() => patch({ to: '' })} /> : null}
+            {filters.material ? <FilterChip label="مواد" value={filters.material} onClear={() => patch({ material: '' })} /> : null}
+            {filters.paymentType ? <FilterChip label="پرداخت" value={filters.paymentType === 'cash' ? 'نقده' : 'باقی'} onClear={() => patch({ paymentType: '' })} /> : null}
           </div>
+        ) : null}
 
+        <div className="card-b tight">
           {!data ? <Spinner /> : (
             <>
               <Table head={['شماره', 'تاریخ', 'مشتری', 'دریور / پلیت', 'مواد', 'متراژ', 'فی متر', 'کرایه', 'مجموع', 'پرداخت', '']}>
@@ -147,7 +168,7 @@ export default function SalesPage() {
                     <td><span className={`badge ${r.paymentType === 'cash' ? 'ok' : 'warn'}`}>{r.paymentType === 'cash' ? 'نقده' : 'باقی'}</span></td>
                     <td>
                       <div className="actions hover-actions">
-                        <Link className="btn sm" to={`/print/sale/${r.id}`}>چاپ</Link>
+                        <Link className="btn sm icon" to={`/print/sale/${r.id}`} title="چاپ بل">چاپ</Link>
                         <button className="btn sm" onClick={() => openEdit(r)}>ویرایش</button>
                         {isManager ? <button className="btn sm danger" onClick={() => remove(r)}>حذف</button> : null}
                       </div>

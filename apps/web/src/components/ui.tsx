@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { IconAlert, IconCheck, IconChevron, IconClose, IconInfo, IconSearchDoc } from './icons';
+import { IconAlert, IconCheck, IconChevron, IconClose, IconFilter, IconInfo, IconSearchDoc } from './icons';
 
 /* =============================== toasts =============================== */
 type ToastKind = 'ok' | 'bad' | 'warn' | 'info';
@@ -210,15 +210,22 @@ export function Pager({ page, pageSize, total, onPage }: {
 
 /* =============================== list head ============================ */
 /**
- * نوار ابزار یکدست فهرست‌ها: جستجو + فیلترها + دکمه‌ها.
- * جایگزین تکرار «toolbar» در همه صفحات می‌شود تا هر جا یک شکل و اندازه باشد.
+ * نوار ابزار یک‌ردیفه و کم‌جا برای همه فهرست‌ها:
+ *
+ *   [جستجو] [فیلتر ▾]  · خلاصه ·        [اکسل] [＋ نو]
+ *
+ * فیلترها داخل یک پنل بازشو هستند تا صفحه شلوغ نشود؛ فیلترهای فعال به شکل
+ * چیپ‌های قابل حذف زیر همان نوار نمایش داده می‌شوند.
  */
-export function ListHead({ children, actions }: { children?: React.ReactNode; actions?: React.ReactNode }) {
+export function ListHead({ children, actions, summary }: {
+  children?: React.ReactNode; actions?: React.ReactNode; summary?: React.ReactNode;
+}) {
   return (
     <div className="list-head">
       {children}
+      {summary ? <div className="list-summary">{summary}</div> : null}
       <div style={{ flex: 1 }} />
-      {actions}
+      {actions ? <div className="list-actions">{actions}</div> : null}
     </div>
   );
 }
@@ -227,19 +234,65 @@ export function SearchBox({ value, onChange, placeholder = 'جستجو…', widt
   value: string; onChange: (v: string) => void; placeholder?: string; width?: number;
 }) {
   return (
-    <div className="search" style={width ? { maxWidth: width } : undefined}>
-      <span className="ico">⌕</span>
+    <div className="tb-search" style={width ? { maxWidth: width } : undefined}>
+      <IconSearchDoc size={15} className="ico" />
       <input
         className="input"
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
       />
+      {value ? (
+        <button className="tb-search-clear" onClick={() => onChange('')} title="پاک کردن جستجو">
+          <IconClose size={12} />
+        </button>
+      ) : null}
     </div>
   );
 }
 
-/** خلاصه بالای جدول: «۲۳ سند — مجموع ۱٬۲۳۴٬۵۶۷ افغانی» */
+/** دکمه باز کردن پنل فیلترها + شمارنده فیلترهای فعال */
+export function FilterButton({ count, onClick, open }: { count: number; onClick: () => void; open: boolean }) {
+  return (
+    <button className={`btn tb-filter ${count ? 'has' : ''} ${open ? 'open' : ''}`} onClick={onClick}>
+      <IconFilter size={15} />
+      <span>فیلتر</span>
+      {count ? <span className="tb-badge">{count}</span> : null}
+    </button>
+  );
+}
+
+/** پنل فیلترها (absolute داخل نوار ابزار) */
+export function FilterPanel({ open, children, footer }: { open: boolean; children: React.ReactNode; footer?: React.ReactNode }) {
+  if (!open) return null;
+  return (
+    <div className="tb-panel">
+      <div className="tb-panel-b">{children}</div>
+      {footer ? <div className="tb-panel-f">{footer}</div> : null}
+    </div>
+  );
+}
+
+/** چیپ یک فیلتر فعال؛ با ✕ حذف می‌شود */
+export function FilterChip({ label, value, onClear }: { label: string; value: string; onClear: () => void }) {
+  return (
+    <span className="tb-chip">
+      <span className="lbl">{label}:</span> {value}
+      <button onClick={onClear} title="حذف فیلتر"><IconClose size={11} /></button>
+    </span>
+  );
+}
+
+/** آمار کوتاه داخل نوار: «۲۳ بل · ۱٬۲۳۴٬۵۶۷ افغانی» */
+export function InlineStat({ label, value, tone }: { label?: string; value: React.ReactNode; tone?: 'ok' | 'bad' | 'warn' }) {
+  return (
+    <span className="tb-stat">
+      {label ? <span className="muted">{label}</span> : null}
+      <b style={tone ? { color: `var(--${tone === 'bad' ? 'danger' : tone})` } : undefined}>{value}</b>
+    </span>
+  );
+}
+
 export function SummaryBar({ children }: { children: React.ReactNode }) {
   return <div className="summary-bar">{children}</div>;
 }
