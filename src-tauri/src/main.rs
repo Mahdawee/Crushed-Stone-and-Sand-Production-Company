@@ -267,6 +267,8 @@ fn main() {
                 };
                 if let Some(p) = ready {
                     api_port = p;
+                    /* پورت را برای اجرای بعدی نگه دار (جلوگیری از نمونه‌ی دوم) */
+                    api_sidecar::save_port(&data_dir_bg, p);
                     api_sidecar::log_line(
                         &data_dir_bg,
                         &format!("API آماده است (پورت {api_port}) — بارگذاری رابط کاربری"),

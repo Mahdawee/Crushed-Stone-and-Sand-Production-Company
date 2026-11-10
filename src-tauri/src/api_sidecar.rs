@@ -153,13 +153,36 @@ fn resource_dir_from(bases: Vec<PathBuf>) -> PathBuf {
         candidates.push(dir.join("api")); // <resource_dir>/api   (normal)
         candidates.push(dir.clone()); // resources flattened
         candidates.push(dir.join("_up_").join("api")); // bundle.resources parent
+        /*
+         * NSIS (installMode=currentUser) برنامه را اینجا نصب می‌کند و منابع را
+         * با ساختار `_up_` نگه می‌دارد:
+         *   %LOCALAPPDATA%\Programs\Farday Roshan\_up_\api\app.js
+         * مسیر منابع Tauri هم همان پوشه است، ولی حالت‌های نصب مختلف (msi،
+         * نسخه‌ی قابل حمل، آپدیت) هرکدام یک پله جابه‌جا می‌شوند؛ پس همه را
+         * می‌گردیم تا کاربر هرگز «app.js پیدا نشد» نبیند.
+         */
+        candidates.push(dir.join("_up_"));
+        candidates.push(dir.join("..").join("api"));
+        candidates.push(dir.join("..").join("_up_").join("api"));
     }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
             candidates.push(parent.join("api")); // portable: exe + api/
             candidates.push(parent.to_path_buf());
             candidates.push(parent.join("resources").join("api"));
+            candidates.push(parent.join("_up_").join("api"));
+            candidates.push(parent.join("resources").join("_up_").join("api"));
         }
+    }
+    /*
+     * پوشه‌ی داده‌ی کاربر — همیشه قابل نوشتن است و NSIS همیشه یک کاپی از
+     * منابع را آنجا دارد. آخرین سنگر: حتی اگر نصب نیمه‌کاره باشد، برنامه
+     * می‌تواند از این کاپی بالا بیاید.
+     */
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        let roaming = PathBuf::from(appdata).join("af.farday.roshan");
+        candidates.push(roaming.join("api"));
+        candidates.push(roaming.join("resources").join("api"));
     }
     // dev fallback: <repo>/apps/api/dist and the packaged copy <repo>/src-tauri/api
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -191,6 +214,10 @@ fn bundled_node(dir: &Path) -> Option<PathBuf> {
     let mut roots: Vec<PathBuf> = vec![dir.to_path_buf()];
     if let Some(parent) = dir.parent() {
         roots.push(parent.to_path_buf());
+        /* NSIS: `<install>\_up_\api` → node.exe در `<install>\_up_` است */
+        if let Some(grand) = parent.parent() {
+            roots.push(grand.to_path_buf());
+        }
     }
     for root in roots {
         for rel in NODE_CANDIDATES {
@@ -227,6 +254,25 @@ fn system_node() -> Option<PathBuf> {
         }
     }
     None
+}
+
+/* ------------------------------------------------------------------ */
+/* port memory (between launches)                                      */
+/* ------------------------------------------------------------------ */
+
+/// فایل کوچکی که پورت آخرین اجرا را نگه می‌دارد.
+///
+/// چرا: اگر پورت ۴۳۱۷ اشغال بود و برنامه روی پورت تصادفی بالا آمد، اجرای
+/// بعدی نمی‌دانست کجا را نگاه کند و یک **نمونه‌ی دوم** با همان دیتابیس
+/// می‌ساخت (دو نویسنده روی یک فایل). حالا پورت در پوشه‌ی داده ذخیره می‌شود
+/// و اجرای بعدی اول همان را بررسی می‌کند.
+pub fn read_saved_port(data_dir: &Path) -> Option<u16> {
+    let text = std::fs::read_to_string(data_dir.join("api-port")).ok()?;
+    text.trim().parse::<u16>().ok().filter(|p| *p > 0)
+}
+
+pub fn save_port(data_dir: &Path, port: u16) {
+    let _ = std::fs::write(data_dir.join("api-port"), port.to_string());
 }
 
 /* ------------------------------------------------------------------ */
@@ -276,7 +322,11 @@ pub fn start(app: &tauri::AppHandle, data_dir: &Path) -> Result<Started, String>
      * یک نمونه‌ی زنده از برنامه‌ی قبلی: همان را استفاده می‌کنیم (نه دو نسخه).
      * روی پورت ترجیحی و پورت جایگزین هر دو بررسی می‌شود.
      */
-    for candidate in [API_PORT, API_PORT + 1] {
+    let mut known: Vec<u16> = vec![API_PORT, API_PORT + 1];
+    if let Some(saved) = read_saved_port(data_dir) {
+        known.insert(0, saved);
+    }
+    for candidate in known {
         if ours_is_running(candidate) {
             return Err(format!("API already running on {candidate} — reusing it"));
         }
@@ -366,6 +416,10 @@ pub fn start(app: &tauri::AppHandle, data_dir: &Path) -> Result<Started, String>
 
     if !log_note.is_empty() {
         log_line(data_dir, log_note.trim_end());
+    }
+    /* پورت ثابت را همین‌جا ذخیره کن؛ پورت تصادفی بعد از آماده شدن (main) */
+    if fixed_port_free {
+        save_port(data_dir, API_PORT);
     }
 
     Ok(Started {

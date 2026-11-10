@@ -34,6 +34,12 @@ ok('مسیرها برای ویندوز با / نرمال می‌شوند', /fn a
 ok('node.exe هم کنار app.js و هم یک پله بالاتر جست‌وجو می‌شود', /NODE_CANDIDATES/.test(side) && /roots\.push/.test(side));
 ok('اگر node همراه نبود، Node سیستم جست‌وجو می‌شود', /fn system_node/.test(side) && /Program Files/.test(side));
 ok('ap.js از مسیر واقعی منابع canonicalize می‌شود', /canonicalize/.test(side));
+/* NSIS منابع را در `_up_` می‌گذارد؛ همه‌ی حالت‌های نصب باید پوشیده شوند */
+ok('حالت‌های نصب NSIS/MSI/portable/APPDATA همه جست‌وجو می‌شوند',
+  /_up_/.test(side) && /APPDATA/.test(side) && /parent\.join\("_up_"\).*join\("api"\)/.test(side));
+ok('پورت آخرین اجرا ذخیره می‌شود (بدون نمونه‌ی دوم روی یک دیتابیس)',
+  /fn save_port/.test(side) && /read_saved_port/.test(side) && /save_port\(&data_dir_bg, p\)/.test(main));
+ok('node.exe یک پله بالاتر هم (نصب NSIS) جست‌وجو می‌شود', /grand\) \{\s*roots\.push/.test(side) || /roots\.push\(grand/.test(side));
 /*
  * باگ بازرسی بسته‌بندی: قبلاً اگر پورت ۴۳۱۷ اشغال بود، برنامه با پیام
  * «پورت در اختیار برنامه دیگری است» **بالا نمی‌آمد** — یعنی روی هر لپ‌تاپی
