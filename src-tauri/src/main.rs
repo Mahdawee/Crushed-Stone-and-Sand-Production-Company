@@ -55,8 +55,7 @@ fn main() {
             //
             // حالا پنجره در کسری از ثانیه با یک صفحه‌ی «در حال آماده‌سازی»
             // باز می‌شود و خودش بعد از آماده شدن سرویس، به رابط کاربری می‌رود.
-            let splash = SPLASH_JS;
-            let win = WebviewWindowBuilder::new(
+            let _win = WebviewWindowBuilder::new(
                 app,
                 "main",
                 WebviewUrl::External("about:blank".parse().expect("about:blank is valid")),
@@ -68,18 +67,26 @@ fn main() {
             .center()
             /* runs on every page load, but paint() only acts on about:blank,
                so the real app page is never overwritten */
-            .initialization_script(splash)
+            .initialization_script(SPLASH_JS)
             .build()?;
 
             // ── 3) start + wait in the background, then navigate ──
+            //
+            // رشته فقط `AppHandle` را می‌گیرد (که در Tauri برای همین کار
+            // Send + Sync است) و پنجره را داخل خود رشته با برچسب «main»
+            // پیدا می‌کند. اینطور هیچ‌وقت به یک ساختار غیر-Send دست نمی‌زنیم —
+            // اشتباهی که کامپایل کل پروژه را می‌شکند.
             let handle = app.handle().clone();
             let data_dir_bg = data_dir.clone();
             std::thread::spawn(move || {
-                /* If the initialization script did not run (some WebView2
-                   builds skip it for `about:blank`), paint it again by hand.
-                   This is idempotent: it only acts while the page is about:. */
+                let win = || handle.get_webview_window("main");
+
+                /* اگر اسکریپت اولیه اجرا نشده باشد، صفحه‌ی «در حال آماده‌سازی»
+                   را یک بار دیگر با دست می‌کشیم؛ فقط روی about: عمل می‌کند. */
                 std::thread::sleep(Duration::from_millis(120));
-                let _ = win.eval(SPLASH_JS);
+                if let Some(w) = win() {
+                    let _ = w.eval(SPLASH_JS);
+                }
 
                 let mut problem: Option<String> = None;
 
@@ -118,6 +125,11 @@ fn main() {
                     ));
                 }
 
+                let Some(w) = win() else {
+                    api_sidecar::log_line(&data_dir_bg, "پنجره «main» پیدا نشد — پایان");
+                    return;
+                };
+
                 match problem {
                     None => {
                         let target = if dev_mode() {
@@ -128,11 +140,8 @@ fn main() {
                         };
                         match target.parse() {
                             Ok(url) => {
-                                if let Err(e) = win.navigate(url) {
-                                    api_sidecar::log_line(
-                                        &data_dir_bg,
-                                        &format!("navigate: {e}"),
-                                    );
+                                if let Err(e) = w.navigate(url) {
+                                    api_sidecar::log_line(&data_dir_bg, &format!("navigate: {e}"));
                                 }
                             }
                             Err(e) => api_sidecar::log_line(
@@ -152,9 +161,12 @@ fn main() {
                         );
                         api_sidecar::log_line(&data_dir_bg, &format!("مشکل راه‌اندازی:\n{details}"));
                         let escaped = error_page(&details).replace('#', "%23");
-                        let _ = win.eval(&format!(
+                        let _ = w.eval(&format!(
                             "document.open();document.write(`{escaped}`);document.close();"
                         ));
+                        /* متن دقیق خطا داخل صفحه نوشته شد؛ پنجره عمداً باز
+                           می‌ماند تا کاربر همان را بخواند (بستن خودکار همان
+                           «غیب شدن»ی است که گزارش شد). */
                     }
                 }
             });
@@ -164,10 +176,13 @@ fn main() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 /* graceful shutdown of the local API (no orphan node.exe) */
+                /* بدون unwrap: اگر قفل مسموم شده باشد، بستن پنجره نباید پنیک کند */
                 if let Some(state) = window.try_state::<ApiProcess>() {
-                    if let Some(mut child) = state.0.lock().unwrap().take() {
-                        let _ = child.kill();
-                        let _ = child.wait();
+                    if let Ok(mut slot) = state.0.lock() {
+                        if let Some(mut child) = slot.take() {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                        }
                     }
                 }
             }

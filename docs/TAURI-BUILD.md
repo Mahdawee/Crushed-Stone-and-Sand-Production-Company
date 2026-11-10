@@ -200,6 +200,8 @@ npx tauri build --offline
 | `failed to run custom build command ... webkit2gtk` | بسته لینوکس کم است | دستور `apt install` گام ۳ |
 | `'cargo' is not recognized` | PATH تازه نشده | ترمینال/ویندوز را ببندید و باز کنید |
 | `error[E0658] ... unstable` | Rust قدیمی | `rustup update stable` |
+| `error[E0599]: no method named try_clone found for struct Stdio` | کد قدیمی پوسته (فایل لاگ برای stdout/stderr کاپی می‌شد، ولی `Stdio` کاپی‌شدنی نیست) | `git pull` — حالا فایل لاگ دو بار باز می‌شود. بررسی سریع: `npm run test:tauri` |
+| `error[E0599]: no method named ... found` (هر روش دیگری در `src-tauri`) | نسخه‌ی کد با نسخه‌ی Tauri هم‌خوان نیست | `git pull` و سپس `npm run test:tauri` — این اسکریپت پیش از ساخت، روش‌های ناموجود را می‌گیرد |
 | `API entry not found` | API build نشده | `npm run build -w @farday/api` |
 | `EADDRINUSE 4317` | نسخه دیگری در حال اجراست | `taskkill /IM node.exe /F` یا بستن برنامه |
 | برنامه باز نمی‌شود / بی‌صدا بسته می‌شود | خطا در راه‌اندازی سرور داخلی | فایل `%APPDATA%\af.farday.roshan\shell.log` را باز کنید — مرحله‌به‌مرحله نوشته شده کجا متوقف شد؛ جزئیات سرور در `api.log` کنارش است |

@@ -44,12 +44,21 @@ pub fn log_line(data_dir: &Path, msg: &str) {
 /* port checks                                                         */
 /* ------------------------------------------------------------------ */
 
+/// آدرس محلی پورت API — بدون `unwrap`.
+///
+/// `"127.0.0.1:4317".parse().unwrap()` عملاً هرگز شکست نمی‌خورد، ولی یک
+/// `unwrap` در مسیر راه‌اندازی یعنی «اگر روزی شکست، برنامه بی‌صدا می‌میرد»
+/// (همان چیزی که کاربر «غیب شدن» می‌بیند). اینجا نتیجه به Option تبدیل می‌شود.
+fn api_addr() -> Option<std::net::SocketAddr> {
+    use std::net::SocketAddr;
+    format!("127.0.0.1:{API_PORT}").parse::<SocketAddr>().ok()
+}
+
 fn port_open() -> bool {
-    TcpStream::connect_timeout(
-        &format!("127.0.0.1:{API_PORT}").parse().unwrap(),
-        Duration::from_millis(250),
-    )
-    .is_ok()
+    match api_addr() {
+        Some(addr) => TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok(),
+        None => false,
+    }
 }
 
 /// True when *our* API answers (not some other program that grabbed the port).
@@ -59,10 +68,8 @@ fn ours_is_running() -> bool {
     }
     /* Ask the API itself. A raw TCP connect is not proof: any program can
        listen on 4317 and then no window content would ever load. */
-    match std::net::TcpStream::connect_timeout(
-        &format!("127.0.0.1:{API_PORT}").parse().unwrap(),
-        Duration::from_millis(400),
-    ) {
+    let Some(addr) = api_addr() else { return false };
+    match std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(400)) {
         Ok(mut stream) => {
             use std::io::{Read, Write};
             let _ = stream.set_read_timeout(Some(Duration::from_millis(600)));
@@ -245,18 +252,19 @@ pub fn start(app: &tauri::AppHandle, data_dir: &Path) -> Result<Started, String>
     };
 
     /* Both streams go to a file: a GUI process has no console, and inheriting
-       invalid handles is what makes `spawn()` fail on Windows. */
+       invalid handles is what makes `spawn()` fail on Windows.
+       `Stdio` را نمی‌توان کاپی کرد (`try_clone` روی Stdio وجود ندارد)، پس
+       فایل لاگ دو بار باز می‌شود: یکی برای stdout و یکی برای stderr. */
     let log_path = data_dir.join("api.log");
-    let out = Stdio::from(
+    let open_log = || -> Result<std::fs::File, String> {
         std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&log_path)
-            .map_err(|e| format!("نمی‌توان فایل لاگ را باز کرد ({}): {e}", log_path.display()))?,
-    );
-    let err = out
-        .try_clone()
-        .map_err(|e| format!("نمی‌توان فایل لاگ را برای stderr باز کرد: {e}"))?;
+            .map_err(|e| format!("نمی‌توان فایل لاگ را باز کرد ({}): {e}", log_path.display()))
+    };
+    let out = Stdio::from(open_log()?);
+    let err = Stdio::from(open_log()?);
 
     let mut cmd = Command::new(&program);
     cmd.arg(arg_path(&entry))
@@ -311,7 +319,9 @@ pub fn tail_log(data_dir: &Path, lines: usize) -> String {
 
 /// A rough free-port scan used when 4317 is occupied by another program.
 pub fn first_free_port_from(start_port: u16) -> Option<u16> {
-    for port in start_port..start_port + 20 {
+    /* `start_port + 20` در حالت دیباگ می‌تواند سرریز کند (پنیک) — با saturating */
+    let end = start_port.saturating_add(20);
+    for port in start_port..end {
         let addr = format!("127.0.0.1:{port}");
         if let Ok(addrs) = addr.to_socket_addrs() {
             if let Some(a) = addrs.into_iter().next() {

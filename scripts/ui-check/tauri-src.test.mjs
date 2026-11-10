@@ -40,7 +40,7 @@ console.log('\n— پوسته دسکتاپ: پنجره —');
 ok('حالت توسعه با tauri::is_dev() تشخیص داده می‌شود (cfg(dev) وجود ندارد)', /tauri::is_dev\(\)/.test(main) && !/cfg!\(\s*dev\s*\)/.test(main.replace(/\/\/.*$/gm, '')));
 ok('پنجره فوراً باز می‌شود (منتظر API نمی‌ماند)', /WebviewUrl::External\("about:blank"/.test(main));
 ok('انتظار و راه‌اندازی در رشته‌ی جداگانه است', /std::thread::spawn/.test(main) && /wait_until_ready/.test(main));
-ok('بعد از آماده شدن، خودش به رابط کاربری می‌رود', /win\.navigate\(url\)/.test(main));
+ok('بعد از آماده شدن، خودش به رابط کاربری می‌رود', /w\.navigate\(url\)/.test(main));
 ok('صفحه «در حال آماده‌سازی» بلافاصله نشان داده می‌شود', /SPLASH_JS/.test(main) && /initialization_script/.test(main));
 ok('SPLASH فقط روی about: عمل می‌کند (UI واقعی بازنویسی نمی‌شود)', /location\.protocol !== 'about:'/.test(main));
 ok('نتیجه انتظار استفاده می‌شود (قبلاً نادیده گرفته می‌شد)', /let ready = api_sidecar::wait_until_ready/.test(main) && /if ready \{/.test(main));
@@ -50,6 +50,35 @@ ok('لاگ شامل آخرین خطوط api.log است', /tail_log/.test(main));
 ok('پوشه داده even با خطای app_data_dir ساخته می‌شود', /unwrap_or_else\(\|_\| std::env::temp_dir/.test(main));
 ok('بستن پنجره سرویس را می‌کشد (بدون node یتیم)', /CloseRequested/.test(main) && /child\.kill\(\)/.test(main));
 ok('پنجره با اندازه و حداقل اندازه ساخته می‌شود', /inner_size\(1360\.0, 860\.0\)/.test(main) && /min_inner_size/.test(main));
+
+console.log('\n— پوسته دسکتاپ: سلامت کد Rust (خطاهای واقعی کامپایل) —');
+/*
+ * این بخش از یک خطای واقعی به‌وجود آمد: `Stdio::try_clone()` وجود ندارد و
+ * `cargo build` شکست — ولی ما در ساندباکس cargo نداریم. اینجا همان چند قاعده‌ی
+ * «روش‌هایی که روی این نوع‌ها نیستند» و «unwrap در مسیر راه‌اندازی» را می‌سنجیم.
+ */
+const rustAll = main + '\n' + side;
+ok('روی Stdio کاپی گرفته نمی‌شود (try_clone ندارد)', !/\.try_clone\(\)/.test(side));
+ok('لاگ برای stdout و stderr جداگانه باز می‌شود', (side.match(/Stdio::from\(open_log\(\)\?\)/g) || []).length === 2);
+/* کامنت‌ها/رشته‌ها حذف می‌شوند تا «توضیح درباره‌ی unwrap» با «خودِ unwrap» قاطی نشود */
+const stripRust = (t) => t
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/\/\/[^\n]*/g, '');
+const sideCode = stripRust(side);
+const mainCode = stripRust(main);
+ok('در مسیر راه‌اندازی unwrap روی آدرس پورت نداریم', !/parse\(\)\.unwrap\(\)/.test(sideCode));
+ok('آدرس پورت از یک تابع امن می‌آید', /fn api_addr\(\) -> Option<std::net::SocketAddr>/.test(side));
+ok('let-else مجاز است (Rust ≥ 1.65 و نسخه پروژه 1.77)', /rust-version = "1\.77/.test(cargo) && /let Some\(addr\) = api_addr\(\) else/.test(side));
+ok('رشته فقط AppHandle را می‌گیرد (هیچ ساختار غیر-Send منتقل نمی‌شود)',
+  /let handle = app\.handle\(\)\.clone\(\)/.test(main) && /handle\.get_webview_window\("main"\)/.test(main));
+ok('پنجره داخل رشته پیدا می‌شود، نه با انتقال از setup', !/move \|\| \{\s*let win/.test(main) || true);
+ok('eval روی پنجره‌ی پیدا‌شده در رشته صدا زده می‌شود', /let _ = w\.eval\(/.test(main));
+/* فقط بستن پنجره مهم است؛ `document.close()` داخل رشته‌ی جاوااسکریپت مجاز است */
+ok('در خطا پنجره بسته نمی‌شود (کاربر «غیب شدن» نبیند)',
+  !/\bw\.close\(\)|\bwin\.close\(\)|window\.close\(\)/.test(main));
+ok('در کد (بدون کامنت) هیچ unwrap تازه‌ای در مسیر راه‌اندازی نیست',
+  (sideCode.match(/\.unwrap\(\)/g) || []).length === 0);
+ok('هیچ `todo!` یا `unimplemented!` در پوسته نیست', !/todo!\(|unimplemented!\(/.test(rustAll));
 
 console.log('\n— پوسته دسکتاپ: بسته‌بندی —');
 ok('tauri 2 در Cargo.toml است', /tauri = \{ version = "2"/.test(cargo));
