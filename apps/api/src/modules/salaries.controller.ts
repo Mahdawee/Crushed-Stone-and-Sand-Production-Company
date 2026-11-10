@@ -159,11 +159,25 @@ export class SalariesController {
       /* کارمند باید وجود داشته باشد — وگرنه سند معاش «یتیم» ساخته می‌شود */
       const emp: any[] = await p.$queryRawUnsafe(`SELECT "id" FROM "Employee" WHERE "id"=?`, Number(r.employeeId));
       if (!emp?.length) throw new HttpException(`کارمند با شناسه ${r.employeeId} پیدا نشد.`, 400);
-      const base = Number(r.baseSalary) || 0;
-      const bonus = Number(r.bonus) || 0;
-      const penalty = Number(r.penalty) || 0;
-      const overtimeAmount = Number(r.overtimeAmount) || 0;
+      /*
+       * باگ: مبلغ‌های نامعتبر (`abc`، `Infinity`) بی‌صدا صفر می‌شدند و
+       * «توتال معاش» با عددی که کاربر روی صفحه می‌دید فرق می‌کرد. حالا
+       * ورودی غیرعددی با پیام فارسی رد می‌شود.
+       */
+      const amountOf = (v: any, label: string) => {
+        if (v === undefined || v === null || v === '') return 0;
+        const n = Number(v);
+        if (!Number.isFinite(n)) throw new HttpException(`«${label}» باید عدد باشد.`, 400);
+        if (n < 0) throw new HttpException(`«${label}» نمی‌تواند منفی باشد.`, 400);
+        return n;
+      };
+      const base = amountOf(r.baseSalary, 'معاش ماهانه');
+      const bonus = amountOf(r.bonus, 'مکافات');
+      const penalty = amountOf(r.penalty, 'جریمه');
+      const overtimeAmount = amountOf(r.overtimeAmount, 'مبلغ اضافه‌کاری');
       const total = Math.round((base + bonus + overtimeAmount - penalty) * 100) / 100;
+      /* معاش منفی هیچ معنایی ندارد؛ بهتر است همان‌جا گفته شود تا در راپور گم شود */
+      if (total < 0) throw new HttpException('جمع معاش منفی می‌شود — جریمه از مجموع بیشتر است.', 400);
       const ex: any[] = await p.$queryRawUnsafe(
         `SELECT "id","no" FROM "Salary" WHERE "employeeId"=? AND "periodStart"=?`,
         Number(r.employeeId), b.start,
