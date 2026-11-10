@@ -86,6 +86,16 @@ pub fn start(app: &tauri::AppHandle, data_dir: &Path) -> Result<Child, String> {
         PathBuf::from(if cfg!(windows) { "node.exe" } else { "node" })
     };
 
+    let log = data_dir.join("api.log");
+    let out = Stdio::from(
+        std::fs::OpenOptions::new().create(true).append(true).open(&log)
+            .map_err(|e| format!("cannot open {}: {e}", log.display()))?,
+    );
+    let err = Stdio::from(
+        std::fs::OpenOptions::new().create(true).append(true).open(&log)
+            .map_err(|e| format!("cannot open {}: {e}", log.display()))?,
+    );
+
     let child = Command::new(program)
         .arg(&entry)
         .current_dir(&dir)
@@ -94,8 +104,9 @@ pub fn start(app: &tauri::AppHandle, data_dir: &Path) -> Result<Child, String> {
         .env("NODE_ENV", "production")
         /* حتی اگر پورت دیگری آزاد باشد، پنجره همیشه همین آدرس را باز می‌کند */
         .env("FD_HOST", "127.0.0.1")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        /* اگر برنامه برای کاربر خطا داد، همین فایل را ببینید: %APPDATA%\af.farday.roshan\api.log */
+        .stdout(out)
+        .stderr(err)
         .spawn()
         .map_err(|e| format!("spawn failed: {e}"))?;
 

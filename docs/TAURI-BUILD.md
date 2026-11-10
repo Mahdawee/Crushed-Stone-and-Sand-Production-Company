@@ -143,8 +143,9 @@ src-tauri/target/release/farday-roshan.exe                               (نسخ
 
 **محل معلومات:**
 ```
-%APPDATA%\af.farday.roshan\farday.db
-%APPDATA%\af.farday.roshan\backups\
+%APPDATA%\af.farday.roshan\farday.db      ← دیتابیس
+%APPDATA%\af.farday.roshan\backups\       ← پشتیبان‌ها
+%APPDATA%\af.farday.roshan\api.log        ← لاگ سرویس داخلی (برای عیب‌یابی)
 ```
 
 ## ۸) ساخت بدون انترنت (Air-gapped)
@@ -191,7 +192,7 @@ npx tauri build --offline
 | `error[E0658] ... unstable` | Rust قدیمی | `rustup update stable` |
 | `API entry not found` | API build نشده | `npm run build -w @farday/api` |
 | `EADDRINUSE 4317` | نسخه دیگری در حال اجراست | `taskkill /IM node.exe /F` یا بستن برنامه |
-| پنجره سفید | API دیر بیدار شده | ۱۰ ثانیه صبر؛ `%APPDATA%\af.farday.roshan` را بررسی کنید |
+| پنجره سفید | API دیر بیدار شده | از این نسخه، پنجره فقط بعد از آماده شدن API ساخته می‌شود؛ اگر باز هم سفید بود فایل `%APPDATA%\af.farday.roshan\api.log` را ببینید |
 | نصب‌شده: `node.exe not found` | بدون `package:api` ساخته شده | `npm run package:api` و سپس `npx tauri build` |
 | فونت فارسی درست نیست | WebView2 قدیمی | WebView2 Runtime را تازه کنید |
 | `'unzip' is not recognized` | ویندوز به‌صورت پیش‌فرض `unzip` ندارد (نسخه‌های قبل از این اصلاح) | `git pull` — حالا خود اسکریپت ZIP را باز می‌کند، بدون unzip |

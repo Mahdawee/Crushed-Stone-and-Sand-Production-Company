@@ -6,6 +6,11 @@ mod api_sidecar;
 use std::sync::Mutex;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
+/// `cfg(dev)` کار می‌کند، ولی برای اطمینان در تابع هم وضعیت اجرا بررسی می‌شود.
+fn dev_mode() -> bool {
+    cfg!(dev) || std::env::var("FD_TAURI_DEV").is_ok()
+}
+
 /// Holds the child process of the bundled NestJS API so that it is stopped
 /// when the window closes (no orphan `node.exe` left running).
 pub struct ApiProcess(pub Mutex<Option<std::process::Child>>);
@@ -41,24 +46,23 @@ fn main() {
             //    points at a URL that actually answers:
             //      • packaged → http://127.0.0.1:4317  (the bundled API serves the UI)
             //      • dev      → http://localhost:5173   (Vite, hot reload)
-            let url = if cfg!(dev) {
+            let url = if dev_mode() {
                 std::env::var("FD_DEV_URL").unwrap_or_else(|_| "http://localhost:5173".into())
             } else {
                 format!("http://127.0.0.1:{}", api_sidecar::API_PORT)
             };
 
-            let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url.parse().expect("valid URL")))
+            let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url.parse().expect("valid URL")))
                 .title("فردای روشن — مدیریت شرکت تولیدی")
                 .inner_size(1360.0, 860.0)
                 .min_inner_size(1024.0, 680.0)
                 .resizable(true)
                 .center();
 
-            // In dev the UI may still be starting; the bundled API needs a moment.
-            if !cfg!(dev) {
+            // The bundled API needs a moment before the window can show the UI.
+            if !dev_mode() {
+                /* پنجره فقط وقتی ساخته می‌شود که API جواب بدهد — بدون صفحه سفید */
                 api_sidecar::wait_until_ready(90);
-            } else {
-                let _ = &mut builder; // dev: Vite is started by beforeDevCommand
             }
 
             builder.build()?;
