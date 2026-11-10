@@ -15,6 +15,7 @@ const ok = (s) => console.log(`  ✔ ${s}`);
 const bad = (s, fix) => { problems.push({ s, fix }); console.log(`  ✘ ${s}`); };
 const warn = (s) => console.log(`  ⚠ ${s}`);
 const problems = [];
+const todos = [];
 
 function run(cmd) {
   try { return execSync(cmd, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); }
@@ -54,19 +55,36 @@ if (isWin) {
 }
 
 console.log('\n— ۵) بسته‌های پروژه —');
-if (fs.existsSync(path.join(root, 'node_modules'))) ok('node_modules موجود است');
-else bad('npm install اجرا نشده', 'در پوشه پروژه: npm install');
+// npm workspaces hoist to the root, but a missing workspace folder is the real signal.
+const nmRoot = path.join(root, 'node_modules');
+const have = (rel) => fs.existsSync(path.join(nmRoot, rel));
+const rootDeps = fs.existsSync(path.join(nmRoot, '.package-lock.json')) ||
+  fs.existsSync(path.join(root, 'package-lock.json'));
+if (fs.existsSync(nmRoot) && have('@nestjs/core') && have('vite')) {
+  ok('node_modules نصب است (api + web)');
+} else if (fs.existsSync(nmRoot)) {
+  const missing = [!have('@nestjs/core') && '@nestjs/core', !have('vite') && 'vite'].filter(Boolean);
+  bad(`بسته‌های پروژه ناقص است (${missing.join(', ')} پیدا نشد)`, 'در پوشه پروژه: npm install');
+} else if (rootDeps) {
+  ok('package-lock.json موجود است — برای نصب: npm ci');
+  bad('npm install اجرا نشده', 'در پوشه پروژه: npm install');
+} else {
+  bad('npm install اجرا نشده', 'در پوشه پروژه: npm install');
+}
 
 console.log('\n— ۶) ساخته‌های API و رابط —');
-if (fs.existsSync(path.join(root, 'apps/api/dist/main.js'))) ok('API ساخته شده (apps/api/dist)');
-else warn('API ساخته نشده — npm run build -w @farday/api');
-if (fs.existsSync(path.join(root, 'apps/web/dist/index.html'))) ok('رابط ساخته شده (apps/web/dist)');
-else warn('رابط ساخته نشده — npm run build -w @farday/web');
+const apiBuilt = fs.existsSync(path.join(root, 'apps/api/dist/main.js'));
+const webBuilt = fs.existsSync(path.join(root, 'apps/web/dist/index.html'));
+if (apiBuilt) ok('API ساخته شده (apps/api/dist)');
+else warn('API ساخته نشده — npm run build');
+if (webBuilt) ok('رابط ساخته شده (apps/web/dist)');
+else warn('رابط ساخته نشده — npm run build');
+if (!apiBuilt || !webBuilt) todos.push('npm run build');
 
 console.log('\n— ۷) بسته نصبی (src-tauri/api) —');
 const pkg = path.join(root, 'src-tauri/api/app.js');
 if (fs.existsSync(pkg)) ok('بسته API آماده است');
-else warn('آماده نشده — npm run package:api (قبل از desktop:build)');
+else { warn('آماده نشده — npm run package:api (قبل از desktop:build)'); todos.push('npm run package:api'); }
 if (isWin && !fs.existsSync(path.join(root, 'src-tauri/api/node.exe'))) {
   warn('node.exe کاپی نشده — برای نصب‌کننده‌ای که به Node نیاز ندارد: npm run package:api');
 }
@@ -74,11 +92,17 @@ if (isWin && !fs.existsSync(path.join(root, 'src-tauri/api/node.exe'))) {
 console.log('\n— ۸) ابزار Tauri CLI —');
 const cli = run('npx --no-install tauri --version') || run('npx --no-install @tauri-apps/cli --version');
 if (cli) ok(cli);
-else warn('نصب نشده — یک بار: npm run desktop:setup');
+else { warn('نصب نشده — یک بار: npm run desktop:setup'); todos.push('npm run desktop:setup'); }
 
 console.log('');
 if (problems.length === 0) {
-  console.log('✅ همه چیز برای ساخت نسخه دسکتاپ آماده است.\n   مرحله بعد:  npm run desktop:build\n');
+  if (todos.length) {
+    console.log('✅ پیش‌نیازهای سیستمی کامل است. چند قدم آماده‌سازی باقی مانده (به ترتیب):\n');
+    [...new Set(todos)].forEach((t, i) => console.log(`   ${i + 1}) ${t}`));
+    console.log('\n   بعد:  npm run desktop:build\n');
+  } else {
+    console.log('✅ همه چیز برای ساخت نسخه دسکتاپ آماده است.\n   مرحله بعد:  npm run desktop:build\n');
+  }
 } else {
   console.log(`⛔ ${problems.length} مورد باید درست شود:\n`);
   for (const p of problems) console.log(`• ${p.s}\n  راه‌حل: ${p.fix}\n`);
