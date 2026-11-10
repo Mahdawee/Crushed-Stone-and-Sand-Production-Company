@@ -71,6 +71,8 @@ export default function SalesPage() {
   const save = async () => {
     if (!form.customerId) { toast.warn('مشتری را انتخاب کنید.'); return; }
     if (!dateISO) { toast.error('تاریخ بل', 'تاریخ را انتخاب یا وارد کنید.'); return; }
+    if (!(num(form.volume) > 0)) { toast.warn('متراژ باید بزرگ‌تر از صفر باشد.'); return; }
+    if (num(form.unitPrice) < 0 || num(form.freightPerUnit) < 0) { toast.warn('قیمت نمی‌تواند منفی باشد.'); return; }
     const cust = customers.find((c) => String(c.id) === String(form.customerId));
     setBusy(true);
     try {

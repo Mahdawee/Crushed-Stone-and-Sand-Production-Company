@@ -85,14 +85,19 @@ export default function CashbookPage() {
           <div className="card-b tight">
             <Table head={['تاریخ', 'نوع', 'سند', 'طرف معامله', 'وارده', 'صادره', 'باقی']}>
               {d.rows.map((r: any, i: number) => (
-                <tr key={i}>
+                /*
+                 * سطرهای «اطلاعی» (امانت، مصرف قرضه، رسید به بانک) پولی از دخل
+                 * نگرفته‌اند؛ قبلاً مثل بقیه نمایش داده می‌شدند و جمع ستون با
+                 * «باقی» نمی‌خواند. حالا کم‌رنگ و با نشان «بدون اثر در دخل».
+                 */
+                <tr key={i} className={r.kind === 'info' ? 'row-info' : undefined}>
                   <td className="mono">{r.dateDisplay}</td>
-                  <td>{r.type}</td>
+                  <td>{r.type}{r.kind === 'info' ? <span className="badge muted">بدون اثر در دخل</span> : null}</td>
                   <td className="mono">{r.doc}</td>
                   <td className="small">{r.party}</td>
                   <td className="num" style={{ color: r.in ? 'var(--ok)' : 'inherit' }}>{r.in ? money(r.in) : '—'}</td>
                   <td className="num" style={{ color: r.out ? 'var(--danger)' : 'inherit' }}>{r.out ? money(r.out) : '—'}</td>
-                  <td className="num" style={{ fontWeight: 700 }}>{money(r.balance)}</td>
+                  <td className="num" style={{ fontWeight: r.kind === 'info' ? 400 : 700 }}>{money(r.balance)}</td>
                 </tr>
               ))}
             </Table>

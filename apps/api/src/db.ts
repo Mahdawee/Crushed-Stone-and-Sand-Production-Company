@@ -37,6 +37,20 @@ export function db(): PrismaClient {
   return client;
 }
 
+/**
+ * Drop the cached client (used after a restore).
+ *
+ * libSQL keeps the SQLite file open; overwriting `farday.db` underneath it leaves
+ * the process reading the *old* page cache — i.e. after «بازگردانی» the app
+ * still shows the pre-restore data and the restore looks like it failed.
+ * Closing + clearing the singleton forces a fresh connection on next query.
+ */
+export async function resetDb(): Promise<void> {
+  const old = client;
+  client = null;
+  if (old) { try { await old.$disconnect(); } catch { /* ignore */ } }
+}
+
 /** Test / maintenance helper — opens a second connection on another file. */
 export function openDb(file: string): PrismaClient {
   const adapter = new PrismaLibSql({ url: `file:${file}` });

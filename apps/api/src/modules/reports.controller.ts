@@ -6,7 +6,7 @@ import { settingsService } from '../common/settings';
 import {
   CalendarMode, monthBucket, yearBucket, todayISO, formatDate, monthName, pad2,
   toCalendar, fromCalendar, startOfMonth, endOfMonth, startOfYear, endOfYear, daysBetween, addDays,
-  parseUserDate, assertRange,
+  parseUserDate, assertRange, monthLength,
 } from '../common/calendar';
 
 type Row = Record<string, number>;
@@ -56,9 +56,21 @@ export class ReportsController {
     const salaryTotal = num(salaries[0]?.total);
     const totalOut = expenseAfn + salaryTotal;
 
+    /*
+     * باگ: در حالت «دقیق» فقط «امانت» از دخل کنار می‌رفت، ولی رسیدهایی که
+     * صراحتاً به بانک/کس دیگر رفته‌اند (receivedBy ≠ دخل) هم پول دخل نیستند.
+     * حالا از همان جمع‌ای که SQL جدا حساب می‌کند (cashToBox) استفاده می‌شود تا
+     * راپور روزانه، داشبورد و حرکت دخل یک عدد بدهند.
+     */
+    const receiptToBox = num(receipts[0]?.cashToBox);
+    /*
+     * «امانت» در هیچ حالتی پول دخل نیست (نه در بدهی مشتری، نه در موجودی).
+     * در حالت «ساده» بقیه‌ی رسیدات وارد دخل می‌شوند، در «دقیق» تنها آنچه
+     * واقعاً نزد دخل آمده (cashToBox).
+     */
     const cashIn = cashMode === 'accurate'
-      ? cashSales + (receiptTotal - receiptTrust)
-      : cashSales + receiptTotal;
+      ? cashSales + receiptToBox
+      : cashSales + (receiptTotal - receiptTrust);
     const cashOut = cashMode === 'accurate'
       ? num(expenses[0]?.cashFromBox) + num(salaries[0]?.cashFromBox)
       : expenseAfn + salaryTotal;
@@ -74,6 +86,7 @@ export class ReportsController {
       volume: r2(num(s[0]?.volume)),
       receipts: r2(receiptTotal),
       receiptsTrust: r2(receiptTrust),
+      receiptsToBox: r2(receiptToBox),
       expensesAfn: r2(expenseAfn),
       expensesUsd: r2(num(expenses[0]?.usd)),
       salaries: r2(salaryTotal),
@@ -120,9 +133,8 @@ export class ReportsController {
     const rows = [];
     for (let m = 1; m <= 12; m++) {
       const start = fromCalendar(y, m, 1, mode);
-      const end = mode === 'jalali'
-        ? fromCalendar(y, m, m <= 6 ? 31 : m <= 11 ? 30 : (isLeapJalali(y) ? 30 : 29), mode)
-        : fromCalendar(y, m, new Date(Date.UTC(y, m, 0)).getUTCDate(), mode);
+      /* طول واقعی ماه (jalaali-js) — تقریب ۳۳ ساله در سال‌های خاص یک روز خطا داشت */
+      const end = fromCalendar(y, m, monthLength(y, m, mode), mode);
       const p = db();
       const s: any[] = await p.$queryRawUnsafe(
         `SELECT COALESCE(SUM(CASE WHEN "paymentType"='cash' THEN "total" ELSE 0 END),0) cash,
@@ -161,15 +173,34 @@ export class ReportsController {
     await ensureSchemaAsync();
     const mode = await settingsService.calendar();
     const p = db();
-    const salYears: any[] = await p.$queryRawUnsafe(
-      `SELECT DISTINCT "year" as y FROM "Salary" ORDER BY "year" DESC`,
-    );
+    /*
+     * باگ: فهرست سال‌ها فقط از سال جاری + سال‌های «معاش» ساخته می‌شد؛ پس سالی
+     * که در آن فروش/مصرف/رسید ثبت شده ولی معاش نه، در راپور سالانه اصلاً
+     * دیده نمی‌شد (و بل ۳۰ اسفند سال کبیسه گم می‌شد). حالا بازه‌ی سال‌ها از
+     * روی داده‌ی واقعیِ هر چهار جدول حساب می‌شود.
+     */
+    const span: any[] = await p.$queryRawUnsafe(
+      `SELECT MIN(d) AS lo, MAX(d) AS hi FROM (
+         SELECT MIN("date") AS d FROM "Sale"
+         UNION ALL SELECT MAX("date") FROM "Sale"
+         UNION ALL SELECT MIN("date") FROM "Expense"
+         UNION ALL SELECT MAX("date") FROM "Expense"
+         UNION ALL SELECT MIN("date") FROM "Receipt"
+         UNION ALL SELECT MAX("date") FROM "Receipt"
+         UNION ALL SELECT MIN("payDate") FROM "Salary"
+         UNION ALL SELECT MAX("payDate") FROM "Salary"
+       ) WHERE d IS NOT NULL AND d <> ''`);
     const currentYear = toCalendar(todayISO(), mode).jy;
-    const years = Array.from(new Set<number>([currentYear, ...salYears.map((s) => Number(s.y))])).sort((a, b) => b - a);
+    const years = new Set<number>([currentYear]);
+    const lo = span?.[0]?.lo ? toCalendar(String(span[0].lo), mode).jy : currentYear;
+    const hi = span?.[0]?.hi ? toCalendar(String(span[0].hi), mode).jy : currentYear;
+    for (let y = Math.min(lo, currentYear); y <= Math.max(hi, currentYear); y++) years.add(y);
+    const list = Array.from(years).filter((y) => Number.isFinite(y)).sort((a, b) => b - a);
     const rows = [];
-    for (const y of years) {
+    for (const y of list) {
       const start = fromCalendar(y, 1, 1, mode);
-      const end = fromCalendar(y, 12, mode === 'jalali' ? (isLeapJalali(y) ? 30 : 29) : 31, mode);
+      /* سال کامل: اسفند ۳۰ در سال کبیسه، دسمبر ۳۱ — نه ۲۹/۳۱ ثابت */
+      const end = fromCalendar(y, 12, monthLength(y, 12, mode), mode);
       const s: any[] = await p.$queryRawUnsafe(
         `SELECT COALESCE(SUM("total"),0) t FROM "Sale" WHERE "date">=? AND "date"<=?`, start, end);
       const e: any[] = await p.$queryRawUnsafe(
@@ -189,7 +220,6 @@ export class ReportsController {
     return { calendar: mode, rows };
   }
 
-  /** Cash-book movement (حرکت دخل) for a range. */
   @Get('cashbook')
   async cashbook(@Query('from') from?: string, @Query('to') to?: string) {
     await ensureSchemaAsync();
@@ -203,19 +233,65 @@ export class ReportsController {
     const sales: any[] = await p.$queryRawUnsafe(
       `SELECT "no","date","customerName","total" FROM "Sale" WHERE "date">=? AND "date"<=? AND "paymentType"='cash'`, start, end);
     const receipts: any[] = await p.$queryRawUnsafe(
-      `SELECT "no","date","customerName","amount","sourceName" FROM "Receipt" WHERE "date">=? AND "date"<=?`, start, end);
+      `SELECT "no","date","customerName","amount","sourceName","receivedBy" FROM "Receipt" WHERE "date">=? AND "date"<=?`, start, end);
     const expenses: any[] = await p.$queryRawUnsafe(
       `SELECT "no","date","description","amountAfn","payerName","paymentType" FROM "Expense" WHERE "date">=? AND "date"<=?`, start, end);
     const salaries: any[] = await p.$queryRawUnsafe(
       `SELECT "no","payDate" as date,"employeeName","total","payerName","paymentType" FROM "Salary" WHERE "payDate">=? AND "payDate"<=?`, start, end);
+    /*
+     * حرکت دخل باید با راپور روزانه/داشبورد یکی باشد — قبلاً نبود:
+     *  • رسید «امانت» (پول امانت) به عنوان ورودی دخل حساب می‌شد، در حالی که
+     *    در بدهی مشتری و موجودی دخل حساب نمی‌شود.
+     *  • در حالت «دقیق»، مصرف/معاش قرضه (باقی) که پولی از دخل نرفته، باز هم
+     *    از دخل کم می‌شد.
+     *  • رسیدهایی که به بانک رفته‌اند (receivedBy≠دخل) در حالت دقیق نباید
+     *    ورودی دخل باشند.
+     */
+    /*
+     * حالت «ساده» در راپور روزانه، همه‌ی رسیدات و همه‌ی مصارف را وارد دخل
+     * می‌کند (بدهی مشتری هم بر همین اساس است: فقط «امانت» کم می‌شود).
+     * برای اینکه حرکت دخل با آن گزارش یکی بماند، قرضه/حواله فقط در حالت
+     * «دقیق» از دخل کنار گذاشته می‌شود.
+     */
+    const cashMode = await settingsService.get('cashMode');
+    const accurate = cashMode === 'accurate';
     for (const s of sales) entries.push({ date: s.date, type: 'فروش نقده', doc: s.no, party: s.customerName, in: num(s.total), out: 0 });
-    for (const r of receipts) entries.push({ date: r.date, type: `رسید (${r.sourceName || 'باقی داری'})`, doc: r.no, party: r.customerName, in: num(r.amount), out: 0 });
-    for (const e of expenses) entries.push({ date: e.date, type: `مصرف${e.paymentType === 'credit' ? ' (باقی)' : ''} — ${e.payerName || ''}`, doc: e.no, party: e.description, in: 0, out: num(e.amountAfn) });
-    for (const s2 of salaries) entries.push({ date: s2.date, type: `معاش (${s2.paymentType === 'hawala' ? 'حواله' : 'نقد'})`, doc: s2.no, party: s2.employeeName, in: 0, out: num(s2.total) });
+    for (const r of receipts) {
+      const trust = String(r.sourceName || '') === 'امانت';
+      const toBox = !r.receivedBy || r.receivedBy === 'دخل';
+      entries.push({
+        date: r.date,
+        type: trust ? 'رسید (امانت — وارد دخل نشد)' : `رسید (${r.sourceName || 'باقی داری'})`,
+        kind: trust || (accurate && !toBox) ? 'info' : '',
+        doc: r.no, party: r.customerName,
+        in: trust || (accurate && !toBox) ? 0 : num(r.amount), out: 0,
+      });
+    }
+    for (const e of expenses) {
+      const fromBox = !accurate || (e.paymentType === 'cash' && e.payerName === 'دخل');   /* ساده: همه */
+      
+      entries.push({
+        date: e.date,
+        type: `مصرف${e.paymentType === 'credit' ? ' (باقی)' : ''} — ${e.payerName || ''}`,
+        kind: fromBox ? '' : 'info',
+        doc: e.no, party: e.description,
+        in: 0, out: fromBox ? num(e.amountAfn) : 0,
+      });
+    }
+    for (const s2 of salaries) {
+      const fromBox = !accurate || (s2.paymentType === 'cash' && s2.payerName === 'دخل');
+      entries.push({
+        date: s2.date,
+        type: `معاش (${s2.paymentType === 'hawala' ? 'حواله' : 'نقد'})`,
+        kind: fromBox ? '' : 'info',
+        doc: s2.no, party: s2.employeeName,
+        in: 0, out: fromBox ? num(s2.total) : 0,
+      });
+    }
     entries.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : String(a.doc).localeCompare(String(b.doc))));
     let bal = 0;
     const rows = entries.map((e) => {
-      bal += e.in - e.out;
+      if (e.kind !== 'info') bal += e.in - e.out;
       return { ...e, dateDisplay: formatDate(e.date, mode), balance: r2(bal) };
     });
     return {
@@ -330,10 +406,4 @@ export class ReportsController {
       chart,
     };
   }
-}
-
-function isLeapJalali(y: number): boolean {
-  // 33-year cycle approximation is accurate enough for display purposes
-  const mod = y % 33;
-  return [1, 5, 9, 13, 17, 22, 26, 30].includes(mod);
 }

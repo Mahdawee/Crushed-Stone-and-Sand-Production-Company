@@ -90,11 +90,14 @@ export class ReceiptsController {
     let date = '';
     try { date = parseUserDate(body.date, mode); }
     catch (e: any) { throw new HttpException(e.message, 400); }
+    /* ویرایش هم نباید مبلغ صفر/منفی بسازد (ثبت، چنین چیزی را رد می‌کند) */
+    const amount = Number(body.amount) || 0;
+    if (amount <= 0) throw new HttpException('مبلغ رسید باید بزرگتر از صفر باشد.', 400);
     const cust: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Customer" WHERE "id"=?`, Number(body.customerId));
     await db().$executeRawUnsafe(
       `UPDATE "Receipt" SET "date"=?, "customerId"=?, "customerName"=?, "amount"=?, "relatedBillNo"=?,
        "sourceId"=?, "sourceName"=?, "receivedBy"=?, "note"=? WHERE "id"=?`,
-      date, Number(body.customerId), cust?.[0]?.name || body.customerName || '', Number(body.amount) || 0,
+      date, Number(body.customerId), cust?.[0]?.name || body.customerName || '', amount,
       body.relatedBillNo || '', body.sourceId ? Number(body.sourceId) : null, body.sourceName || '',
       body.receivedBy || '', body.note || '', Number(id),
     );

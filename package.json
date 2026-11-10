@@ -28,7 +28,12 @@
     "doctor": "node scripts/doctor.mjs",
     "setup": "node scripts/setup.mjs",
     "test:ui": "node scripts/ui-check/layout.test.mjs && node scripts/ui-check/dom.test.mjs && node scripts/ui-check/sidebar.test.mjs && node scripts/ui-check/theme.test.mjs",
-    "test:nsis": "node scripts/ui-check/nsis-langs.test.mjs"
+    "test:nsis": "node scripts/ui-check/nsis-langs.test.mjs",
+    "test:api:smoke": "node apps/api/test/smoke.test.js",
+    "test:scenario": "npm run build -w @farday/api && node apps/api/test/scenario.test.js",
+    "test:tauri": "node scripts/ui-check/tauri-src.test.mjs",
+    "test": "npm run typecheck && npm run test:ui && npm run test:nsis && npm run test:tauri && npm run test:api && npm run test:scenario && npm run test:packaged",
+    "test:packaged": "node scripts/test-packaged.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.4",

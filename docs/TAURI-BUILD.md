@@ -87,6 +87,16 @@ npm run doctor     # ✅ بررسی همه پیش‌نیازها با پیام �
 
 اگر `doctor` همه موارد را ✔ کرد، ادامه دهید. هر ✘ با راه‌حلش نمایش داده می‌شود.
 
+### آزمایش سریع (اختیاری، پیش از ساخت)
+
+```powershell
+npm test              # همه: typecheck + UI + NSIS + Tauri + API + شبیه‌سازی ۶ ماه
+npm run test:scenario # فقط شبیه‌سازی: ۶ ماه کار مدیر و تطبیق همه گزارش‌ها
+npm run test:tauri    # فقط بررسی قرارداد پوسته دسکتاپ (باز شدن مطمئن برنامه)
+```
+
+هر سه باید سبز باشند؛ اگر نبودند، نصب‌کننده هم همان مشکل را خواهد داشت.
+
 > ℹ اگر `npm doctor` گفت «نسخه نود/npm را ارتقا بده» — برای این پروژه **لازم نیست**.
 > Node 2x از ۲۰ به بالا کافی است و نسخه‌های خیلی نو ممکن است بعضی بسته‌ها را ناسازگار کنند.
 > فقط همان `npm run doctor` پروژه ملاک است.
@@ -192,6 +202,7 @@ npx tauri build --offline
 | `error[E0658] ... unstable` | Rust قدیمی | `rustup update stable` |
 | `API entry not found` | API build نشده | `npm run build -w @farday/api` |
 | `EADDRINUSE 4317` | نسخه دیگری در حال اجراست | `taskkill /IM node.exe /F` یا بستن برنامه |
+| برنامه باز نمی‌شود / بی‌صدا بسته می‌شود | خطا در راه‌اندازی سرور داخلی | فایل `%APPDATA%\af.farday.roshan\shell.log` را باز کنید — مرحله‌به‌مرحله نوشته شده کجا متوقف شد؛ جزئیات سرور در `api.log` کنارش است |
 | پنجره سفید | API دیر بیدار شده | از این نسخه، پنجره فقط بعد از آماده شدن API ساخته می‌شود؛ اگر باز هم سفید بود فایل `%APPDATA%\af.farday.roshan\api.log` را ببینید |
 | نصب‌شده: `node.exe not found` | بدون `package:api` ساخته شده | `npm run package:api` و سپس `npx tauri build` |
 | فونت فارسی درست نیست | WebView2 قدیمی | WebView2 Runtime را تازه کنید |

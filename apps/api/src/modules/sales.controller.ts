@@ -7,6 +7,31 @@ import { settingsService } from '../common/settings';
 import { nextDocNo } from '../common/sequence';
 import { parseUserDate, formatDate, CalendarMode } from '../common/calendar';
 
+/**
+ * مقادیر عددی بل فروش.
+ *
+ * باگ: ثبت با متراژ یا قیمت منفی (یا خالی) پذیرفته می‌شد و «جمع» منفی در
+ * گزارش‌ها و بدهی مشتری می‌نشست. حالا:
+ *   • متراژ باید بزرگ‌تر از صفر باشد؛
+ *   • قیمت واحد و کرایه منفی نباشند؛
+ *   • عدد نامعتبر (متن/NaN) صفر حساب نشود بلکه خطا بدهد.
+ */
+function readNumbers(body: any) {
+  const bad = (v: any) => v !== undefined && v !== null && v !== '' && !Number.isFinite(Number(v));
+  if (bad(body?.volume) || bad(body?.unitPrice) || bad(body?.freightPerUnit)) {
+    throw new HttpException('متراژ و قیمت باید عدد باشند.', 400);
+  }
+  const volume = Number(body?.volume) || 0;
+  const unitPrice = Number(body?.unitPrice) || 0;
+  const freightPerUnit = Number(body?.freightPerUnit) || 0;
+  if (volume <= 0) throw new HttpException('متراژ باید بزرگ‌تر از صفر باشد.', 400);
+  if (unitPrice < 0) throw new HttpException('قیمت واحد نمی‌تواند منفی باشد.', 400);
+  if (freightPerUnit < 0) throw new HttpException('کرایه فی واحد نمی‌تواند منفی باشد.', 400);
+  const freightTotal = Math.round(volume * freightPerUnit * 100) / 100;
+  const total = Math.round((volume * unitPrice + freightTotal) * 100) / 100;
+  return { volume, unitPrice, freightPerUnit, freightTotal, total };
+}
+
 @UseGuards(AuthGuard)
 @Controller('sales')
 export class SalesController {
@@ -79,11 +104,7 @@ export class SalesController {
     let date = '';
     try { date = body.date ? parseUserDate(body.date, mode) : (await import('../common/calendar')).todayISO(); }
     catch (e: any) { throw new HttpException(e.message, 400); }
-    const volume = Number(body.volume) || 0;
-    const unitPrice = Number(body.unitPrice) || 0;
-    const freightPerUnit = Number(body.freightPerUnit) || 0;
-    const freightTotal = Math.round(volume * freightPerUnit * 100) / 100;
-    const total = Math.round((volume * unitPrice + freightTotal) * 100) / 100;
+    const { volume, unitPrice, freightPerUnit, freightTotal, total } = readNumbers(body);
     const prefix = await settingsService.get('docPrefixSale');
     const no = String(body.no || '').trim() || (await nextDocNo(prefix, mode, date));
     const cust: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Customer" WHERE "id"=?`, Number(body.customerId));
@@ -115,11 +136,7 @@ export class SalesController {
     try { date = body.date ? parseUserDate(body.date, mode) : ''; }
     catch (e: any) { throw new HttpException(e.message, 400); }
     if (!date) throw new HttpException('تاریخ بل را وارد کنید.', 400);
-    const volume = Number(body.volume) || 0;
-    const unitPrice = Number(body.unitPrice) || 0;
-    const freightPerUnit = Number(body.freightPerUnit) || 0;
-    const freightTotal = Math.round(volume * freightPerUnit * 100) / 100;
-    const total = Math.round((volume * unitPrice + freightTotal) * 100) / 100;
+    const { volume, unitPrice, freightPerUnit, freightTotal, total } = readNumbers(body);
     const cust: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Customer" WHERE "id"=?`, Number(body.customerId));
     try {
       await db().$executeRawUnsafe(

@@ -78,43 +78,98 @@ fs.cpSync(path.join(apiSrc, 'dist'), out, { recursive: true });          // dist
 fs.renameSync(path.join(out, 'main.js'), path.join(out, 'app.js'));
 // Prisma client is generated into src/generated — it is inside dist already,
 // but the runtime packages must be copied as plain folders.
-const modules = ['@prisma/client', '@prisma/adapter-libsql', '@libsql/client', 'jalaali-js', '@libsql'];
+/*
+ * کاپی بسته‌ها — از روی گراف واقعی وابستگی‌ها (نه فهرست دستی).
+ *
+ * قبلاً نام بسته‌ها یکی‌یکی نوشته شده بود؛ با یک وابستگی تازه، نصب‌کننده با
+ * «Cannot find module» بالا نمی‌آمد و کاربر فقط «برنامه باز نمی‌شود» می‌دید.
+ * حالا از `apps/api/package.json` شروع می‌کنیم و هر وابستگی را همان‌جوری
+ * پیدا می‌کنیم که Node پیدا می‌کند (بالا رفتن در درخت node_modules).
+ * بسته‌های مخصوص توسعه (typescript، ابزارهای build، cli و…) کاپی نمی‌شوند.
+ */
 const nm = path.join(out, 'node_modules');
 fs.mkdirSync(nm, { recursive: true });
-// the NestJS runtime itself must ship too (the compiled app.js requires them)
-const nestModules = ['@nestjs', 'express', 'rxjs', 'reflect-metadata', 'class-validator',
-  'class-transformer', 'body-parser', 'cors', 'router', 'serve-static', 'send', 'qs',
-  'path-to-regexp', 'cookie', 'debug', 'ms', 'etag', 'fresh', 'range-parser', 'parseurl',
-  'accepts', 'depd', 'content-disposition', 'content-type', 'encodeurl', 'escape-html',
-  'finalhandler', 'http-errors', 'merge-descriptors', 'methods', 'on-finished', 'proxy-addr',
-  'setprototypeof', 'statuses', 'type-is', 'utils-merge', 'vary', 'array-flatten', 'forwarded',
-  'ipaddr.js', 'mime-types', 'mime-db', 'negotiator', 'raw-body', 'unpipe', 'bytes',
-  'iconv-lite', 'safer-buffer', 'media-typer', 'toidentifier', 'http-errors', 'ee-first',
-  'side-channel', 'object-inspect', 'gopd', 'has-symbols', 'function-bind',
-  'get-intrinsic', 'hasown', 'es-errors', 'call-bind-apply-helpers', 'dunder-proto',
-  'es-define-property', 'es-object-atoms', 'math-intrinsics', 'call-bound',
-  'side-channel-list', 'side-channel-map', 'side-channel-weakmap'];
-// only the libsql binaries for the platform(s) we actually ship
-const keepBinary = (p) => /^(@libsql|@prisma)\/(linux|darwin|win32|debian|rhel|freebsd|android|wasm)/.test(p);
 
-for (const m of [...modules, ...nestModules]) {
-  const from = path.join(root, 'node_modules', m);
-  if (!fs.existsSync(from)) continue;
-  fs.cpSync(from, path.join(nm, m), { recursive: true, dereference: true });
-}
-for (const m of ['@prisma', '@libsql']) {
-  // copy the supporting packages that live in the same scope folder
-  const src = path.join(root, 'node_modules', m);
-  if (!fs.existsSync(src)) continue;
-  fs.mkdirSync(path.join(nm, m), { recursive: true });
-  for (const sub of fs.readdirSync(src)) {
-    if (modules.includes(`${m}/${sub}`)) continue;
-    const from = path.join(src, sub);
-    if (!fs.statSync(from).isDirectory()) continue;
-    if (/-(linux|darwin|win32|android|freebsd)-(arm64|arm|x64|x86)/.test(sub) && !/^libsql-/.test(sub)) continue;
-    fs.cpSync(from, path.join(nm, m, sub), { recursive: true, dereference: true });
+const SKIP = [
+  /^@nestjs\/(cli|schematics|testing)$/, /^typescript$/, /^@types\//,
+  /^@typescript-eslint\//, /^eslint/, /^prettier$/, /^jest$/, /^ts-jest$/,
+  /^@swc\//, /^@tauri-apps\//, /^vite$/, /^@vitejs\//, /^concurrently$/,
+  /^cross-env$/, /^jsdom$/, /^vitest$/, /^@angular-devkit\//, /^webpack/,
+  /^@prisma\/studio-core-licensed$/, /^@prisma\/fetch-engine$/,
+  /^@prisma\/engines$/, /^prisma$/, /^@prisma\/dev$/, /^@prisma\/config$/,
+  /^(react|react-dom|recharts|react-router|react-router-dom|@radix-ui\/.*)$/,
+];
+
+const resolveFrom = (fromDir, name) => {
+  let dir = fromDir;
+  for (;;) {
+    const candidate = path.join(dir, 'node_modules', name);
+    if (fs.existsSync(path.join(candidate, 'package.json'))) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+};
+
+const graph = new Map();      // realpath → source dir
+const queue = [apiSrc];
+const seenDirs = new Set();
+while (queue.length) {
+  const pkgDir = queue.shift();
+  if (seenDirs.has(pkgDir)) continue;
+  seenDirs.add(pkgDir);
+  let pkg;
+  try { pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8')); }
+  catch { continue; }
+  const deps = { ...(pkg.dependencies || {}), ...(pkg.optionalDependencies || {}) };
+  for (const name of Object.keys(deps)) {
+    if (SKIP.some((re) => re.test(name))) continue;
+    const dir = resolveFrom(pkgDir, name);
+    if (!dir) continue;
+    let real = dir;
+    try { real = fs.realpathSync(dir); } catch { /* ignore */ }
+    if (!graph.has(real)) {
+      graph.set(real, dir);
+      queue.push(dir);
+    }
   }
 }
+
+let copied = 0;
+for (const [real, dir] of graph) {
+  /* نگه‌داشتن ساختار scope: همیشه مسیر داخل node_modules را حفظ می‌کنیم */
+  const rel = real.split(/node_modules[\\/]/).pop();
+  const dest = path.join(nm, rel);
+  if (fs.existsSync(dest)) continue;
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.cpSync(dir, dest, { recursive: true, dereference: true });
+  copied++;
+}
+console.log(`   ↳ ${copied} بسته کاپی شد`);
+
+/*
+ * باینری‌های libSQL: نصب‌کننده برای ویندوز هم بسته‌بندی می‌شود، پس هر دو
+ * باینریِ ویندوز و لینوکس لازم است (build روی هر سیستم، اجرا روی ویندوز).
+ */
+for (const scope of ['@libsql', '@prisma']) {
+  const from = path.join(root, 'node_modules', scope);
+  if (!fs.existsSync(from)) continue;
+  const dest = path.join(nm, scope);
+  fs.mkdirSync(dest, { recursive: true });
+  for (const sub of fs.readdirSync(from)) {
+    const srcSub = path.join(from, sub);
+    let isDir = false;
+    try { isDir = fs.statSync(srcSub).isDirectory(); } catch { /* ignore */ }
+    if (!isDir) continue;
+    if (SKIP.some((re) => re.test(`${scope}/${sub}`))) continue;
+    const isPlatformPkg = /-(linux|darwin|win32|android|freebsd|wasi)(-(gnu|musl|msvc))?(-(arm64|arm|x64|x86))?$/.test(sub);
+    if (isPlatformPkg && !/^(linux|win32|debian|wasm)/.test(sub)) continue;   // فقط ویندوز + لینوکس ساخت
+    const dst = path.join(dest, sub);
+    if (fs.existsSync(dst)) continue;
+    fs.cpSync(srcSub, dst, { recursive: true, dereference: true });
+  }
+}
+
 // the built React app is served by the same local process
 // tauri.conf.json منابع «binaries/*» را اعلام می‌کند؛ اگر پوشه نباشد ساخت با خطا
 // «glob pattern binaries/* path not found» می‌شکند. یک placeholder کم‌حجم می‌گذاریم.

@@ -74,6 +74,18 @@ export function formatDate(isoStr: string, mode: CalendarMode, withMonthName = f
 }
 
 /**
+ * Number of days in a calendar month — the single source of truth.
+ *
+ * Bug this fixes: `yearBucket`/`yearly` ended the year on the 29th of Esfand
+ * unconditionally, so a leap year (Esfand 30) silently dropped every document
+ * dated 1403/12/30 from year reports, and 31-day Gregorian months were cut short.
+ */
+export function monthLength(y: number, m: number, mode: CalendarMode): number {
+  if (mode === 'jalali') return jalaali.jalaaliMonthLength(y, m);
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+/**
  * "Bucket" of a date in the active calendar → used for month & year reports.
  * Returns { year, month, start, end } where start/end are Gregorian ISO bounds.
  */
@@ -91,7 +103,8 @@ export function yearBucket(isoStr: string, mode: CalendarMode) {
   const c = toCalendar(isoStr, mode);
   const y = c.jy;
   const start = fromCalendar(y, 1, 1, mode);
-  const end = fromCalendar(y, 12, mode === 'jalali' ? 29 : 31, mode);
+  /* آخرین روز واقعی سال (اسفند ۲۹ یا ۳۰، دسمبر ۳۱) */
+  const end = fromCalendar(y, 12, monthLength(y, 12, mode), mode);
   return { year: y, start, end };
 }
 

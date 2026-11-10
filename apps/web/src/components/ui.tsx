@@ -133,8 +133,16 @@ export function Text({
   );
 }
 
-export function Num({ value, onChange, placeholder, readOnly, className = '' }: {
-  value: any; onChange?: (v: number) => void; placeholder?: string; readOnly?: boolean; className?: string;
+/**
+ * ورودی عددی.
+ *
+ * باگ: کاربر می‌توانست «-» تایپ کند و متراژ/مبلغ منفی ثبت شود؛ API هم آن را
+ * می‌پذیرفت و جمع گزارش‌ها منفی می‌شد. حالا علامت منفی و هر نویسه غیرعددی
+ * همان‌جا حذف می‌شود (به‌استثنای جاهایی که صریحاً allowNegative خواسته شود).
+ */
+export function Num({ value, onChange, placeholder, readOnly, className = '', allowNegative = false, max }: {
+  value: any; onChange?: (v: number) => void; placeholder?: string; readOnly?: boolean;
+  className?: string; allowNegative?: boolean; max?: number;
 }) {
   const [raw, setRaw] = useState(String(value ?? ''));
   useEffect(() => {
@@ -146,10 +154,19 @@ export function Num({ value, onChange, placeholder, readOnly, className = '' }: 
     <input
       className={`input input-num ${className}`} inputMode="decimal" value={raw} readOnly={readOnly} placeholder={placeholder}
       onChange={(e) => {
-        const v = e.target.value.replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+        let v = e.target.value
+          .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+          .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+          .replace(/[^0-9.\-]/g, '');
+        if (!allowNegative) v = v.replace(/-/g, '');
+        else if (v.indexOf('-') > 0) v = v.replace(/-/g, '');
+        const firstDot = v.indexOf('.');
+        if (firstDot !== -1) v = v.slice(0, firstDot + 1) + v.slice(firstDot + 1).replace(/\./g, '');
         setRaw(v);
-        const n = Number(v.replace(/,/g, ''));
-        onChange?.(Number.isFinite(n) ? n : 0);
+        let n = Number(v.replace(/,/g, ''));
+        if (!Number.isFinite(n)) n = 0;
+        if (max !== undefined && n > max) { n = max; setRaw(String(max)); }
+        onChange?.(n);
       }}
     />
   );

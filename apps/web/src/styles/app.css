@@ -656,6 +656,9 @@ table.tbl td.row-actions { width: 1%; white-space: nowrap; }
 .hover-actions { opacity: .35; transition: opacity .12s; }
 tr:hover .hover-actions, .hover-actions:focus-within { opacity: 1; }
 .tbl .muted-cell { color: var(--text-3); }
+/* سطر اطلاعی (امانت / مصرف قرضه / رسید به بانک) — در جمع دخل اثر ندارد */
+.tbl tr.row-info > td { color: var(--text-3); background: var(--surface-2); }
+.tbl tr.row-info > td .badge { margin-inline-start: 6px; font-size: 10.5px; padding: 1px 6px; }
 .tbl .strong-cell { font-weight: 700; }
 .cell-sub { font-size: .72rem; color: var(--text-3); line-height: 1.5; }
 

@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Post, Query, UseGuards, HttpException, Res } from '@nestjs/common';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { db, databaseFile, BACKUP_DIR } from '../db';
+import { db, databaseFile, BACKUP_DIR, resetDb } from '../db';
 import { ensureSchemaAsync, TABLE_LIST } from '../schema';
 import { AuthGuard, ManagerOnly } from '../common/auth';
 import { logActivity } from '../common/activity';
@@ -81,9 +81,16 @@ export class SystemController {
     const safety = path.join(BACKUP_DIR(), `before-restore-${Date.now()}.db`);
     try { fs.copyFileSync(target, safety); } catch { /* ignore */ }
     try { await db().$executeRawUnsafe('PRAGMA wal_checkpoint(TRUNCATE)'); } catch { /* ignore */ }
+    /*
+     * باگ جدی: اتصال باز روی فایل قدیمی باقی می‌ماند، پس بعد از «بازگردانی»
+     * برنامه همان داده‌ی قبل را نشان می‌داد و بازگردانی به نظر شکست‌خورده
+     * می‌آمد. حالا اتصال بسته و دوباره باز می‌شود.
+     */
+    await resetDb();
     fs.copyFileSync(full, target);
+    await ensureSchemaAsync();
     await logActivity({ action: 'restore', entity: 'System', detail: name });
-    return { ok: true, restored: name, safetyCopy: path.basename(safety), restartRequired: true };
+    return { ok: true, restored: name, safetyCopy: path.basename(safety), restartRequired: false };
   }
 
   // ------------------------------ diagnostics ------------------------------

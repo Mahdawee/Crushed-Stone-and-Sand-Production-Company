@@ -65,6 +65,10 @@ export class ExpensesController {
     const mode = await settingsService.calendar();
     const amountAfn = Number(body.amountAfn) || 0;
     const amountUsd = Number(body.amountUsd) || 0;
+    if (!Number.isFinite(amountAfn) || !Number.isFinite(amountUsd)) {
+      throw new HttpException('مبلغ مصرف باید عدد باشد.', 400);
+    }
+    if (amountAfn < 0 || amountUsd < 0) throw new HttpException('مبلغ مصرف نمی‌تواند منفی باشد.', 400);
     if (amountAfn <= 0 && amountUsd <= 0) throw new HttpException('مبلغ مصرف را وارد کنید (افغانی یا دالری).', 400);
     let date = '';
     try { date = body.date ? parseUserDate(body.date, mode) : todayISO(); }
@@ -95,13 +99,18 @@ export class ExpensesController {
     let date = '';
     try { date = parseUserDate(body.date, mode); }
     catch (e: any) { throw new HttpException(e.message, 400); }
+    /* همان اعتبارسنجیِ ثبت، برای ویرایش هم لازم است — وگرنه مصرف منفی ذخیره می‌شد */
+    const amountAfn = Number(body.amountAfn) || 0;
+    const amountUsd = Number(body.amountUsd) || 0;
+    if (amountAfn < 0 || amountUsd < 0) throw new HttpException('مبلغ مصرف نمی‌تواند منفی باشد.', 400);
+    if (amountAfn <= 0 && amountUsd <= 0) throw new HttpException('مبلغ مصرف را وارد کنید (افغانی یا دالری).', 400);
     await db().$executeRawUnsafe(
       `UPDATE "Expense" SET "date"=?, "description"=?, "categoryId"=?, "categoryName"=?, "contractorId"=?, "contractorName"=?,
        "purchaseBillNo"=?, "shopName"=?, "amountAfn"=?, "amountUsd"=?, "payerId"=?, "payerName"=?, "paymentType"=?, "note"=?
        WHERE "id"=?`,
       date, body.description || '', body.categoryId ? Number(body.categoryId) : null, body.categoryName || '',
       body.contractorId ? Number(body.contractorId) : null, body.contractorName || '',
-      body.purchaseBillNo || '', body.shopName || '', Number(body.amountAfn) || 0, Number(body.amountUsd) || 0,
+      body.purchaseBillNo || '', body.shopName || '', amountAfn, amountUsd,
       body.payerId ? Number(body.payerId) : null, body.payerName || '',
       body.paymentType === 'credit' ? 'credit' : 'cash', body.note || '', Number(id),
     );
