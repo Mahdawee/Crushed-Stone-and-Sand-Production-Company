@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useSession, applyThemeToDocument } from '../lib/session';
 import { formatDate, todayISO } from '../lib/calendar';
@@ -84,28 +84,21 @@ const PAGE_TITLES: Record<string, { t: string; s: string }> = {
 const RAIL_KEY = 'farday.sidebarRail';
 const CLOSED_KEY = 'farday.sidebarGroups';
 
+/** عرضی که سایدبار از «ثابت» به «کشو» تبدیل می‌شود — همان ۱۱۰۰px در app.css */
+const MQ_DRAWER = '(max-width: 1100px)';
+
 export default function Layout() {
   const { user, logout, isManager, settings, saveSettings, calendar } = useSession();
   const [open, setOpen] = useState(false);
   const [rail, setRail] = useState(() => localStorage.getItem(RAIL_KEY) === '1');
+  /** زیر ۱۱۰۰px سایدبار «کشو» می‌شود: با دکمه منو باز و با ضربدر/کلیک بیرون بسته */
+  const [drawer, setDrawer] = useState(() => window.matchMedia(MQ_DRAWER).matches);
   const [closed, setClosed] = useState<Record<string, boolean>>(() => {
     try { return JSON.parse(localStorage.getItem(CLOSED_KEY) || '{}'); } catch { return {}; }
   });
   const loc = useLocation();
   const nav = useNavigate();
   const dark = document.documentElement.dataset.theme === 'dark';
-
-  useEffect(() => { setOpen(false); }, [loc.pathname]);
-  useEffect(() => { localStorage.setItem(RAIL_KEY, rail ? '1' : '0'); }, [rail]);
-  useEffect(() => { localStorage.setItem(CLOSED_KEY, JSON.stringify(closed)); }, [closed]);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-      if (e.ctrlKey && e.key.toLowerCase() === 'k') { e.preventDefault(); nav('/sales?focus=search'); }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [nav]);
 
   const title = PAGE_TITLES[loc.pathname] || { t: 'فردای روشن', s: '' };
 
@@ -114,6 +107,45 @@ export default function Layout() {
     () => NAV.find((g) => g.items.some((i) => i.to === loc.pathname))?.id || '',
     [loc.pathname],
   );
+
+  useEffect(() => { setOpen(false); }, [loc.pathname]);
+  useEffect(() => { localStorage.setItem(RAIL_KEY, rail ? '1' : '0'); }, [rail]);
+
+  /* با تغییر اندازه پنجره، حالت کشو زنده عوض می‌شود */
+  useEffect(() => {
+    const mq = window.matchMedia(MQ_DRAWER);
+    const onChange = () => { setDrawer(mq.matches); if (!mq.matches) setOpen(false); };
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  /* Alt+S / Alt+G: جمع‌کردن سایدبار و باز/بستن گروه‌ها بدون موس */
+  useEffect(() => {
+    const onAlt = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      const k = e.key.toLowerCase();
+      if (k === 's') { e.preventDefault(); setRail((v) => !v); }
+      if (k === 'g') {
+        e.preventDefault();
+        setClosed((prev) => {
+          const allOpen = NAV.every((g) => prev[g.id] === false || g.id === activeGroup);
+          const next: Record<string, boolean> = {};
+          NAV.forEach((g) => { next[g.id] = allOpen; });
+          return next;
+        });
+      }
+    };
+    window.addEventListener('keydown', onAlt);
+    return () => window.removeEventListener('keydown', onAlt);
+  }, [activeGroup]);
+  useEffect(() => { localStorage.setItem(CLOSED_KEY, JSON.stringify(closed)); }, [closed]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const toggleTheme = async () => {
     const next = { ...settings, theme: dark ? 'light' : 'dark' };
@@ -124,6 +156,9 @@ export default function Layout() {
   const groups = NAV.map((g) => ({ ...g, items: g.items.filter((i) => !i.managerOnly || isManager) }))
     .filter((g) => g.items.length);
 
+  /* ریل (فقط دسکتاپ): زیرمنو در پنل شناور • در حالت عادی: زیرمنو تاشو */
+  const popoverMode = rail && !drawer;
+
   /** آکاردئونی: باز کردن یک دسته بقیه را می‌بندد (منو کم‌شلوغ می‌ماند) */
   const toggleGroup = (id: string, isOpen: boolean) => {
     if (isOpen && activeGroup !== id) { setClosed({ ...closed, [id]: true }); return; }
@@ -133,8 +168,21 @@ export default function Layout() {
     setClosed(next);
   };
 
+  /* موقعیت کارت گروه‌ها در حالت ریل، تا پنل زیرمنو درست کنارش باز شود */
+  const [groupTop, setGroupTop] = useState(0);
+  const groupRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [hoverGroup, setHoverGroup] = useState('');
+
+  const openPanel = (id: string) => {
+    const el = groupRefs.current[id];
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setGroupTop(Math.max(8, Math.min(r.top, window.innerHeight - 320)));
+    setHoverGroup(id);
+  };
+
   return (
-    <div className={`app ${open ? 'sidebar-open' : ''} ${rail ? 'rail' : ''}`}>
+    <div className={`app ${open ? 'sidebar-open' : ''} ${rail && !drawer ? 'rail' : ''}`}>
       <aside className={`sidebar no-print ${open ? 'open' : ''}`}>
         <div className="brand">
           <div className="brand-logo">ف</div>
@@ -142,26 +190,39 @@ export default function Layout() {
             <strong>فردای روشن</strong>
             <span>سنگ، کرش، جغل و ریگ</span>
           </div>
-          <button className="sb-collapse" onClick={() => setRail((v) => !v)} title={rail ? 'باز کردن منو' : 'جمع کردن منو'}>
+          <button
+            className="sb-collapse" onClick={() => setRail((v) => !v)}
+            title={rail ? 'باز کردن سایدبار (Alt+S)' : 'جمع کردن سایدبار (Alt+S)'}
+            aria-label={rail ? 'باز کردن سایدبار' : 'جمع کردن سایدبار'}
+            aria-expanded={!rail}
+          >
             <IconChevron dir={rail ? 'start' : 'end'} size={14} />
           </button>
-          <button className="btn ghost icon sb-close" onClick={() => setOpen(false)} title="بستن">
+          <button className="btn ghost icon sb-close" onClick={() => setOpen(false)} title="بستن منو" aria-label="بستن منو">
             <IconClose size={16} />
           </button>
         </div>
 
         <nav className="nav">
           {groups.map((g) => {
-            const isOpen = closed[g.id] === false || activeGroup === g.id;
+            const isActiveGroup = activeGroup === g.id;
+            /* در حالت ریل همه آیتم‌ها در پنل شناور دیده می‌شوند */
+            const isOpen = popoverMode ? hoverGroup === g.id : (closed[g.id] === false || isActiveGroup);
             const GIcon = g.icon;
             return (
-              <div className="nav-group" key={g.id}>
+              <div
+                className="nav-group" key={g.id}
+                onMouseEnter={popoverMode ? () => openPanel(g.id) : undefined}
+                onMouseLeave={popoverMode ? () => setHoverGroup('') : undefined}
+              >
                 <button
-                  className={`nav-group-head ${activeGroup === g.id ? 'has-active' : ''}`}
-                  onClick={() => toggleGroup(g.id, isOpen)}
-                  title={rail ? g.title : undefined}
+                  ref={(el) => { groupRefs.current[g.id] = el; }}
+                  className={`nav-group-head ${isActiveGroup ? 'has-active' : ''}`}
+                  onClick={() => (popoverMode ? openPanel(g.id) : toggleGroup(g.id, isOpen))}
+                  title={popoverMode ? g.title : undefined}
+                  aria-expanded={isOpen}
                 >
-                  <GIcon size={14} />
+                  <GIcon size={15} />
                   <span className="nav-group-title">{g.title}</span>
                   <IconChevron dir="down" size={13} className={`nav-group-chev ${isOpen ? 'up' : ''}`} />
                 </button>
@@ -173,7 +234,7 @@ export default function Layout() {
                         key={item.to}
                         to={item.to}
                         end={item.to === '/'}
-                        title={rail ? item.label : undefined}
+                        title={popoverMode ? undefined : item.label}
                         className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
                       >
                         <span className="ico"><IIcon size={17} /></span>
@@ -187,6 +248,22 @@ export default function Layout() {
           })}
         </nav>
 
+        {/* پنل شناور گروه در حالت ریل — بدون transform و بدون قرار گرفتن در DOM دیگر */}
+        {popoverMode && hoverGroup ? (
+          <div className="nav-pop" style={{ top: groupTop }} onMouseLeave={() => setHoverGroup('')}>
+            <div className="nav-pop-t">{groups.find((g) => g.id === hoverGroup)?.title}</div>
+            {groups.find((g) => g.id === hoverGroup)?.items.map((item) => {
+              const IIcon = item.icon;
+              return (
+                <NavLink key={item.to} to={item.to} end={item.to === '/'}
+                  className={({ isActive }) => `nav-pop-link ${isActive ? 'active' : ''}`}>
+                  <IIcon size={16} /> {item.label}
+                </NavLink>
+              );
+            })}
+          </div>
+        ) : null}
+
         <div className="nav-foot">
           <NavLink to="/sales?new=1" className="btn primary btn-block nav-new" title="ثبت بل فروش نو">
             <IconPlus size={16} /><span>بل فروش نو</span>
@@ -198,12 +275,11 @@ export default function Layout() {
 
       <div className="main">
         <header className="topbar no-print">
-          <button className="btn ghost icon hamburger" onClick={() => setOpen((v) => !v)} title="منو"><IconMenu size={18} /></button>
-          <button className="btn ghost icon hide-sm" onClick={() => setRail((v) => !v)}
-            title={rail ? 'باز کردن سایدبار' : 'جمع کردن سایدبار'}>
-            <IconChevron dir={rail ? 'end' : 'start'} size={16} />
-          </button>
-          <span className="topbar-sep hide-sm" />
+          <button
+            className="btn ghost icon drawer-btn" onClick={() => setOpen((v) => !v)}
+            title="نمایش / پنهان کردن منو" aria-label="نمایش یا پنهان کردن منو" aria-expanded={open}
+          ><IconMenu size={18} /></button>
+          <span className="topbar-sep" />
           <div className="page-title">{title.t}<small>{title.s}</small></div>
           <div className="topbar-spacer" />
           <span className="today-chip" title="امروز">

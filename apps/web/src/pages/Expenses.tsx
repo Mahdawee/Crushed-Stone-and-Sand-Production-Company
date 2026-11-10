@@ -39,7 +39,7 @@ export default function ExpensesPage() {
   };
   useEffect(() => { load(page).catch((e) => toast.error('بارگذاری نشد', e.message)); }, [page, dq, filters.from, filters.to, filters.category, filters.payer, filters.paymentType]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { api.get('/lookups').then((r) => setLk(r.items)).catch(() => {}); }, []);
-  useEffect(() => { if (sp.get('new') === '1') { setSp({}); openNew(); } }, [sp]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (sp.get('new') === '1') { setSp({}, { replace: true }); openNew(); } }, [sp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const patch = (p: Partial<Filters>) => { setPage(1); setFilters((f) => ({ ...f, ...p })); };
   const hasFilter = Boolean(filters.q || filters.from || filters.to || filters.category || filters.payer || filters.paymentType);

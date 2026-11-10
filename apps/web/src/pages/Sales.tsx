@@ -43,7 +43,7 @@ export default function SalesPage() {
     api.get('/customers').then(setCustomers).catch(() => {});
   }, []);
   useEffect(() => {
-    if (sp.get('new') === '1') { setSp({}); openNew(); }
+    if (sp.get('new') === '1') { setSp({}, { replace: true }); openNew(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sp]);
 

@@ -41,7 +41,7 @@ export default function ReceiptsPage() {
     api.get('/customers').then(setCustomers).catch(() => {});
     api.get('/lookups').then((r) => setSources(r.items.receipt_source || [])).catch(() => {});
   }, []);
-  useEffect(() => { if (sp.get('new') === '1') { setSp({}); openNew(); } }, [sp]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (sp.get('new') === '1') { setSp({}, { replace: true }); openNew(); } }, [sp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const patch = (p: Partial<Filters>) => { setPage(1); setFilters((f) => ({ ...f, ...p })); };
   const hasFilter = Boolean(filters.q || filters.from || filters.to || filters.source);

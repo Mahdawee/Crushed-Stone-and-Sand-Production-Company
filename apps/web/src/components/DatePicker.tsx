@@ -97,6 +97,21 @@ export function DatePicker({
     };
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
+
+  /** باز کردن تقویم با حفظ متن فعلی */
+  const openCal = (withText?: string) => {
+    if (disabled) return;
+    setErr('');
+    setView(() => {
+      const c = toCalendar(value || todayISOValue(), calendar);
+      return { y: c.jy, m: c.jm };
+    });
+    setPicker('days');
+    setTyping(false);
+    if (withText !== undefined) setText(withText);
+    setOpen(true);
+  };
+
   const commitText = (raw: string) => {
     const trimmed = raw.trim();
     if (!trimmed) { onChange(''); setErr(''); return; }
@@ -141,7 +156,7 @@ export function DatePicker({
       <div className="dp-input-wrap">
         <button
           type="button" className="dp-icon" tabIndex={-1} disabled={disabled}
-          onClick={() => { if (!disabled) { setOpen((v) => !v); setTyping(false); } }}
+          onClick={() => (open ? setOpen(false) : openCal())}
           aria-label="باز کردن تقویم" title="تقویم"
         ><IconCalendar size={16} /></button>
         <input
@@ -162,7 +177,8 @@ export function DatePicker({
             const iso = parseLoose(e.target.value, calendar);
             if (iso && iso !== value) onChange(iso);
           }}
-          onFocus={(e) => e.currentTarget.select()}
+          onFocus={(e) => { if (disabled) return; openCal(); e.currentTarget.select(); }}
+          onClick={() => { if (!open) openCal(); }}
           onBlur={(e) => { setTyping(false); commitText(e.target.value); }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') { e.preventDefault(); commitText(text); setOpen(false); }
@@ -172,8 +188,9 @@ export function DatePicker({
         />
         {clearable && value ? (
           <button
-            type="button" className="dp-clear" tabIndex={-1} title="پاک کردن"
-            onClick={() => { setText(''); setErr(''); onChange(''); }}
+            type="button" className="dp-clear" tabIndex={-1} title="پاک کردن" aria-label="پاک کردن تاریخ"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => { setText(''); setErr(''); onChange(''); setOpen(false); }}
           ><IconClose size={12} /></button>
         ) : null}
       </div>

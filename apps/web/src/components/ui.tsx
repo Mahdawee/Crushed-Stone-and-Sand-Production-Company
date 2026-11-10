@@ -79,15 +79,21 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 export function Modal({ title, onClose, children, footer, size = '' }: {
   title: React.ReactNode; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; size?: '' | 'sm' | 'md';
 }) {
+  const boxRef = React.useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      /* Esc: اول تقویم باز را می‌بندد، بعد فرم را */
+      if (e.key === 'Escape' && !document.querySelector('.dp-pop')) onClose();
+    };
     window.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
+    /* فوکوس روی خود فرم می‌رود تا تایپ/تب از همان‌جا شروع شود */
+    boxRef.current?.focus();
     return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = ''; };
   }, [onClose]);
   return (
     <div className="modal-back no-print" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className={`modal ${size}`}>
+      <div className={`modal ${size}`} ref={boxRef} tabIndex={-1} role="dialog" aria-modal="true">
         <div className="modal-h"><h3>{title}</h3><div style={{ flex: 1 }} />
           <button className="btn ghost icon" onClick={onClose} title="بستن"><IconClose size={16} /></button>
         </div>
@@ -195,15 +201,15 @@ export function Pager({ page, pageSize, total, onPage }: {
   const to = Math.min(total, page * pageSize);
   return (
     <div className="pager no-print">
-      <button className="btn sm icon" disabled={page <= 1} onClick={() => onPage(1)} title="صفحه اول">«</button>
-      <button className="btn sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>قبلی</button>
+      <button className="btn sm icon" disabled={page <= 1} onClick={() => onPage(1)} title="صفحه اول" aria-label="صفحه اول"><IconChevron dir="start" size={14} /><IconChevron dir="start" size={14} style={{ marginInlineStart: -9 }} /></button>
+      <button className="btn sm" disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label="صفحه قبل">قبلی</button>
       <span className="small">
         ردیف <b>{from.toLocaleString('en-US')}</b> تا <b>{to.toLocaleString('en-US')}</b>
         {' '}از <b>{total.toLocaleString('en-US')}</b>
         <span className="muted"> — صفحه {page} از {pages}</span>
       </span>
-      <button className="btn sm" disabled={page >= pages} onClick={() => onPage(page + 1)}>بعدی</button>
-      <button className="btn sm icon" disabled={page >= pages} onClick={() => onPage(pages)} title="صفحه آخر">»</button>
+      <button className="btn sm" disabled={page >= pages} onClick={() => onPage(page + 1)} aria-label="صفحه بعد">بعدی</button>
+      <button className="btn sm icon" disabled={page >= pages} onClick={() => onPage(pages)} title="صفحه آخر" aria-label="صفحه آخر"><IconChevron dir="end" size={14} /><IconChevron dir="end" size={14} style={{ marginInlineStart: -9 }} /></button>
     </div>
   );
 }

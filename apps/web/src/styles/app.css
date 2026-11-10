@@ -145,19 +145,39 @@ html[data-theme='dark'] .nav-link.active { color: #7ee7d8; }
 .nav-foot { padding: 8px 10px 12px; border-top: 1px solid var(--border); }
 .nav-new { padding: 8px; font-size: .82rem; }
 
-/* ---- حالت ریل: فقط آیکن‌ها، فضای بیشتر برای محتوا ---- */
-.app.rail .sidebar { width: 48px; flex-basis: 48px; }
+/* ---- حالت ریل (دسکتاپ): فقط آیکن‌ها + پنل شناور گروه‌ها ---- */
+.app.rail .sidebar { width: 60px; flex-basis: 60px; }
 .app.rail .brand { justify-content: center; padding: 14px 6px 10px; }
-.app.rail .brand-txt, .app.rail .nav-group-title, .app.rail .nav-group-chev, .app.rail .nav-link .lbl, .app.rail .nav-new span { display: none; }
+.app.rail .brand-txt, .app.rail .nav-group-title, .app.rail .nav-group-chev,
+.app.rail .nav-link .lbl, .app.rail .nav-new span { display: none; }
 .app.rail .sb-collapse { position: absolute; inset-inline-end: 4px; top: 46px; width: 18px; height: 18px; border-radius: 50%; opacity: 0; }
-.app.rail .sidebar:hover .sb-collapse { opacity: 1; }
-.app.rail .nav { padding: 4px 6px 10px; }
-.app.rail .nav-group-head { justify-content: center; padding: 6px 0 2px; }
-.app.rail .nav-items { display: block; }
-.app.rail .nav-link { justify-content: center; padding: 8px 0; }
-.app.rail .nav-link.active::before { inset-inline-start: -6px; }
+.app.rail .sidebar:hover .sb-collapse, .app.rail .sb-collapse:focus-visible { opacity: 1; }
+.app.rail .nav { padding: 4px 6px 10px; overflow: visible; }
+.app.rail .nav-group { position: relative; }
+.app.rail .nav-group-head { justify-content: center; padding: 0; height: 34px; }
+.app.rail .nav-items { display: none; }            /* آیتم‌ها در پنل شناور می‌آیند */
+.app.rail .nav-link { justify-content: center; padding: 0; }
 .app.rail .nav-foot { padding: 8px 6px 12px; }
-.app.rail .nav-new { padding: 8px 0; }
+.app.rail .nav-new { padding: 0; }
+
+/* پنل شناور گروه در حالت ریل — از سمت راست سایدبار باز می‌شود */
+.nav-pop {
+  position: absolute; inset-inline-start: calc(100% + 8px); z-index: 45;
+  min-width: 208px; padding: 8px; display: flex; flex-direction: column; gap: 2px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg); animation: pop-side .12s ease;
+}
+@keyframes pop-side { from { opacity: 0; translate: -6px 0; } }
+.nav-pop-t {
+  font-size: .7rem; font-weight: 700; color: var(--text-3); padding: 2px 8px 6px;
+  border-bottom: 1px solid var(--border); margin-bottom: 4px;
+}
+.nav-pop-link {
+  display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 9px;
+  border-radius: var(--radius-md); color: var(--text-2); font-size: .86rem; font-weight: 500;
+}
+.nav-pop-link:hover { background: var(--sidebar-accent); color: var(--text); }
+.nav-pop-link.active { background: var(--accent-soft); color: var(--accent-dark); font-weight: 700; }
 
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .topbar {
@@ -173,7 +193,7 @@ html[data-theme='dark'] .nav-link.active { color: #7ee7d8; }
 .content { padding: 16px 16px 28px; max-width: 1440px; width: 100%; margin: 0 auto; }
 @media (min-width: 1024px) { .content { padding: 20px 24px 32px; } }
 
-.hamburger { display: none; }
+.drawer-btn { display: none; }   /* فقط وقتی سایدبار کشو می‌شود */
 
 /* ---------------------------------- cards ---------------------------- */
 .card {
@@ -366,23 +386,20 @@ table.tbl.compact td, table.tbl.compact th { padding: 6px 8px; font-size: .78rem
 .progress { height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
 .progress > i { display: block; height: 100%; background: var(--accent); }
 
-@media (max-width: 900px) {
-  .app.rail .sidebar { width: 236px; flex-basis: 236px; }
-  .app.rail .brand-txt, .app.rail .nav-group-title, .app.rail .nav-group-chev,
-  .app.rail .nav-link .lbl, .app.rail .nav-new span { display: revert; }
-  .app.rail .nav-group-head { justify-content: flex-start; padding: 7px 6px 5px; }
-  .app.rail .nav-link { justify-content: flex-start; padding: 7px 9px; }
-  .app.rail .brand { justify-content: flex-start; padding: 14px 12px 10px; }
-}
-@media (max-width: 780px) {
-  .sidebar { position: fixed; inset-block: 0; inset-inline-start: 0; transform: translateX(100%); box-shadow: var(--shadow-lg); width: 244px; flex-basis: 244px; }
+@media (max-width: 1100px) {
+  /* کشو: سایدبار روی محتوا می‌آید، با دکمه منو باز/بسته می‌شود */
+  .sidebar {
+    position: fixed; inset-block: 0; inset-inline-start: 0; z-index: 30;
+    transform: translateX(100%); transition: transform .2s ease; box-shadow: var(--shadow-lg);
+    width: 262px; flex-basis: 262px;
+  }
   .sidebar.open { transform: none; }
-  .hamburger { display: inline-flex; }
+  .app.rail .sidebar { width: 262px; flex-basis: 262px; }   /* ریل در موبایل معنی ندارد */
+  .drawer-btn { display: inline-flex; }
   .sb-collapse { display: none; }
   .sb-close { display: inline-flex; margin-inline-start: auto; }
   .content { padding: 12px; }
   .topbar { padding: 0 10px; }
-  .page-title small { display: none; }
   .sb-backdrop { position: fixed; inset: 0; background: rgba(8, 18, 26, .42); backdrop-filter: blur(2px); z-index: 25; }
 }
 
@@ -642,3 +659,27 @@ table.tbl tbody tr:hover .att-cell.on { filter: brightness(.98); }
 .list-head { padding: 7px 10px; }
 .summary-bar, .list-summary { font-size: .8rem; }
 table.tbl.compact td, table.tbl.compact th { font-size: .82rem; }
+
+/* ============================ bug-fix overrides ======================== */
+/* اعداد بلند افغانی در کارت‌های باریک باید کوچک شوند، نه بریده */
+.stat { overflow: visible; }
+.stat .value {
+  font-size: clamp(.98rem, 1.06vw + .5rem, 1.35rem);
+  line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.stat .foot { font-size: .72rem; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 1100px) { .stat .value { font-size: 1.12rem; } }
+@media (max-width: 720px) { .stat .value { font-size: 1.05rem; } }
+
+/* چیپ امروز و کاربر: زیر ۷۲۰px فقط آواتار می‌ماند (قبلاً کلاً حذف می‌شد) */
+@media (max-width: 720px) {
+  .user-chip { gap: 4px; }
+  .today-chip { font-size: .72rem; padding: 0 7px; }
+}
+@media (max-width: 460px) { .today-chip { display: none; } }
+
+/* فوکوس واضح برای ناوبری با کیبورد (قبلاً outline حذف شده بود) */
+.nav-pop-link:focus-visible, .nav-link:focus-visible, .nav-group-head:focus-visible,
+.btn:focus-visible, .dp-icon:focus-visible, .sb-close:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
