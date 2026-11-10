@@ -176,11 +176,11 @@ npx tauri build --offline
 | چه چیزی | کجا |
 |---|---|
 | نسخه برنامه | `src-tauri/tauri.conf.json` → `version` و `package.json` |
-| عنوان پنجره | `src-tauri/tauri.conf.json` → `app.windows[0].title` |
+| عنوان پنجره | `src-tauri/src/main.rs` → `.title(...)` (پنجره در Rust ساخته می‌شود) |
 | نام محصول (نام فایل نصب) | `src-tauri/tauri.conf.json` → `productName` |
 | شناسه (پوشه دیتابیس) | `src-tauri/tauri.conf.json` → `identifier` (⚠ تغییرش مسیر دیتابیس را عوض می‌کند) |
 | آیکن | `src-tauri/icons/` (۱۶px تا ۱۰۲۴px + `icon.ico`) |
-| اندازه پنجره | `app.windows[0]` → `width` / `height` / `minWidth` |
+| اندازه پنجره | `src-tauri/src/main.rs` → `.inner_size(...)` / `.min_inner_size(...)` |
 
 ## ۱۰) خطاهای رایج
 
