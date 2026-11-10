@@ -402,7 +402,7 @@ table.tbl.compact td, table.tbl.compact th { padding: 6px 8px; font-size: .78rem
 .dp-host { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .dp-input-wrap { position: relative; display: flex; align-items: center; }
 .dp-input { padding-inline-start: 34px; font-variant-numeric: tabular-nums; letter-spacing: .2px; }
-.dp-compact .dp-input { min-height: 32px; padding-block: 5px; font-size: .82rem; }
+.dp-compact .dp-input { height: 32px; min-height: 32px; padding-block: 0; font-size: .82rem; box-shadow: none; }
 .dp-icon {
   position: absolute; inset-inline-start: 1px; top: 1px; bottom: 1px; width: 31px;
   display: grid; place-items: center; border: none; background: transparent; color: var(--text-3);
