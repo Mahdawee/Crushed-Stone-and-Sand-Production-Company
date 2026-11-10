@@ -456,6 +456,9 @@ table.tbl.compact td, table.tbl.compact th { padding: 6px 8px; font-size: .78rem
   padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--surface);
   border-radius: var(--radius) var(--radius) 0 0; position: relative;
 }
+/* نوار ابزار تنها داخل کارت: بدون خط جداکننده و بدون گوشه تیز */
+.card > .list-head:only-child { border-bottom: none; border-radius: var(--radius); }
+.card > .list-head:only-child + .card-b { border-top: 1px solid var(--border); }
 .tb-search { position: relative; flex: 1 1 220px; min-width: 170px; max-width: 340px; }
 .tb-search .input { padding-inline-start: 31px; padding-inline-end: 26px; height: 32px; min-height: 32px; font-size: .82rem; }
 .tb-search .ico { position: absolute; inset-inline-start: 9px; top: 50%; transform: translateY(-50%); color: var(--text-3); pointer-events: none; }

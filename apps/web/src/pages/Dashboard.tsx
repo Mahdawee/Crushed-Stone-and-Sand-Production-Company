@@ -24,15 +24,16 @@ export default function Dashboard() {
   const t = d.today;
   return (
     <div className="col" style={{ gap: 16 }}>
-      <div className="row between wrap">
-        <div>
-          <h1 style={{ fontSize: '1.15rem' }}>خلاصه امروز</h1>
-          <p className="small muted">{t.label} — وضعیت لحظه‌ای شرکت</p>
-        </div>
-        <div className="row wrap">
+      <div className="card no-print">
+        <div className="list-head">
+          <IconCash size={17} />
+          <span className="small muted hide-sm">{t.label} — وضعیت لحظه‌ای شرکت</span>
+          <div style={{ flex: 1 }} />
+          <div className="list-actions">
           <Link to="/sales?new=1" className="btn primary"><IconPlus size={15} /> بل فروش</Link>
           <Link to="/receipts?new=1" className="btn"><IconPlus size={15} /> رسید</Link>
           <Link to="/expenses?new=1" className="btn"><IconPlus size={15} /> مصرف</Link>
+          </div>
         </div>
       </div>
 

@@ -166,8 +166,8 @@ export default function LookupsPage() {
           <tr key={r.id} style={{ opacity: r.active ? 1 : .55 }}>
             <td>
               <div className="row" style={{ gap: 2 }}>
-                <button className="btn sm ghost" onClick={() => reorder(r, -1)}>▲</button>
-                <button className="btn sm ghost" onClick={() => reorder(r, 1)}>▼</button>
+                <button className="btn sm ghost" title="بالا" aria-label="بالا" onClick={() => reorder(r, -1)}><IconChevron dir="up" size={13} /></button>
+                <button className="btn sm ghost" title="پایین" aria-label="پایین" onClick={() => reorder(r, 1)}><IconChevron dir="down" size={13} /></button>
                 <span className="mono small">{r.sortOrder}</span>
               </div>
             </td>

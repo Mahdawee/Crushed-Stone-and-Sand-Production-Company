@@ -136,7 +136,7 @@ export default function SettingsPage() {
               <Link key={t} to={`/settings/lookups/${t}`} className="card" style={{ padding: 14 }}>
                 <div style={{ fontWeight: 700, marginBottom: 4 }}>{title}</div>
                 <div className="small muted">{hint}</div>
-                <div className="small" style={{ marginTop: 8, color: 'var(--accent)' }}>ویرایش فهرست →</div>
+                <div className="small" style={{ marginTop: 8, color: 'var(--accent)' }}>ویرایش فهرست</div>
               </Link>
             ))}
           </div>
