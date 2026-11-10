@@ -17,6 +17,11 @@
 >
 > **اگر اینترنت ندارید:** یک بار `npm run desktop:prefetch` (با اینترنت) و بعد
 > `npm run desktop:build --offline` → بخش ۸.
+>
+> **دو پیش‌نیاز جدا که هر دو لازم‌اند:** (۱) Rust برای `cargo` — بخش ۲؛
+> (۲) کامپایلر C++ مایکروسافت برای `link.exe` — بخش ۳. یکی بدون دیگری کافی نیست:
+> نبودِ اولی خطای `cargo metadata … program not found` (بخش ۱۳) و نبودِ دومی
+> `linker link.exe not found` (بخش ۱۴) می‌دهد.
 
 ---
 
@@ -293,7 +298,7 @@ cargo **سریع** می‌گوید کدام است — نه اینکه چند د
 
 | پیام | علت | راه‌حل |
 |---|---|---|
-| `linker `link.exe` not found` | Build Tools نیست | گام ۳ |
+| `linker `link.exe` not found` + `the msvc targets depend on the msvc linker but `link.exe` was not found` | کامپوننت **C++** نصب نیست (یا VS هست ولی بدون این کامپوننت) | **حل شد:** `npm run desktop:build` اول لینکر را پیدا می‌کند، محیط کامل `vcvars64` را می‌سازد و اگر نبود راه‌حل دقیق می‌دهد → بخش ۱۴. سریع‌ترین راه: `npm run doctor` |
 | `failed to run custom build command ... webkit2gtk` | بسته لینوکس کم است | دستور `apt install` گام ۳ |
 | `'cargo' is not recognized` | PATH تازه نشده | ترمینال/ویندوز را ببندید و باز کنید |
 | `failed to run 'cargo metadata' command to get workspace directory … program not found` | Tauri CLI نصب است ولی `cargo` در PATH نیست (Rust نیست، یا ترمینال پیش از نصب باز شده) | **حل شد:** `npm run desktop:build` مسیرهای متداول Rust را پیدا و PATH همان اجرا را اصلاح می‌کند؛ اگر Rust نبود، دستور نصب می‌دهد. راه دستی: `set PATH=%USERPROFILE%\.cargo\bin;%PATH%` و باز کردن ترمینال تازه — بخش ۲/۱. بررسی محیط: `npm run doctor` |
@@ -441,3 +446,112 @@ npm run desktop:build
 ▶ ۲/۳ بسته‌بندی API + node.exe      ← اگر اینجا شکست: مشکل دانلود/اینترنت (یا ZIP نود)
 ▶ ۳/۳ ساخت نصب‌کننده                ← اگر اینجا شکست: مشکل Rust/MSVC/NSIS
 ```
+
+---
+
+## ۱۴) خطای `linker link.exe not found` (کامپایلر C++ نیست)
+
+این خطا **بعد از** خطای cargo می‌آید و معنی‌اش این است:
+
+```
+error: linker `link.exe` not found
+  = note: the msvc targets depend on the msvc linker but `link.exe` was not found
+  = note: please ensure that Visual Studio 2017 or later, or Build Tools for Visual Studio
+          were installed with the Visual C++ option
+  = note: VS Code is a different product, and is not sufficient
+```
+
+یعنی **Rust کار می‌کند، ولی ابزار پیوند‌دهنده‌ی مایکروسافت (link.exe) نیست.**
+Rust برای ساختن فایل `.exe` به کامپایلر C++ مایکروسافت تکیه می‌کند.
+
+> ⚠ **VS Code کافی نیست** — خودِ Rust هم این را در پیام خطا می‌گوید.
+> آنچه لازم است «Visual Studio **Build Tools**» یا خود Visual Studio است،
+> با کامپوننت **Desktop development with C++**.
+
+### سه حالت و راه‌حل هر کدام
+
+| حالت | چطور تشخیص دهیم | راه‌حل |
+|---|---|---|
+| هیچ ابزار C++ نصب نیست | پوشه‌ی `C:\Program Files (x86)\Microsoft Visual Studio` نیست | راه ۱ پایین |
+| **Visual Studio هست ولی کامپوننت C++ ندارد** (شایع‌ترین) | پوشه‌ی VS هست، ولی `VC\Tools\MSVC` یا `link.exe` نیست | راه ۲ پایین (Modify) |
+| C++ نصب است ولی PATH این پنجره آن را نمی‌بیند | `npm run doctor` می‌گوید «لینکر C++: MSVC 14.x» ولی ساخت خطا داد | `npm run desktop:build` (خودش `vcvars64` را اجرا می‌کند) |
+
+### راه ۱ — نصب Build Tools (یک بار، ~۱٫۵ گیگابایت)
+
+1. بروید به <https://visualstudio.microsoft.com/visual-cpp-build-tools/> → **Download Build Tools**
+2. در نصب‌کننده، تب **Workloads** → تیک **Desktop development with C++**
+3. در پنل راست مطمئن شوید این‌ها تیک دارند:
+   - **MSVC v143 — VS 2022 C++ x64/x86 build tools**
+   - **Windows 11 SDK** (یا Windows 10 SDK)
+4. **Install** و صبر کنید (۱۰ تا ۲۰ دقیقه)
+
+یا با winget:
+
+```powershell
+winget install Microsoft.VisualStudio.2022.BuildTools
+```
+
+> بعد از `winget install` معمولاً باید در **Visual Studio Installer → Modify**
+> تیک «Desktop development with C++» را هم بزنید؛ نصب پیش‌فرض آن را ندارد.
+
+### راه ۲ — اگر Visual Studio قبلاً نصب است
+
+1. منوی استارت → **Visual Studio Installer**
+2. کنار نسخه‌ی نصب‌شده → **Modify**
+3. تیک **Desktop development with C++** → **Modify**
+
+> اگر Visual Studio را فقط برای کارهای C# یا وب نصب کرده‌اید، این کامپوننت را ندارید.
+
+### بعد از نصب: هیچ کار اضافه‌ای لازم نیست
+
+```powershell
+npm run doctor          # باید ببینید: ✔ لینکر C++ (link.exe): MSVC 14.x
+npm run desktop:build   # ساخت
+```
+
+**لازم نیست** ویندوز را ری‌استارت کنید و لازم نیست ترمینال را عوض کنید: اسکریپت
+`npm run desktop:build` خودش `vcvars64.bat` را اجرا می‌کند و محیط کامل
+(`PATH` + `LIB` + `INCLUDE`) را برای کامپایل تنظیم می‌کند.
+
+> چرا فقط `PATH` کافی نیست؟ `link.exe` برای پیدا کردن `kernel32.lib` و بقیه‌ی
+> کتابخانه‌ها به متغیرهای `LIB` و `INCLUDE` هم نیاز دارد. اضافه‌کردن دستی پوشه‌ی
+> `bin` به PATH، خطای لینکر را به خطای «`LNK1104: cannot open file 'kernel32.lib'`»
+> تبدیل می‌کند. راه درست همان `vcvars64` است — که اسکریپت انجام می‌دهد.
+
+### روش جایگزین: پنجرهٔ Native Tools
+
+از منوی استارت باز کنید:
+
+```
+x64 Native Tools Command Prompt for VS 2022
+```
+
+بعد در همان پنجره:
+
+```powershell
+cd D:\Crushed-Stone-and-Sand-Production-Company\Crushed-Stone-and-Sand-Production-Company
+npm run desktop:build
+```
+
+این پنجره از قبل همه‌ی محیط C++ را تنظیم کرده است.
+
+### اگر Visual Studio در مسیر غیرمعمول نصب شده
+
+```powershell
+set FD_MSVC_ROOT=D:\Tools\VS2022BuildTools
+npm run desktop:build
+```
+
+(چند مسیر را با `;` می‌توان جدا کرد.)
+
+### اگر بعد از همه‌ی این‌ها خطا داد
+
+متن کامل انگلیسی خطا را نگه دارید و به این جدول نگاه کنید:
+
+| پیام | معنی | راه‌حل |
+|---|---|---|
+| `link.exe not found` | همان بخش بالا | راه ۱ یا ۲ |
+| `LNK1104: cannot open file 'kernel32.lib'` | `LIB` تنظیم نشده یا **Windows SDK** نصب نیست | در Visual Studio Installer کامپوننت «Windows 11 SDK» را اضافه کنید |
+| `LNK1181: cannot open input file '...lib'` | نسخه‌ی SDK با MSVC هم‌خوان نیست | هر دو را از یک نصب‌کننده نصب کنید |
+| `error: could not compile ... (build script)` همراه با خطای لینکر | همان مشکل لینکر؛ خطای واقعی چند خط بالاتر است | بالای خروجی را بخوانید |
+| `failed to run custom build command` برای `proc-macro2` / `quote` | این crateها build-script دارند و اولین جاهایی هستند که به لینکر می‌خورند — **نشانه‌ی مشکل لینکر است، نه مشکل crate** | راه ۱ یا ۲ |

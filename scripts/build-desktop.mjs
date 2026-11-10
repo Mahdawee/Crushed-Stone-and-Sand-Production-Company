@@ -26,7 +26,7 @@
  * این اسکریپت هر سه مرحله را به ترتیب انجام می‌دهد و در پایان مسیر فایل
  * نصب را چاپ می‌کند؛ اگر مرحله‌ای شکست بخورد، پیام فارسی + راه‌حل می‌دهد.
  */
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -80,14 +80,23 @@ const isFile = (p) => {
   try { return fs.statSync(p).isFile(); } catch { return false; }
 };
 
-/** cargo در PATH؟ */
-function cargoFromPath() {
+/** آیا فایل اجرایی در PATH هست؟ مسیر کامل یا رشته‌ی خالی برمی‌گرداند. */
+function inPath(exe) {
+  const exts = isWin ? ['.exe', '.cmd', '.bat', ''] : [''];
+  const hasExt = /\.(exe|cmd|bat)$/i.test(exe);
   const dirs = (process.env.PATH || '').split(isWin ? ';' : ':').filter(Boolean);
   for (const d of dirs) {
-    const p = path.join(d, cargoExeName);
-    if (isFile(p)) return p;
+    for (const e of hasExt ? [''] : exts) {
+      const p = path.join(d, exe + e);
+      if (isFile(p)) return p;
+    }
   }
   return '';
+}
+
+/** cargo در PATH؟ */
+function cargoFromPath() {
+  return inPath(cargoExeName);
 }
 
 const cargoInPath = cargoFromPath();
@@ -96,6 +105,193 @@ const cargoPath = cargoInPath || cargoOnDisk;
 
 /** آیا در PATH جست‌وجو کنیم یا مسیر مطلق بدهیم؟ */
 const cargoCmd = cargoPath || 'cargo';
+
+/* ------------------------------------------------------------------ */
+/* ۱/ب) پیدا کردن لینکر C++ (link.exe) و Windows SDK                  */
+/* ------------------------------------------------------------------ */
+/*
+ * خطای دوم کاربر — متفاوت از خطای cargo:
+ *
+ *   error: linker `link.exe` not found
+ *     = note: the msvc targets depend on the msvc linker but `link.exe` was not found
+ *
+ * یعنی cargo/rustc اجرا می‌شوند ولی **لینکر C++** نیست. Rust برای ساختن
+ * فایل .exe به link.exe از «Visual Studio C++ Build Tools» نیاز دارد.
+ * نکته‌ی مهم: VS Code کافی نیست (پیام خودِ rustc هم همین را می‌گوید).
+ *
+ * درس گرفته‌شده از نسخه‌ی قبل: فقط اضافه‌کردن پوشه‌ی bin به PATH کافی
+ * **نیست**؛ link.exe برای پیدا کردن kernel32.lib و بقیه به متغیرهای
+ * LIB و INCLUDE هم نیاز دارد. راه درست، اجرای vcvars64.bat و برداشتن
+ * محیط کامل آن است — که همین‌جا انجام می‌شود.
+ */
+
+/** مسیرهای ممکن نصب Visual Studio / Build Tools */
+const VS_ROOTS = [
+  'C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools',
+  'C:\\Program Files\\Microsoft Visual Studio\\2022\\BuildTools',
+  'C:\\Program Files\\Microsoft Visual Studio\\2022\\Community',
+  'C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional',
+  'C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise',
+  'C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\BuildTools',
+  'C:\\Program Files\\Microsoft Visual Studio\\2019\\Community',
+];
+
+const VSW_HERE = 'C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe';
+
+/**
+ * مرتب‌ترین نسخه‌ی MSVC را برمی‌گرداند (`VC\\Tools\\MSVC\\14.4x.xxxxx`).
+ * از readdir استفاده می‌کنیم تا نسخه‌ی آینده هم کار کند (قبلاً نسخه
+ * دستی حدس زده می‌شد که شکننده بود).
+ */
+function newestMsvcVersion(vsPath) {
+  try {
+    const list = fs.readdirSync(path.join(vsPath, 'VC', 'Tools', 'MSVC'))
+      .filter((v) => /^14\./.test(v))
+      .sort((a, b) => {
+        const n = (x) => x.split('.').map(Number);
+        const [a1, a2, a3] = n(a);
+        const [b1, b2, b3] = n(b);
+        return a1 - b1 || a2 - b2 || (a3 || 0) - (b3 || 0);
+      });
+    return list.pop() || '';
+  } catch { return ''; }
+}
+
+/** آیا مسیر vcvars64.bat (یا vcvarsall.bat) در این نصب هست؟ */
+function vcvarsIn(vsPath) {
+  for (const rel of [
+    ['VC', 'Auxiliary', 'Build', 'vcvars64.bat'],
+    ['VC', 'Auxiliary', 'Build', 'vcvarsall.bat'],
+  ]) {
+    const p = path.join(vsPath, ...rel);
+    if (isFile(p)) return p;
+  }
+  return '';
+}
+
+/**
+ * نتیجه‌ی جست‌وجوی MSVC:
+ *   { found, vsPath, msvcVersion, linkExe, vcvars, sdkVersion, source }
+ */
+function findMsvc() {
+  const result = {
+    found: false, vsPath: '', msvcVersion: '', linkExe: '',
+    vcvars: '', sdkVersion: '', source: '',
+    /* آیا اصلاً Visual Studio (هر نسخه‌ای) دیده شد؟ → برای تشخیص
+       «VS هست ولی کامپوننت C++ ندارد» که شایع‌ترین حالت است */
+    sawVisualStudio: false,
+  };
+  if (!isWin) return result;
+
+  const candidates = [];
+
+  /* الف) مسیر دستی — اگر Visual Studio در جای غیرمعمول نصب شده باشد:
+        set FD_MSVC_ROOT=D:\Tools\VS2022BuildTools
+        (می‌توان چند مسیر را با «;» جدا کرد) */
+  for (const p of (process.env.FD_MSVC_ROOT || '').split(';').filter(Boolean)) {
+    candidates.push({ p: p.trim(), s: 'FD_MSVC_ROOT' });
+  }
+
+  /* ب) vswhere — روش رسمی مایکروسافت. اول با شرط «کامپوننت C++ نصب باشد» */
+  const vswhereExe = process.env.FD_VSWHERE || VSW_HERE;
+  if (isFile(vswhereExe)) {
+    const q = spawnSync(vswhereExe, [
+      '-latest', '-products', '*',
+      '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
+      '-property', 'installationPath',
+    ], { encoding: 'utf8' });
+    const p1 = (q.stdout || '').split(/\r?\n/)[0].trim();
+    if (p1) candidates.push({ p: p1, s: 'vswhere (کامپوننت C++ دارد)' });
+
+    /* ب) اگر شرط بالا چیزی نداد، نصب‌های VS را بی‌شرط ببین (شاید کامپوننت
+       ناقص باشد — در آن صورت باید کاربر کامپوننت را اضافه کند) */
+    if (!candidates.some((c) => c.s.startsWith('vswhere'))) {
+      const q2 = spawnSync(vswhereExe, ['-latest', '-products', '*', '-property', 'installationPath'],
+        { encoding: 'utf8' });
+      for (const line of (q2.stdout || '').split(/\r?\n/)) {
+        const p = line.trim();
+        if (p) candidates.push({ p, s: 'vswhere (بدون کامپوننت C++)' });
+      }
+    }
+  }
+
+  /* ج) مسیرهای متداول — اگر vswhere نبود یا نصب قابل‌شناسایی نبود */
+  for (const p of VS_ROOTS) if (isFile(path.join(p, 'VC', 'Auxiliary', 'Build', 'vcvarsall.bat'))
+    || fs.existsSync(path.join(p, 'VC'))) candidates.push({ p, s: 'مسیر متداول' });
+
+  for (const { p, s } of candidates) {
+    /* اگر پوشه‌ی VC یا یک نصب VS دیده شد، یعنی VS نصب است */
+    if (fs.existsSync(path.join(p, 'VC')) || fs.existsSync(p)) result.sawVisualStudio = true;
+    const vcvars = vcvarsIn(p);
+    if (!vcvars) continue; /* VS نصب است ولی VC Tools ندارد → کمکی نمی‌کند */
+    const msvcVersion = newestMsvcVersion(p);
+    const linkExe = msvcVersion
+      ? path.join(p, 'VC', 'Tools', 'MSVC', msvcVersion, 'bin', 'Hostx64', 'x64', 'link.exe')
+      : '';
+    if (!linkExe || !isFile(linkExe)) continue;
+    return {
+      ...result,
+      found: true,
+      sawVisualStudio: true,
+      vsPath: p,
+      msvcVersion,
+      linkExe,
+      vcvars,
+      sdkVersion: newestWindowsSdk(),
+      source: s,
+    };
+  }
+  return result;
+}
+
+/** نسخه‌ی Windows SDK نصب‌شده (برای لاگ؛ بدون آن هم link.exe کار می‌کند اگر LIB درست باشد) */
+function newestWindowsSdk() {
+  for (const root of [
+    'C:\\Program Files (x86)\\Windows Kits\\10\\Lib',
+    'C:\\Program Files\\Windows Kits\\10\\Lib',
+  ]) {
+    try {
+      const dirs = fs.readdirSync(root).filter((d) => /^10\./.test(d)).sort();
+      if (dirs.length) return dirs.pop();
+    } catch { /* نیست */ }
+  }
+  return '';
+}
+
+const msvc = findMsvc();
+
+/**
+ * محیط کامل MSVC از vcvars64.bat.
+ *
+ * چرا نه فقط PATH: link.exe برای پیوند دادن به `LIB` (مسیر kernel32.lib و…)
+ * و `INCLUDE` نیاز دارد. مایکروسافت خودش این‌ها را با vcvars تنظیم می‌کند؛
+ * پس همان را اجرا می‌کنیم و خروجی `set` را می‌خوانیم.
+ */
+let msvcEnvCache = null;
+function msvcEnv() {
+  if (msvcEnvCache !== null) return msvcEnvCache;
+  if (!isWin || !msvc.found) { msvcEnvCache = {}; return msvcEnvCache; }
+  if (inPath('link.exe')) { msvcEnvCache = {}; return msvcEnvCache; } /* از قبل در PATH است (Developer Command Prompt) */
+
+  const cmd = `call "${msvc.vcvars}" x64 >nul 2>&1 && set`;
+  const r = spawnSync('cmd.exe', ['/d', '/s', '/c', cmd], {
+    encoding: 'utf8',
+    maxBuffer: 8 * 1024 * 1024,
+    env: process.env,
+  });
+  const env = {};
+  for (const line of (r.stdout || '').split(/\r?\n/)) {
+    const i = line.indexOf('=');
+    if (i <= 0) continue;
+    const key = line.slice(0, i).trim();
+    /* فقط متغیرهایی که به کامپایل مربوط‌اند — تا محیط آلوده نشود */
+    if (/^(PATH|LIB|INCLUDE|LIBPATH|VCINSTALLDIR|VCToolsInstallDir|VSINSTALLDIR|WindowsSdkDir|WindowsSDKVersion|Platform|UCRTVersion|UniversalCRTSdkDir|VSCMD_ARG_TGT_ARCH)$/i.test(key)) {
+      env[key] = line.slice(i + 1);
+    }
+  }
+  msvcEnvCache = env;
+  return env;
+}
 
 /**
  * محیط اجرای cargo با PATH اصلاح‌شده.
@@ -108,21 +304,16 @@ function rustEnv({ offline = false } = {}) {
   if (cargoPath) prepend.push(path.dirname(cargoPath));
   prepend.push(path.join(cargoHome, 'bin'), path.join(home, '.cargo', 'bin'));
   if (isWin) {
-    /* linker (link.exe) گاهی فقط داخل Build Tools است، نه در PATH */
-    const vswhere = 'C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe';
-    if (isFile(vswhere)) {
-      const r = spawnSync(vswhere, ['-latest', '-products', '*',
-        '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
-        '-property', 'installationPath'], { encoding: 'utf8' });
-      const vsPath = (r.stdout || '').split(/\r?\n/)[0].trim();
-      if (vsPath) {
-        /* نسخه‌ی MSVC را از روی پوشه پیدا می‌کنیم (به‌جای حدس زدن) */
-        try {
-          const msvcRoot = path.join(vsPath, 'VC', 'Tools', 'MSVC');
-          const ver = fs.readdirSync(msvcRoot).sort().pop();
-          if (ver) prepend.push(path.join(msvcRoot, ver, 'bin', 'Hostx64', 'x64'));
-        } catch { /* MSVC نصب نیست */ }
-      }
+    /*
+     * لینکر C++: اگر در PATH نبود، از vcvars64 محیط کامل می‌گیریم
+     * (PATH + LIB + INCLUDE). فقط bin کافی نیست — خطای link.exe برمی‌گردد.
+     */
+    const full = msvcEnv();
+    if (full.PATH) {
+      /* `set` در vcvars مسیرها را با «;» می‌دهد؛ همه را جلو می‌گذاریم */
+      for (const p of full.PATH.split(';').slice(0, 40)) if (p) prepend.push(p);
+    } else if (msvc.found) {
+      prepend.push(path.dirname(msvc.linkExe));
     }
   }
   const seen = new Set();
@@ -133,6 +324,15 @@ function rustEnv({ offline = false } = {}) {
       return seen.has(k) ? false : (seen.add(k), true);
     });
   const env = { ...process.env, PATH: parts.join(sep) };
+  if (isWin) {
+    /* LIB و INCLUDE از vcvars — بدون این‌ها link.exe فایل‌های .lib را پیدا نمی‌کند */
+    const full = msvcEnv();
+    for (const k of ['LIB', 'INCLUDE', 'LIBPATH', 'WindowsSdkDir', 'WindowsSDKVersion',
+      'UCRTVersion', 'UniversalCRTSdkDir', 'VCINSTALLDIR', 'VCToolsInstallDir', 'VSINSTALLDIR',
+      'Platform', 'VSCMD_ARG_TGT_ARCH']) {
+      if (full[k]) env[k] = full[k];
+    }
+  }
   if (offline) {
     env.CARGO_NET_OFFLINE = 'true';
     env.npm_config_offline = 'true';
@@ -167,6 +367,71 @@ function rustInstallHelp() {
   console.log(`  ${C.dim('جزئیات: docs/TAURI-BUILD.md — بخش ۲ و بخش ۸ (ساخت آفلاین)')}\n`);
 }
 
+/**
+ * پیام راهنمای خطای لینکر — برای خطای واقعیِ کاربر:
+ *
+ *   error: linker `link.exe` not found
+ *     = note: the msvc targets depend on the msvc linker but `link.exe` was not found
+ *
+ * سه حالت و سه راه‌حل مشخص.
+ */
+function linkerHelp(reason, detail) {
+  console.log(`\n${C.bad('⛔ لینکر C++ (link.exe) پیدا نشد — Rust بدون آن نمی‌تواند فایل .exe بسازد.')}`);
+  if (reason) console.log(`   ${C.dim(reason)}`);
+  console.log('');
+  console.log(`  ${C.bold('پیام اصلی Rust (همان چیزی که دیدید):')}`);
+  console.log(`    ${C.dim('error: linker `link.exe` not found')}`);
+  console.log(`    ${C.dim('note: the msvc targets depend on the msvc linker but `link.exe` was not found')}`);
+  console.log('');
+
+  if (!isWin) {
+    console.log('  روی لینوکس این خطا معنی ندارد. بسته‌های سیستمی را نصب کنید:');
+    console.log('    sudo apt install -y build-essential libwebkit2gtk-4.1-dev libssl-dev');
+    console.log('');
+    return;
+  }
+
+  if (detail === 'vs-no-cpp') {
+    /* VS نصب است ولی کامپوننت C++ ندارد — شایع‌ترین حالت */
+    console.log(`  ${C.bold('علت:')} Visual Studio نصب است ولی کامپوننت ${C.bold('«Desktop development with C++')} را ندارد.`);
+    console.log(`  ${C.dim(`(نصب پیدا‌شده: ${msvc.vsPath || '—'}، ولی پوشه‌ی VC\\Tools\\MSVC یا link.exe ندارد)`)}`);
+    console.log('');
+    console.log(`  ${C.bold('راه‌حل (ساده‌ترین):')}`);
+    console.log(`    ${C.bold('visualstudio.microsoft.com/visual-cpp-build-tools')} → نصب‌کننده → ${C.bold('Modify')}`);
+    console.log(`    تیک: ${C.bold('Desktop development with C++')} → Install (~۱٫۵ گیگابایت)`);
+    console.log('');
+    console.log(`  یا همین در یک دستور (اگر winget دارید — پارامترها را با نسخه‌ی خودتان چک کنید):`);
+    console.log(`    ${C.bold('winget install Microsoft.VisualStudio.2022.BuildTools')}`);
+    console.log(`    بعد از نصب: ${C.bold('npm run doctor')}`);
+    console.log('');
+    return;
+  }
+
+  console.log(`  ${C.bold('علت:')} کامپایلر/لینکر C++ نصب نیست. ${C.dim('(VS Code کافی نیست — این را خودِ Rust هم می‌گوید)')}`);
+  console.log('');
+  console.log(`  ${C.bold('راه ۱ (پیشنهادی): Visual Studio Build Tools')}`);
+  console.log(`    ۱. بروید به ${C.bold('https://visualstudio.microsoft.com/visual-cpp-build-tools/')}`);
+  console.log(`       → دکمه‌ی ${C.bold('Download Build Tools')}`);
+  console.log(`    ۲. در نصب‌کننده: تب ${C.bold('Workloads')} → تیک ${C.bold('Desktop development with C++')}`);
+  console.log(`    ۳. در پنل راست مطمئن شوید این‌ها تیک دارند:`);
+  console.log(`         • MSVC v143 — VS 2022 C++ x64/x86 build tools`);
+  console.log(`         • ${C.bold('Windows 11 SDK')} (یا Windows 10 SDK)`);
+  console.log(`    ۴. ${C.bold('Install')} (~۱٫۵ گیگابایت، ۱۰ تا ۲۰ دقیقه)`);
+  console.log('');
+  console.log(`  ${C.bold('راه ۲ (winget):')}`);
+  console.log(`    ${C.bold('winget install Microsoft.VisualStudio.2022.BuildTools')}`);
+  console.log(`    ${C.dim('سپس در «Visual Studio Installer» روی Modify بزنید و «Desktop development with C++» را تیک بزنید.')}`);
+  console.log('');
+  console.log(`  ${C.bold('راه ۳:')} اگر Visual Studio 2022 Community/Professional دارید:`);
+  console.log(`    Visual Studio Installer → ${C.bold('Modify')} → تیک ${C.bold('Desktop development with C++')} → Modify`);
+  console.log('');
+  console.log(`  ${C.dim('بعد از نصب، همین دستور را دوباره بزنید (نیازی به ری‌استارت نیست):')}`);
+  console.log(`    ${C.bold('npm run desktop:build')}`);
+  console.log(`  ${C.dim('این اسکریپت خودش vcvars64 را اجرا و محیط کامل لینکر را تنظیم می‌کند.')}`);
+  console.log(`  ${C.dim('راه دیگر: از منوی استارت «x64 Native Tools Command Prompt for VS 2022» را باز کنید و همان دستور را بزنید.')}`);
+  console.log('');
+}
+
 function cargoPathHelp() {
   console.log(`\n${C.warn('⚠ cargo نصب است ولی این پنجره‌ی ترمینال آن را در PATH نمی‌بیند.')}`);
   console.log(`  مسیر پیدا‌شده: ${C.bold(cargoOnDisk)}`);
@@ -191,13 +456,47 @@ function runNpm(scriptName, env) {
   return r.status ?? 1;
 }
 
+/* ------------------------------------------------------------------ */
+/* گرفتن خروجی ساخت برای تشخیص خودکار خطا                             */
+/* ------------------------------------------------------------------ */
+/*
+ * چرا: کاربر خطا را در انتهای یک ساخت طولانی می‌بیند و باید بداند *کدام*
+ * مشکل است. حداکثر ۴۰۰ کیلوبایت آخر خروجی نگه داشته می‌شود (کافی برای
+ * پیام خطا) و همان لحظه هم روی صفحه چاپ می‌شود — تجربه‌ی کاربر عوض نمی‌شود.
+ */
+const LOG_LIMIT = 400 * 1024;
+let tauriLog = '';
+function appendLog(chunk) {
+  tauriLog += chunk;
+  if (tauriLog.length > LOG_LIMIT) tauriLog = tauriLog.slice(-LOG_LIMIT);
+}
+const buildLogHas = (re) => re.test(tauriLog);
+
+/** آیا Visual Studio (هر نسخه‌ای) روی دیسک هست؟ */
+function vsInstalled() {
+  if (msvc.found || msvc.sawVisualStudio) return true;
+  return ['C:\\Program Files (x86)\\Microsoft Visual Studio',
+    'C:\\Program Files\\Microsoft Visual Studio'].some((p) => fs.existsSync(p));
+}
+
+/** اجرای یک دستور با چاپ زنده + نگه‌داشتن خروجی؛ Promise برمی‌گرداند */
+function runStreamed(cmd, cmdArgs, opts) {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, cmdArgs, { ...opts, stdio: ['inherit', 'pipe', 'pipe'] });
+    child.stdout.on('data', (b) => { process.stdout.write(b); appendLog(b.toString('utf8')); });
+    child.stderr.on('data', (b) => { process.stderr.write(b); appendLog(b.toString('utf8')); });
+    child.on('error', (e) => { appendLog(String(e && e.message)); resolve(1); });
+    child.on('close', (code) => resolve(code ?? 1));
+  });
+}
+
 /**
  * اجرای Tauri CLI از نصب محلی.
  *
  * مهم: `npx --no-install` — بدون این پرچم، npx ممکن است بخواهد بسته را از
  * شبکه بگیرد؛ روی کمپیوتر آفلاین همان باعث خطای گمراه‌کننده می‌شود.
  */
-function runTauriBuild(env) {
+async function runTauriBuild(env) {
   const cliJs = path.join(root, 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
   const tauriArgs = ['build'];
   if (wantDebug) tauriArgs.push('--debug');
@@ -206,17 +505,11 @@ function runTauriBuild(env) {
   if (isFile(cliJs)) {
     /* مستقیم با node — نه npx، نه shell؛ هیچ امکان دانلود/شکنندگی نقل‌قول */
     console.log(`  ${C.dim(`اجرا: node node_modules/@tauri-apps/cli/tauri.js ${tauriArgs.join(' ')}`)}`);
-    const r = spawnSync(process.execPath, [cliJs, ...tauriArgs], {
-      cwd: root, stdio: 'inherit', env,
-    });
-    return r.status ?? 1;
+    return runStreamed(process.execPath, [cliJs, ...tauriArgs], { cwd: root, env });
   }
   /* نسخه‌ی قدیمی نصب: همان npx با --no-install */
   console.log(`  ${C.warn('⚠ نصب محلی Tauri CLI پیدا نشد — با npx --no-install تلاش می‌شود')}`);
-  const r = spawnSync('npx', ['--no-install', 'tauri', ...tauriArgs], {
-    cwd: root, stdio: 'inherit', env, shell: isWin,
-  });
-  return r.status ?? 1;
+  return runStreamed('npx', ['--no-install', 'tauri', ...tauriArgs], { cwd: root, env, shell: isWin });
 }
 
 /* ------------------------------------------------------------------ */
@@ -239,6 +532,16 @@ if (isWin) {
   const wv = spawnSync('reg', ['query', wvKey, '/v', 'pv'], { encoding: 'utf8' });
   const hasWv = /pv\s+REG_SZ/.test(wv.stdout || '');
   console.log(`  ${hasWv ? C.ok('✔') : C.warn('⚠')} WebView2: ${hasWv ? 'نصب است' : 'در رجیستری نبود (نصب‌کننده خودش نصب می‌کند)'}`);
+
+  /* لینکر C++ — منشأ خطای «linker link.exe not found» */
+  if (msvc.found) {
+    const fromPath = inPath('link.exe');
+    console.log(`  ${C.ok('✔')} لینکر C++: MSVC ${msvc.msvcVersion}${msvc.sdkVersion ? ' · SDK ' + msvc.sdkVersion : ''}`);
+    console.log(`     ${C.dim(msvc.linkExe)}`);
+    if (!fromPath) console.log(`     ${C.dim('(در PATH نبود — محیط کامل vcvars64 خودکار تنظیم می‌شود)')}`);
+  } else {
+    console.log(`  ${C.bad('✘')} لینکر C++ (link.exe): پیدا نشد — ساخت شکست می‌خورد`);
+  }
 }
 
 const tauriLocal = isFile(path.join(root, 'node_modules', '@tauri-apps', 'cli', 'tauri.js'));
@@ -278,6 +581,16 @@ if (wantPrefetch) {
 
 if (!cargoPath) { rustInstallHelp(); process.exit(1); }
 if (!cargoInPath) cargoPathHelp();
+
+/*
+ * پیش‌بررسی لینکر — قبل از چند دقیقه کامپایل، نه بعد از آن.
+ * چرا: کاربر خطای «linker link.exe not found» را *در انتهای* یک ساخت
+ * طولانی دید؛ بهتر است همان اول بداند چه کم است.
+ */
+if (isWin && !msvc.found && !inPath('link.exe') && process.env.FD_SKIP_MSVC_CHECK !== '1') {
+  linkerHelp('پیش‌بررسی محیط انجام شد.', vsInstalled() ? 'vs-no-cpp' : 'no-vs');
+  process.exit(1);
+}
 
 if (!tauriLocal) {
   console.log(`\n${C.bad('⛔ @tauri-apps/cli نصب نیست.')}`);
@@ -329,12 +642,22 @@ if (skipApiPack) {
 
 console.log(`\n${C.bold(`▶ ۳/۳ ساخت نصب‌کننده${wantDebug ? ' (debug)' : ''}${wantOffline ? ' — آفلاین' : ''}`)}`);
 console.log(`  ${C.dim('اولین ساخت ۳ تا ۱۰ دقیقه طول می‌کشد (کامپایل crateها).')}`);
-code = runTauriBuild(env);
+code = await runTauriBuild(env);
 
 if (code !== 0) {
   console.log(`\n${C.bad('⛔ ساخت نصب‌کننده ناموفق بود.')}`);
-  console.log(`  ${C.bold('راهنمای خطاهای رایج:')} docs/TAURI-BUILD.md — بخش ۱۰`);
-  console.log(`  ${C.dim('اگر پیام cargo بود، متن انگلیسی خطا را نگه دارید؛ اکثر آن‌ها در همان جدول آمده‌اند.')}\n`);
+  /* تشخیص خودکار نوع خطا از نسخه‌ی باستان — کاربر لازم نباشد دنبال جدول بگردد */
+  if (buildLogHas(/link\.exe.*not found|msvc linker but .*link\.exe/i)) {
+    linkerHelp('خروجی ساخت همین را نشان داد.', vsInstalled() ? 'vs-no-cpp' : 'no-vs');
+  } else if (buildLogHas(/Persian\.nlf|MUI_LANGUAGEEX/i)) {
+    console.log(`  ${C.bold('علت: تنظیم زبان نصب‌کننده (Persian.nlf).')} راه‌حل: ${C.bold('git pull')} — NSIS زبان فارسی را «Farsi» می‌شناسد.`);
+  } else if (buildLogHas(/failed to run .cargo metadata|program not found/i) && !cargoPath) {
+    rustInstallHelp();
+  } else {
+    console.log(`  ${C.bold('راهنمای خطاهای رایج:')} docs/TAURI-BUILD.md — بخش ۱۰ و ۱۳`);
+    console.log(`  ${C.dim('متن انگلیسی خطا را نگه دارید؛ اکثر آن‌ها در همان جدول آمده‌اند.')}`);
+  }
+  console.log('');
   process.exit(code);
 }
 

@@ -90,6 +90,32 @@ ok('prepare-offline وجود node.exe را می‌سنجد', /node\.exe'\)\)|nod
 ok('ZIP ناقص/کوچک رد می‌شود', /5_000_000/.test(off));
 ok('FD_NODE_ZIP به بسته‌بندی پاس می‌شود', /FD_NODE_ZIP/.test(build));
 
+console.log('\n— لینکر C++ (link.exe) — خطای واقعی کاربر —');
+ok('خطای «linker link.exe not found» در توضیح اسکریپت آمده', /linker `link\.exe` not found|linker .link\.exe. not found/.test(build));
+ok('پیام راهنمای اختصاصی لینکر وجود دارد', /function linkerHelp/.test(build));
+ok('علت «VS هست ولی کامپوننت C++ ندارد» جدا تشخیص داده می‌شود', /vs-no-cpp/.test(build));
+ok('به اینکه VS Code کافی نیست اشاره می‌شود', /VS Code کافی نیست/.test(build));
+ok('لینک دانلود Build Tools داده می‌شود', /visual-cpp-build-tools/.test(build));
+ok('نام کامپوننت دقیق گفته می‌شود', /Desktop development with C\+\+/.test(build));
+ok('Windows SDK هم یادآوری می‌شود', /Windows 11 SDK|Windows 10 SDK/.test(build));
+ok('نسخه MSVC از روی پوشه خوانده می‌شود (نه حدس)', /function newestMsvcVersion/.test(build));
+ok('link.exe واقعاً وجودش چک می‌شود', /Hostx64['"],\s*'x64['"],\s*'link\.exe'/.test(build));
+ok('vcvars64.bat استفاده می‌شود (نه فقط PATH)', /vcvars64\.bat/.test(build));
+ok('LIB و INCLUDE از vcvars برداشته می‌شود', /'LIB', 'INCLUDE'/.test(build) && /call "\$\{msvc\.vcvars\}"/.test(build));
+ok('vswhere با شرط کامپوننت C++ صدا زده می‌شود', /Microsoft\.VisualStudio\.Component\.VC\.Tools\.x86\.x64/.test(build));
+ok('اگر vswhere نبود، مسیرهای متداول گشته می‌شوند', /VS_ROOTS/.test(build));
+ok('مسیر دستی FD_MSVC_ROOT پشتیبانی می‌شود', /FD_MSVC_ROOT/.test(build));
+ok('پیش‌بررسی لینکر قبل از شروع ساخت انجام می‌شود', /پیش‌بررسی لینکر/.test(build));
+ok('خطای لینکر در خروجی ساخت خودکار تشخیص داده می‌شود', /msvc linker but/.test(build));
+ok('خروجی ساخت برای تشخیص نگه داشته می‌شود', /function appendLog/.test(build) && /buildLogHas/.test(build));
+ok('خروجی هم‌زمان چاپ و ذخیره می‌شود (تجربه کاربر عوض نشده)', /process\.stdout\.write\(b\)/.test(build));
+ok('حجم بافر لاگ محدود است', /LOG_LIMIT/.test(build));
+ok('راه «x64 Native Tools Command Prompt» هم گفته می‌شود', /Native Tools Command Prompt/.test(build));
+ok('doctor وجود واقعی link.exe را می‌سنجد', /Hostx64['"],\s*'x64['"],\s*'link\.exe'/.test(doctor));
+ok('doctor حالت «VS بدون کامپوننت C++» را جدا می‌گوید', /Desktop development with C\+\+».*ندارد|کامپوننت «Desktop/.test(doctor));
+ok('doctor وجود Windows SDK را چک می‌کند', /Windows Kits/.test(doctor));
+ok('doctor خطای لینکر را در راه‌حل ذکر می‌کند', /linker link\.exe not found/.test(doctor));
+
 console.log('\n— doctor —');
 ok('حالت «cargo روی دیسک ولی نه در PATH» تشخیص داده می‌شود', /cargoOnDisk/.test(doctor));
 ok('راه‌حل PATH در doctor چاپ می‌شود', /set PATH=%USERPROFILE%/.test(doctor) || /export PATH=/.test(doctor));
@@ -100,6 +126,7 @@ ok('install-rust.ps1 وجود دارد', ps1.length > 500);
 ok('نصب بی‌صدا (بدون پرسش) انجام می‌شود', /-y --default-toolchain/.test(ps1));
 ok('PATH همین پنجره اصلاح می‌شود', /\$env:PATH\s*=\s*"\$cargoBin;/.test(ps1));
 ok('اگر از قبل نصب بود، دوباره نصب نمی‌کند', /Test-Path \$cargoExe/.test(ps1));
+ok('install-rust.ps1 لینکر C++ را هم چک می‌کند', /link\.exe/.test(ps1) && /vcpp-build-tools|VisualStudio\.2022\.BuildTools/.test(ps1));
 
 console.log('\n— مستندات —');
 ok('بخش ساخت آفلاین با prefetch آمده', /desktop:prefetch/.test(docs));

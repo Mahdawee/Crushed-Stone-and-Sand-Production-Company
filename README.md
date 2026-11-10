@@ -299,6 +299,12 @@ npm run desktop:build
    `src-tauri/api/` می‌گذارد تا **کمپیوتر شرکت به Node نیاز نداشته باشد**.
 3. `tauri build` → نصب‌کننده را می‌سازد.
 
+> **خطای `linker `link.exe` not found`؟**
+> یعنی کامپایلر C++ مایکروسافت نصب نیست. Visual Studio Build Tools را با تیک
+> **«Desktop development with C++»** نصب کنید (بخش ۳). بعد فقط دوباره
+> `npm run desktop:build` — لازم نیست ویندوز ری‌استارت شود.
+> `npm run doctor` وضعیت لینکر و Windows SDK را نشان می‌دهد.
+
 > **خطای `failed to run 'cargo metadata' … program not found`؟**
 > یعنی Rust نصب نیست یا در PATH نیست. `npm run desktop:build` خودش این را
 > تشخیص می‌دهد، مسیر `%USERPROFILE%\.cargo\bin` را در PATH همان اجرا می‌گذارد،
@@ -340,7 +346,7 @@ Tauri در اولین ساخت، crateهای Rust را از اینترنت می�
 
 | خطا | علت | راه‌حل |
 |---|---|---|
-| `error: linker `link.exe` not found` | Build Tools نصب نیست | گام ۳ را انجام دهید |
+| `error: linker `link.exe` not found` | کامپوننت C++ نصب نیست (VS Code کافی نیست) | Build Tools + «Desktop development with C++» — گام ۳؛ یا `npm run doctor`. شرح کامل: `docs/TAURI-BUILD.md` بخش ۱۴ |
 | `failed to run custom build command for ... webkit` | بسته‌های سیستمی لینوکس کم است | دستور `apt install` در گام ۳ |
 | `'cargo' is not recognized` | PATH تازه نشده | ترمینال/ویندوز را ببندید و باز کنید |
 | `failed to run 'cargo metadata' … program not found` | Rust نصب نیست، یا نصب است و در PATH نیست | `npm run desktop:build` (خودش PATH را درست می‌کند) یا `scripts\install-rust.ps1` — بخش ۲/۱ و ۱۳ همان راهنما |

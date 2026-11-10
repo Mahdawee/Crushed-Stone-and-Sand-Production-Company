@@ -74,6 +74,32 @@ Write-Step "بررسی نصب"
 & (Join-Path $cargoBin 'rustc.exe') --version
 & $cargoExe --version
 
+# --- ۶) بررسی کامپایلر C++ (خطای link.exe) ---------------------------------
+Write-Step "بررسی لینکر C++ (link.exe)"
+$vsWhere = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe'
+$vsPath = ''
+if (Test-Path $vsWhere) {
+    $vsPath = & $vsWhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+}
+$linkFound = $false
+if ($vsPath) {
+    $msvcRoot = Join-Path $vsPath 'VC\Tools\MSVC'
+    if (Test-Path $msvcRoot) {
+        $ver = Get-ChildItem $msvcRoot -Directory | Sort-Object Name | Select-Object -Last 1
+        if ($ver) {
+            $linkExe = Join-Path $ver.FullName 'bin\Hostx64\x64\link.exe'
+            if (Test-Path $linkExe) { Write-Ok "لینکر C++: $linkExe"; $linkFound = $true }
+        }
+    }
+}
+if (-not $linkFound) {
+    Write-Warn2 "لینکر C++ (link.exe) پیدا نشد — ساخت با خطای «linker link.exe not found» شکست می‌خورد."
+    Write-Host "  دانلود Build Tools:" -ForegroundColor Yellow
+    Write-Host "    https://visualstudio.microsoft.com/visual-cpp-build-tools/" -ForegroundColor Gray
+    Write-Host "  تیک لازم: «Desktop development with C++» + «Windows 11 SDK»" -ForegroundColor Gray
+    Write-Host "  یا:  winget install Microsoft.VisualStudio.2022.BuildTools   (بعد در Installer روی Modify بزنید)" -ForegroundColor Gray
+}
+
 Write-Host "`n=== تمام شد ===" -ForegroundColor Green
 Write-Host "مرحله بعد:" -ForegroundColor White
 Write-Host "  npm run doctor          (بررسی کامل پیش‌نیازها)" -ForegroundColor Gray

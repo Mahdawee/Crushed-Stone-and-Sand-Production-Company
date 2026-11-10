@@ -74,10 +74,79 @@ else if (cargoOnDisk) {
 }
 
 if (isWin) {
-  console.log('\n— ۳) ابزارهای ساخت ویندوز (MSVC) —');
-  const vs = run('"C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath');
-  if (vs) ok(`Visual Studio Build Tools: ${vs.split('\n')[0]}`);
-  else bad('C++ Build Tools نصب نیست', 'Visual Studio Build Tools + «Desktop development with C++» را نصب کنید');
+  console.log('\n— ۳) ابزارهای ساخت ویندوز (MSVC / link.exe) —');
+  /*
+   * درس گرفته‌شده از خطای واقعی:
+   *   error: linker `link.exe` not found
+   *     = note: the msvc targets depend on the msvc linker but `link.exe` was not found
+   *
+   * نسخه‌ی قبلی فقط وجود vswhere را چک می‌کرد — که با VS بدون کامپوننت C++
+   * هم پیدا می‌شود. حالا خودِ link.exe و vcvars64.bat را می‌سنجیم.
+   */
+  const vsRoots = [
+    'C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools',
+    'C:\\Program Files\\Microsoft Visual Studio\\2022\\BuildTools',
+    'C:\\Program Files\\Microsoft Visual Studio\\2022\\Community',
+    'C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional',
+    'C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise',
+    'C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\BuildTools',
+    'C:\\Program Files\\Microsoft Visual Studio\\2019\\Community',
+    ...(process.env.FD_MSVC_ROOT || '').split(';').filter(Boolean),
+  ];
+  const msvcVersion = (vsPath) => {
+    try {
+      return fs.readdirSync(path.join(vsPath, 'VC', 'Tools', 'MSVC'))
+        .filter((v) => /^14\./.test(v))
+        .sort((a, b) => {
+          const n = (x) => x.split('.').map(Number);
+          const [a1, a2, a3] = n(a); const [b1, b2, b3] = n(b);
+          return a1 - b1 || a2 - b2 || (a3 || 0) - (b3 || 0);
+        }).pop() || '';
+    } catch { return ''; }
+  };
+  const hasExe = (p) => { try { return fs.statSync(p).isFile(); } catch { return false; } };
+
+  const vswherePath = 'C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe';
+  let vsPath = '';
+  if (fs.existsSync(vswherePath)) {
+    vsPath = run(`"${vswherePath}" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`).split(/\r?\n/)[0];
+  }
+  /* اگر vswhere چیزی نداد، خودمان مسیرها را می‌گردیم */
+  let discovered = '';
+  for (const p of vsRoots) {
+    if (!p) continue;
+    const v = msvcVersion(p);
+    if (v && hasExe(path.join(p, 'VC', 'Tools', 'MSVC', v, 'bin', 'Hostx64', 'x64', 'link.exe'))) {
+      discovered = p;
+      if (!vsPath) vsPath = p;
+      break;
+    }
+  }
+  const effectiveVs = vsPath && msvcVersion(vsPath) ? vsPath : discovered;
+  const msvcVer = effectiveVs ? msvcVersion(effectiveVs) : '';
+  const linkExe = effectiveVs && msvcVer
+    ? path.join(effectiveVs, 'VC', 'Tools', 'MSVC', msvcVer, 'bin', 'Hostx64', 'x64', 'link.exe')
+    : '';
+  const vcvars64 = effectiveVs ? path.join(effectiveVs, 'VC', 'Auxiliary', 'Build', 'vcvars64.bat') : '';
+
+  if (linkExe && hasExe(linkExe)) {
+    ok(`لینکر C++ (link.exe): MSVC ${msvcVer}`);
+    console.log(`     ${linkExe}`);
+    if (!hasExe(vcvars64)) warn('vcvars64.bat پیدا نشد — LIB/INCLUDE ممکن است تنظیم نشود (Build Tools را Repair کنید)');
+    /* Windows SDK لازم است، وگرنه link.exe فایل‌های .lib را پیدا نمی‌کند */
+    const sdkLibs = ['C:\\Program Files (x86)\\Windows Kits\\10\\Lib', 'C:\\Program Files\\Windows Kits\\10\\Lib']
+      .map((d) => { try { return fs.readdirSync(d).filter((x) => /^10\./.test(x)).sort().pop() || ''; } catch { return ''; } })
+      .find(Boolean) || '';
+    if (sdkLibs) ok(`Windows SDK: ${sdkLibs}`);
+    else warn('Windows SDK پیدا نشد — «Windows 11 SDK» را در همان نصب‌کننده Build Tools تیک بزنید');
+  } else if (vsPath) {
+    /* شایع‌ترین حالت واقعی: VS هست، کامپوننت C++ نیست */
+    bad('Visual Studio نصب است ولی کامپوننت «Desktop development with C++» را ندارد',
+      'Visual Studio Installer → Modify → تیک «Desktop development with C++» + «Windows 11 SDK» → Modify. بررسی: npm run desktop:build');
+  } else {
+    bad('لینکر C++ (link.exe) نصب نیست — ساخت با خطای «linker link.exe not found» می‌شکند',
+      'Visual Studio Build Tools از https://visualstudio.microsoft.com/visual-cpp-build-tools/ با تیک «Desktop development with C++» — یا: winget install Microsoft.VisualStudio.2022.BuildTools و بعد Modify');
+  }
 
   console.log('\n— ۴) WebView2 —');
   const wv = run('reg query "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" /v pv');
