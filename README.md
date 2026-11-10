@@ -270,6 +270,10 @@ npx tauri --version        # باید ۲.x چاپ شود
 ```
 > `npm run desktop:setup` هم هنوز کار می‌کند (همان بسته را دوباره نصب می‌کند)؛ اگر خواستید
 > بدون npm بسازید: `cargo install tauri-cli --version "^2"` و سپس `cargo tauri dev` / `cargo tauri build`.
+>
+> ⚠ اگر `cargo` در PATH نباشد، همان `npx tauri build` هم با خطای
+> `failed to run 'cargo metadata' … program not found` می‌شکند — **همیشه از
+> `npm run desktop:build` استفاده کنید** (خودش cargo را پیدا می‌کند).
 
 > **آیا نصب Tauri ضروری است؟** برای **استفاده روزمره نه**. خود اپ وب + API محلی همین حالا کار می‌کند
 > (`npm run dev` یا `npm run build && npm start` → <http://127.0.0.1:4317>). Tauri فقط برای ساختن
@@ -289,10 +293,18 @@ npm run desktop:dev
 ```bash
 npm run desktop:build
 ```
-این دستور دو کار می‌کند:
-1. `package:api` → فایل‌های API + `node.exe` (نسخه پرتابل ویندوز) + رابط build شده را در
+این دستور سه کار می‌کند:
+1. `build:desktop` → API و رابط کاربری را از کد فعلی می‌سازد.
+2. `package:api` → فایل‌های API + `node.exe` (نسخه پرتابل ویندوز) + رابط build شده را در
    `src-tauri/api/` می‌گذارد تا **کمپیوتر شرکت به Node نیاز نداشته باشد**.
-2. `tauri build` → نصب‌کننده را می‌سازد.
+3. `tauri build` → نصب‌کننده را می‌سازد.
+
+> **خطای `failed to run 'cargo metadata' … program not found`؟**
+> یعنی Rust نصب نیست یا در PATH نیست. `npm run desktop:build` خودش این را
+> تشخیص می‌دهد، مسیر `%USERPROFILE%\.cargo\bin` را در PATH همان اجرا می‌گذارد،
+> و اگر Rust نبود دستور نصب می‌دهد. راه دستی: `npm run doctor` یا
+> `scripts\install-rust.ps1` (راست‌کلیک → Run with PowerShell).
+> جزئیات: `docs/TAURI-BUILD.md` بخش ۲/۱ و ۱۳.
 
 خروجی‌ها:
 
@@ -309,12 +321,18 @@ npm run desktop:build
 
 Tauri در اولین ساخت، crateهای Rust را از اینترنت می‌گیرد. برای ساخت **کاملاً آفلاین**:
 
-1. روی یک کمپیوتر با انترنت یک بار `npm run desktop:build` را اجرا کنید.
-2. پوشه‌های `~/.cargo/registry` و `C:\Users\<user>\.cargo\registry` و `src-tauri/target` را
-   به همان مسیر در کمپیوتر آفلاین کپی کنید، و `node.exe` را از قبل داخل `src-tauri/api/` بگذارید
-   (`npm run package:api` این کار را می‌کند).
-3. در کمپیوتر آفلاین: `npm install --offline` (اگر `node_modules` را هم کپی کرده‌اید نیازی نیست)
-   و بعد `npx tauri build --offline`.
+1. روی یک کمپیوتر با انترنت: `npm ci` و بعد `npm run desktop:prefetch`
+   (این دستور `cargo fetch` را اجرا می‌کند و همه crateها را در `.cargo` ذخیره می‌کند).
+2. پوشه‌های `.cargo` و `.rustup` و `src-tauri/target` (اختیاری) و `node_modules` را به همان
+   مسیرها در کمپیوتر آفلاین کپی کنید.
+3. فایل ZIP نود را هم یک بار بگیرید: `https://nodejs.org/dist/v22.x/node-v22.x-win-x64.zip`
+4. در کمپیوتر آفلاین:
+   ```powershell
+   npm run desktop:build:offline -- "D:\node-v22.x-win-x64.zip"
+   ```
+   یا اگر `node.exe` از قبل داخل `src-tauri/api` هست: `npm run desktop:build --offline`.
+
+توضیح کامل: `docs/TAURI-BUILD.md` بخش ۸.
 
 نصب‌کننده ساخته‌شده، خودش **هیچ نیازی به انترنت ندارد** — این محدودیت فقط برای مرحله ساخت است.
 
@@ -325,8 +343,9 @@ Tauri در اولین ساخت، crateهای Rust را از اینترنت می�
 | `error: linker `link.exe` not found` | Build Tools نصب نیست | گام ۳ را انجام دهید |
 | `failed to run custom build command for ... webkit` | بسته‌های سیستمی لینوکس کم است | دستور `apt install` در گام ۳ |
 | `'cargo' is not recognized` | PATH تازه نشده | ترمینال/ویندوز را ببندید و باز کنید |
+| `failed to run 'cargo metadata' … program not found` | Rust نصب نیست، یا نصب است و در PATH نیست | `npm run desktop:build` (خودش PATH را درست می‌کند) یا `scripts\install-rust.ps1` — بخش ۲/۱ و ۱۳ همان راهنما |
 | `API entry not found ...` هنگام اجرا | API build نشده | `npm run build -w @farday/api` |
-| `node.exe not found` در نصب‌شده | بدون `package:api` ساخته شده | `npm run package:api` و بعد `npx tauri build` |
+| `node.exe not found` در نصب‌شده | بدون `package:api` ساخته شده | `npm run desktop:build` (هر سه مرحله را خودش انجام می‌دهد) |
 | پنجره سفید می‌ماند | API دیر شروع شده | ۱۰ ثانیه صبر؛ `npm run doctor` و `dist` را بررسی کنید |
 | `EADDRINUSE: 4317` | یک نسخه دیگر در حال اجراست | برنامه قبلی یا `node apps/api/dist/main.js` را ببندید |
 

@@ -10,6 +10,13 @@
 > npm run desktop:build  # ساخت نصب‌کننده
 > ```
 > خروجی: `src-tauri/target/release/bundle/nsis/Farday Roshan_0.1.0_x64-setup.exe`
+>
+> **اگر خطای `failed to run 'cargo metadata' … program not found` گرفتید:**
+> یعنی Rust نصب نیست یا در PATH نیست → بخش ۲/۱ و بخش ۱۳ (عیب‌یابی سریع).
+> `npm run desktop:build` خودش این حالت را تشخیص می‌دهد و راه‌حل می‌دهد.
+>
+> **اگر اینترنت ندارید:** یک بار `npm run desktop:prefetch` (با اینترنت) و بعد
+> `npm run desktop:build --offline` → بخش ۸.
 
 ---
 
@@ -57,6 +64,44 @@ cargo --version
 
 > اگر `rustc` پیدا نشد: ویندوز را Log off/on کنید تا PATH تازه شود.
 > مسیر معمول: `C:\Users\<user>\.cargo\bin`
+
+### ۲/۱) خطای `failed to run 'cargo metadata' … program not found`
+
+این پیام یعنی **Tauri CLI نصب است، ولی `cargo` را پیدا نمی‌کند**. خودِ
+Rust ممکن است سالم نصب شده باشد؛ فقط پنجره‌ی ترمینالِ شما مسیرش را
+نمی‌شناسد (ترمینال پیش از نصب Rust باز شده بود).
+
+سه راه، از ساده به مطمئن:
+
+```powershell
+# راه ۱ — ترمینال را ببندید و یک پنجره‌ی تازه باز کنید، بعد:
+cargo --version
+rustc --version
+
+# راه ۲ — همین حالا، بدون بستن پنجره (فقط برای همین پنجره):
+set PATH=%USERPROFILE%\.cargo\bin;%PATH%
+#   در PowerShell:
+$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
+
+# راه ۳ (مطمئن‌ترین) — اسکریپت پروژه، که PATH را خودش درست می‌کند:
+npm run desktop:build
+```
+
+`npm run desktop:build` قبل از هر کامپایلی، `cargo` را در این مسیرها می‌گردد و
+اگر پیدا کرد، PATH همان اجرا را اصلاح می‌کند:
+
+| مسیر | چه زمانی |
+|---|---|
+| `%USERPROFILE%\.cargo\bin\cargo.exe` | نصب با rustup (معمول) |
+| `%CARGO_HOME%\bin\cargo.exe` | اگر `CARGO_HOME` را دستی عوض کرده‌اید |
+| `C:\Program Files\Rust stable\bin\cargo.exe` | نصب با winget/choco |
+| `%LOCALAPPDATA%\Programs\Rust\bin\cargo.exe` | نصب کاربری |
+
+اگر هیچ‌کدام نبود، یعنی Rust واقعاً نصب نیست → بخش ۲ یا فایل
+`scripts/install-rust.ps1` (راست‌کلیک → Run with PowerShell).
+
+> **نصب یک‌کلیکی:** `scripts/install-rust.ps1` را راست‌کلیک → **Run with PowerShell**.
+> خودش rustup را می‌گیرد، نصب می‌کند، PATH همین پنجره را درست می‌کند و نسخه‌ها را چاپ می‌کند.
 
 ## ۳) نصب Visual Studio Build Tools (فقط ویندوز)
 
@@ -160,26 +205,78 @@ src-tauri/target/release/farday-roshan.exe                               (نسخ
 
 ## ۸) ساخت بدون انترنت (Air-gapped)
 
-مرحله کامپایل Rust در اولین بار crateها را دانلود می‌کند. برای ساخت آفلاین:
+هدف: روی کمپیوتر بدون اینترنت، فایل نصب بسازیم. سه چیز باید از قبل حاضر باشد:
 
-**یک بار روی کمپیوتر با انترنت:**
-```bash
-npm run desktop:build
+| چه چیزی | چرا | چطور آماده می‌شود |
+|---|---|---|
+| `node_modules` | npm و Vite و Tauri CLI از اینجا اجرا می‌شوند | `npm ci` (یک بار، با اینترنت) |
+| crateهای Rust | cargo در ساخت به اینترنت دست نزند | `npm run desktop:prefetch` |
+| `node-v22-win-x64.zip` | تا `node.exe` داخل نصب‌کننده برود | یک بار دانلود، بعد فلش |
+
+### گام ۱ — روی کمپیوتر **با** اینترنت (یک بار)
+
+```powershell
+git pull
+npm ci                        # بسته‌های JS
+npm run desktop:prefetch      # = cargo fetch ؛ همه‌ی crateها را در %USERPROFILE%\.cargo ذخیره می‌کند
 ```
-سپس این‌ها را به همان مسیرها در کمپیوتر آفلاین کپی کنید:
 
-| از | به |
+`prefetch` در پایان می‌گوید چند crate ذخیره شد و `Cargo.lock` ساخته شد یا نه.
+
+فایل ZIP نود را هم بگیرید (نسخه باید با `node -v` جاری یکی باشد):
+
+```
+https://nodejs.org/dist/v22.22.3/node-v22.22.3-win-x64.zip
+```
+
+### گام ۲ — انتقال به کمپیوتر آفلاین
+
+پوشه‌ی پروژه را **کامل** (شامل `node_modules` و `.cache`) کپی کنید، به‌علاوه:
+
+| از (کمپیوتر آنلاین) | به (کمپیوتر آفلاین) |
 |---|---|
-| `C:\Users\<user>\.cargo\registry` | همان مسیر در کمپیوتر دوم |
-| `src-tauri\target` | همان مسیر (کامپایل‌های آماده) |
-| `node_modules` | همان مسیر |
-| `src-tauri\api` (شامل `node.exe`) | همان مسیر |
+| `C:\Users\<user>\.cargo` | همان مسیر |
+| `C:\Users\<user>\.rustup` | همان مسیر (خودِ کامپایلر) |
+| `src-tauri\target` *(اختیاری)* | همان مسیر — کامپایل‌های آماده، ساخت را چند دقیقه‌ای می‌کند |
+| `node-v22.x-win-x64.zip` | مثلاً `D:\` |
 
-**در کمپیوتر آفلاین:**
-```bash
-npx tauri build --offline
+> کپی `.cargo` و `.rustup` یعنی **لازم نیست Rust را روی کمپیوتر آفلاین نصب کنید**.
+
+### گام ۳ — ساخت آفلاین
+
+```powershell
+# فقط ساخت (node.exe از قبل در بسته هست یا ZIP می‌دهید)
+npm run desktop:build:offline -- "D:\node-v22.22.3-win-x64.zip"
 ```
-نصب‌کننده ساخته‌شده، هنگام نصب و اجرا **به هیچ انترنتی نیاز ندارد**.
+
+یا اگر `node.exe` قبلاً داخل `src-tauri\api` هست:
+
+```powershell
+npm run desktop:build --offline
+```
+
+هر دو مسیر، `CARGO_NET_OFFLINE=true` می‌گذارند. یعنی اگر crate‌ای کم باشد،
+cargo **سریع** می‌گوید کدام است — نه اینکه چند دقیقه منتظر شبکه بماند و بعد
+خطای گمراه‌کننده بدهد.
+
+### گام ۴ — بررسی
+
+نصب‌کننده‌ی ساخته‌شده را روی همان کمپیوتر آفلاین نصب و اجرا کنید. برنامه
+هیچ درخواست شبکه‌ای ندارد؛ دیتابیس و API محلی هستند (`127.0.0.1:4317`).
+
+### اگر ساخت آفلاین شکست خورد
+
+| پیام | معنی | راه‌حل |
+|---|---|---|
+| `unable to get packages from source` / `no matching package named …` | crate‌ای دانلود نشده | روی کمپیوتر آنلاین `npm run desktop:prefetch` را دوباره بزنید و `.cargo` را تازه‌سازی کنید |
+| `failed to run 'cargo metadata' … program not found` | cargo در PATH نیست | بخش ۲/۱ |
+| `npm error … ENOTCACHED` | بسته‌ی npm در کش نیست | `npm ci` را روی کمپیوتر آنلاین بزنید و `node_modules` را کامل کپی کنید |
+| `E404` / `network` در مرحله‌ی ۲ | `node.exe` نبود و خواست دانلود کند | ZIP نود را بدهید: `npm run desktop:build:offline -- "D:\…zip"` |
+| `Cargo.lock نیست` | اولین ساخت هنوز آنلاین انجام نشده | یک بار `npm run desktop:prefetch` |
+
+> نکته: با `strip = true`، `lto = true` و `opt-level = "s"` در `src-tauri/Cargo.toml`،
+> ساخت release کندتر از debug است. برای آزمایش سریع (بدون نصب‌کننده‌ی بهینه):
+> `npm run desktop:build --debug`.
 
 ## ۹) تغییر نسخه و نام برنامه
 
@@ -199,6 +296,8 @@ npx tauri build --offline
 | `linker `link.exe` not found` | Build Tools نیست | گام ۳ |
 | `failed to run custom build command ... webkit2gtk` | بسته لینوکس کم است | دستور `apt install` گام ۳ |
 | `'cargo' is not recognized` | PATH تازه نشده | ترمینال/ویندوز را ببندید و باز کنید |
+| `failed to run 'cargo metadata' command to get workspace directory … program not found` | Tauri CLI نصب است ولی `cargo` در PATH نیست (Rust نیست، یا ترمینال پیش از نصب باز شده) | **حل شد:** `npm run desktop:build` مسیرهای متداول Rust را پیدا و PATH همان اجرا را اصلاح می‌کند؛ اگر Rust نبود، دستور نصب می‌دهد. راه دستی: `set PATH=%USERPROFILE%\.cargo\bin;%PATH%` و باز کردن ترمینال تازه — بخش ۲/۱. بررسی محیط: `npm run doctor` |
+| `npm error could not determine executable to run` / `npx tauri` روی کمپیوتر آفلاین | `npx` بی‌`--no-install` می‌خواست بسته را از شبکه بگیرد | **حل شد:** همه‌ی اسکریپت‌ها CLI محلی را مستقیم با `node node_modules/@tauri-apps/cli/tauri.js` اجرا می‌کنند |
 | `error[E0658] ... unstable` | Rust قدیمی | `rustup update stable` |
 | `error[E0599]: no method named try_clone found for struct Stdio` | کد قدیمی پوسته (فایل لاگ برای stdout/stderr کاپی می‌شد، ولی `Stdio` کاپی‌شدنی نیست) | `git pull` — حالا فایل لاگ دو بار باز می‌شود. بررسی سریع: `npm run test:tauri` |
 | `error[E0599]: no method named ... found` (هر روش دیگری در `src-tauri`) | نسخه‌ی کد با نسخه‌ی Tauri هم‌خوان نیست | `git pull` و سپس `npm run test:tauri` — این اسکریپت پیش از ساخت، روش‌های ناموجود را می‌گیرد |
@@ -231,7 +330,7 @@ npx tauri build --offline
 
 ---
 
-## ۱۱) بعد از هر `git pull` چه دستوری بزنم؟
+## ۱۲) بعد از هر `git pull` چه دستوری بزنم؟
 
 ### الف) فقط می‌خواهم برنامه را اجرا/ببینم
 ```powershell
@@ -272,7 +371,9 @@ npm run desktop:build
 | `npm start` | برنامه را در یک آدرس (`127.0.0.1:4317`) اجرا می‌کند | استفاده روزمره/آزمایش |
 | `npm run dev` | حالت توسعه: API + Vite با hot reload روی 5173 | کار روی ظاهر/کد |
 | `npm run doctor` | چک می‌کند Node/Rust/MSVC/WebView2/Tauri آماده‌اند | وقتی ساخت خطا داد |
-| `npm run desktop:build` | نصب‌کننده ویندوز می‌سازد | برای توزیع به کمپیوتر شرکت |
+| `npm run desktop:build` | نصب‌کننده ویندوز می‌سازد (خودش cargo را پیدا و PATH را اصلاح می‌کند) | برای توزیع به کمپیوتر شرکت |
+| `npm run desktop:prefetch` | یک بار با اینترنت، crateهای Rust را ذخیره می‌کند | پیش از رفتن به کمپیوتر آفلاین |
+| `npm run desktop:build --offline` | ساخت بدون اینترنت | وقتی crateها ذخیره شده‌اند |
 | `npm run desktop:dev` | پنجره دسکتاپ در حالت توسعه | آزمایش پنجره بدون ساخت نصب‌کننده |
 | `npm run package:api` | فقط بسته API/`src-tauri/api` را آماده می‌کند | به‌ندرت؛ داخل `desktop:build` هست |
 | `npm run test:api` | ۵۳ تست رفتاری API | بعد از تغییرات بک‌اند |
@@ -283,3 +384,60 @@ npm run desktop:build
 > اگر می‌خواهید نصب‌کننده بدهید → `npm run setup && npm run desktop:build`.
 > هیچ‌وقت `npx tauri build` را بدون `package:api` اجرا نکنید (نسخه‌های قبل همین را می‌گفتند؛
 > حالا `desktop:build` خودش هر سه مرحله را به ترتیب انجام می‌دهد).
+
+---
+
+## ۱۳) عیب‌یابی سریع: خطای `cargo metadata … program not found`
+
+این خطا **معنی مشخصی** دارد و تقریباً همیشه یکی از این سه حالت است:
+
+| حالت | نشانه | راه‌حل |
+|---|---|---|
+| Rust نصب است، PATH این پنجره کهنه است | `%USERPROFILE%\.cargo\bin\cargo.exe` وجود دارد | ترمینال تازه باز کنید، یا `npm run desktop:build` (خودش PATH را درست می‌کند) |
+| Rust نصب نیست | پوشه‌ی `.cargo` وجود ندارد | بخش ۲ یا `scripts/install-rust.ps1` |
+| Rust در مسیر غیرمعمول نصب شده | `where cargo` چیزی پیدا نمی‌کند ولی فایل هست | مسیر پوشه‌ی `bin` آن را به PATH اضافه کنید |
+
+### تشخیص در سه دستور
+
+```powershell
+where.exe cargo                                  # آیا در PATH هست؟
+dir "%USERPROFILE%\.cargo\bin\cargo.exe"        # آیا روی دیسک هست؟
+npm run doctor                                   # تشخیص کامل با پیام دری
+```
+
+`npm run doctor` حالا این حالت را جداگانه گزارش می‌کند:
+
+```
+  ✘ C:\Users\DELL\.cargo\bin\cargo.exe هست ولی «cargo» در PATH نیست — ساخت با خطای «program not found» شکست می‌خورد
+     راه‌حل: ترمینال را ببندید و باز کنید؛ یا موقتاً: set PATH=%USERPROFILE%\.cargo\bin;%PATH%
+```
+
+### چرا این اتفاق می‌افتد؟
+
+نصب‌کننده‌ی rustup مسیر `%USERPROFILE%\.cargo\bin` را به PATH **سیستم/کاربر**
+اضافه می‌کند. ولی هر پنجره‌ی ترمینالی که **قبل** از نصب باز شده باشد، نسخه‌ی
+قدیمی PATH را در حافظه دارد. VS Code و Windows Terminal هم اغلب پنجره‌ها را
+حفظ می‌کنند. به همین دلیل «نصب کردم ولی پیدا نمی‌شود» پیش می‌آید.
+
+### پوشه‌ی درست برای اجرای دستورها
+
+مسیر شما `D:\…\Crushed-Stone-and-Sand-Production-Company\Crushed-Stone-and-Sand-Production-Company`
+است — یعنی پوشه **دو بار** تودرتو شده. دستورها را در پوشه‌ای بزنید که
+`package.json` و `src-tauri` کنار هم در آن هستند:
+
+```powershell
+cd D:\Crushed-Stone-and-Sand-Production-Company\Crushed-Stone-and-Sand-Production-Company
+dir package.json, src-tauri      # باید هر دو را ببینید
+npm run desktop:build
+```
+
+### اگر بعد از این هم خطا داد
+
+متن کامل انگلیسی خطا را نگه دارید. اسکریپت‌های پروژه سه مرحله را جدا اجرا
+می‌کنند، پس از روی این که کدام مرحله شکست خورده می‌توان فهمید کجاست:
+
+```
+▶ ۱/۳ ساخت API و رابط کاربری       ← اگر اینجا شکست: مشکل Node/TypeScript
+▶ ۲/۳ بسته‌بندی API + node.exe      ← اگر اینجا شکست: مشکل دانلود/اینترنت (یا ZIP نود)
+▶ ۳/۳ ساخت نصب‌کننده                ← اگر اینجا شکست: مشکل Rust/MSVC/NSIS
+```

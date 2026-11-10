@@ -394,7 +394,7 @@ if (!hasNode && requireNode) {
 if (!hasNode) {
   console.log('   ⚠ node.exe داخل بسته نیست → کمپیوتر مقصد باید Node.js داشته باشد (فقط برای تست مناسب است).');
 }
-console.log('   حالا بسازید:  npx tauri build');
+console.log('   حالا بسازید:  npm run desktop:build   (یا اگر بسته کامل است: node scripts/build-desktop.mjs --skip-api)');
 }
 
 finish();

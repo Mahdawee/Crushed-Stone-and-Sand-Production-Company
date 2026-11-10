@@ -39,8 +39,39 @@ console.log('  ℹ اگر npm doctor نسخه نود/npm تازه‌تری پی�
 console.log('\n— ۲) Rust و Cargo —');
 const rustc = run('rustc --version');
 const cargo = run('cargo --version');
-if (rustc) ok(rustc); else bad('Rust نصب نیست', 'از https://rustup.rs نصب کنید (یا: winget install Rustlang.Rustup)');
+
+/*
+ * حالت سوم (که پیام گمراه‌کننده‌ی «program not found» از آن می‌آید):
+ * Rust نصب است و فایل cargo.exe روی دیسک هست، ولی مسیرش در PATH این
+ * ترمینال نیست — چون ترمینال پیش از نصب باز شده بود. اینجا همان را
+ * تشخیص می‌دهیم و راه حل دقیق می‌دهیم.
+ */
+const homeDir = process.env.USERPROFILE || process.env.HOME || os.homedir();
+const cargoBinDir = path.join(process.env.CARGO_HOME || path.join(homeDir, '.cargo'), 'bin');
+const cargoExe = path.join(cargoBinDir, isWin ? 'cargo.exe' : 'cargo');
+let cargoOnDisk = false;
+try { cargoOnDisk = fs.statSync(cargoExe).isFile(); } catch { cargoOnDisk = false; }
+
+if (rustc) ok(rustc);
+else if (cargoOnDisk) {
+  bad(`${cargoExe} هست ولی «cargo» در PATH نیست — ساخت با خطای «program not found» شکست می‌خورد`,
+    isWin
+      ? `ترمینال را ببندید و باز کنید؛ یا موقتاً: set PATH=%USERPROFILE%\\.cargo\\bin;%PATH%  — یا فقط npm run build:desktop را بزنید (خودش PATH را درست می‌کند)`
+      : `export PATH="$HOME/.cargo/bin:$PATH"  — یا فقط npm run build:desktop را بزنید`);
+} else {
+  bad('Rust نصب نیست', 'از https://rustup.rs نصب کنید (یا: winget install Rustlang.Rustup) — یا فایل scripts/install-rust.ps1 را اجرا کنید');
+}
+
 if (cargo) ok(cargo);
+else if (cargoOnDisk) {
+  /* پیام دقیق: همین حالت منشأ خطای cargo metadata است */
+  warn(`cargo در ${cargoBinDir} نصب است ولی این پنجره‌ی ترمینال آن را نمی‌بیند`);
+  console.log(`     راه حل فوری: ترمینال را ببندید و دوباره باز کنید.`);
+  if (isWin) console.log(`     یا همین حالا:  set PATH=%USERPROFILE%\\.cargo\\bin;%PATH%`);
+  console.log(`     یا از اسکریپت استفاده کنید که PATH را خودش اصلاح می‌کند:  npm run build:desktop`);
+} else if (rustc) {
+  warn('rustc هست ولی cargo پیدا نشد — نصب Rust نیمه‌کاره است؛ rustup را دوباره اجرا کنید');
+}
 
 if (isWin) {
   console.log('\n— ۳) ابزارهای ساخت ویندوز (MSVC) —');
