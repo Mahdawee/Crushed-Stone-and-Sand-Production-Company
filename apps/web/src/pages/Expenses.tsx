@@ -2,8 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, downloadCsv } from '../lib/api';
 import { useSession } from '../lib/session';
-import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, Pager } from '../components/ui';
-import { money, toInputDate, parseInputDate, todayISO } from '../lib/calendar';
+import { useDebounced } from '../lib/useDebounced';
+import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, Pager, ListHead, SearchBox, SummaryBar, K } from '../components/ui';
+import { DatePicker } from '../components/DatePicker';
+import { money, todayISO } from '../lib/calendar';
+
+type Filters = { q: string; from: string; to: string; category: string; payer: string; paymentType: string };
 
 export default function ExpensesPage() {
   const { calendar, isManager } = useSession();
@@ -11,37 +15,54 @@ export default function ExpensesPage() {
   const [sp, setSp] = useSearchParams();
   const [data, setData] = useState<any>(null);
   const [page, setPage] = useState(1);
-  const [filters, setFilters] = useState({ q: '', from: '', to: '', category: '', payer: '', paymentType: '' });
+  const [filters, setFilters] = useState<Filters>({ q: '', from: '', to: '', category: '', payer: '', paymentType: '' });
+  const dq = useDebounced(filters.q);
   const [lk, setLk] = useState<any>({ expense_category: [], payer: [], contractor: [] });
   const [form, setForm] = useState<any>(null);
-  const [dateStr, setDateStr] = useState('');
+  const [dateISO, setDateISO] = useState('');
   const [busy, setBusy] = useState(false);
 
   const load = async (p = page) => {
     const qs = new URLSearchParams({ page: String(p), pageSize: '25' });
-    Object.entries(filters).forEach(([k, v]) => { if (v) qs.set(k, v as string); });
+    if (dq) qs.set('q', dq);
+    if (filters.from) qs.set('from', filters.from);
+    if (filters.to) qs.set('to', filters.to);
+    if (filters.category) qs.set('category', filters.category);
+    if (filters.payer) qs.set('payer', filters.payer);
+    if (filters.paymentType) qs.set('paymentType', filters.paymentType);
     setData(await api.get(`/expenses?${qs.toString()}`));
   };
-  useEffect(() => { load(page).catch((e) => toast.error('بارگذاری نشد', e.message)); }, [page, filters]);
+  useEffect(() => { load(page).catch((e) => toast.error('بارگذاری نشد', e.message)); }, [page, dq, filters.from, filters.to, filters.category, filters.payer, filters.paymentType]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { api.get('/lookups').then((r) => setLk(r.items)).catch(() => {}); }, []);
-  useEffect(() => { if (sp.get('new') === '1') { setSp({}); openNew(); } }, [sp]);
+  useEffect(() => { if (sp.get('new') === '1') { setSp({}); openNew(); } }, [sp]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const patch = (p: Partial<Filters>) => { setPage(1); setFilters((f) => ({ ...f, ...p })); };
+  const hasFilter = Boolean(filters.q || filters.from || filters.to || filters.category || filters.payer || filters.paymentType);
 
   const openNew = async () => {
     const { no } = await api.get('/expenses/next-no');
     setForm({ no, description: '', categoryId: '', purchaseBillNo: '', shopName: '', amountAfn: 0, amountUsd: 0, payerId: '', payerName: 'دخل', contractorId: '', paymentType: 'cash', note: '' });
-    setDateStr(toInputDate(todayISO(), calendar));
+    setDateISO(todayISO());
+  };
+  const openEdit = (r: any) => {
+    setForm({
+      ...r,
+      categoryId: r.categoryId ?? (lk.expense_category || []).find((c: any) => c.name === r.categoryName)?.id ?? '',
+      payerId: r.payerId ?? (lk.payer || []).find((c: any) => c.name === r.payerName)?.id ?? '',
+      contractorId: r.contractorId ?? (lk.contractor || []).find((c: any) => c.name === r.contractorName)?.id ?? '',
+    });
+    setDateISO(r.date);
   };
 
   const save = async () => {
     if (!Number(form.amountAfn) && !Number(form.amountUsd)) { toast.warn('مبلغ افغانی یا دالری را وارد کنید.'); return; }
-    let date = '';
-    try { date = parseInputDate(dateStr, calendar); } catch (e: any) { toast.error('تاریخ', e.message); return; }
+    if (!dateISO) { toast.error('تاریخ', 'تاریخ را انتخاب یا وارد کنید.'); return; }
     setBusy(true);
     try {
       const payload = {
-        ...form, date,
+        ...form, date: dateISO,
         categoryName: lk.expense_category?.find((x: any) => String(x.id) === String(form.categoryId))?.name || '',
-        payerName: lk.payer?.find((x: any) => String(x.id) === String(form.payerId))?.name || form.payerName,
+        payerName: lk.payer?.find((x: any) => String(x.id) === String(form.payerId))?.name || form.payerName || '',
         contractorName: lk.contractor?.find((x: any) => String(x.id) === String(form.contractorId))?.name || '',
       };
       if (form.id) await api.put(`/expenses/${form.id}`, payload);
@@ -59,53 +80,68 @@ export default function ExpensesPage() {
   });
 
   return (
-    <div className="col" style={{ gap: 14 }}>
-      <div className="card"><div className="card-b"><div className="toolbar">
-        <Field label="جستجو"><input className="input" style={{ width: 190 }} value={filters.q} onChange={(e) => { setPage(1); setFilters({ ...filters, q: e.target.value }); }} placeholder="شرح، فروشگاه، بل…" /></Field>
-        <Field label="از تاریخ"><input className="input mono" style={{ width: 130 }} value={filters.from} onChange={(e) => { setPage(1); setFilters({ ...filters, from: e.target.value }); }} placeholder="۱۴۰۴/۰۵/۰۱" /></Field>
-        <Field label="تا تاریخ"><input className="input mono" style={{ width: 130 }} value={filters.to} onChange={(e) => { setPage(1); setFilters({ ...filters, to: e.target.value }); }} placeholder="۱۴۰۴/۰۵/۳۱" /></Field>
-        <Field label="نوع مصرف"><Select value={filters.category} onChange={(v) => { setPage(1); setFilters({ ...filters, category: v }); }} placeholder="همه"
-          options={(lk.expense_category || []).map((c: any) => ({ value: c.name, label: c.name }))} /></Field>
-        <Field label="پرداخت‌کننده"><Select value={filters.payer} onChange={(v) => { setPage(1); setFilters({ ...filters, payer: v }); }} placeholder="همه"
-          options={(lk.payer || []).map((c: any) => ({ value: c.name, label: c.name }))} /></Field>
-        <Field label="روش پرداخت"><Select value={filters.paymentType} onChange={(v) => { setPage(1); setFilters({ ...filters, paymentType: v }); }} placeholder="همه"
-          options={[{ value: 'cash', label: 'نقده' }, { value: 'credit', label: 'باقی' }]} /></Field>
-        <div className="spacer" />
-        <button className="btn" onClick={() => downloadCsv('expenses')}>⤓ اکسل</button>
-        <button className="btn primary" onClick={openNew}>＋ مصرف نو</button>
-      </div></div></div>
+    <div className="col" style={{ gap: 12 }}>
+      <div className="card">
+        <ListHead actions={
+          <>
+            <button className="btn" onClick={() => downloadCsv('expenses')}>⤓ اکسل</button>
+            <button className="btn primary" onClick={openNew}>＋ مصرف نو</button>
+          </>
+        }>
+          <SearchBox value={filters.q} onChange={(v) => patch({ q: v })} placeholder="شرح، فروشگاه، بل…" width={280} />
+          <div className="filters">
+            <DatePicker compact value={filters.from} onChange={(v) => patch({ from: v })} calendar={calendar} clearable placeholder="از تاریخ" width={132} />
+            <DatePicker compact value={filters.to} onChange={(v) => patch({ to: v })} calendar={calendar} clearable placeholder="تا تاریخ" width={132} />
+            <Select value={filters.category} onChange={(v) => patch({ category: v })} placeholder="همه انواع"
+              options={(lk.expense_category || []).map((c: any) => ({ value: c.name, label: c.name }))} />
+            <Select value={filters.payer} onChange={(v) => patch({ payer: v })} placeholder="همه پرداخت‌کننده‌ها"
+              options={(lk.payer || []).map((c: any) => ({ value: c.name, label: c.name }))} />
+            <Select value={filters.paymentType} onChange={(v) => patch({ paymentType: v })} placeholder="نقده / باقی"
+              options={[{ value: 'cash', label: 'نقده' }, { value: 'credit', label: 'باقی' }]} />
+            {hasFilter ? <button className="btn ghost sm" onClick={() => setFilters({ q: '', from: '', to: '', category: '', payer: '', paymentType: '' })}>پاک کردن</button> : null}
+          </div>
+        </ListHead>
 
-      <div className="row wrap">
-        <span className="badge info">{data?.total ?? 0} سند</span>
-        <span className="badge bad">مجموع افغانی: {money(data?.sumAfn ?? 0)}</span>
-        <span className="badge warn">مجموع دالری: ${money(data?.sumUsd ?? 0)}</span>
-        <span className="small muted">مبلغ دالری به افغانی تبدیل نمی‌شود و در سود/زیان حساب نمی‌شود.</span>
+        <div className="card-b tight">
+          <div style={{ padding: '0 4px 6px' }}>
+            <SummaryBar>
+              <K label="اسناد" value={(data?.total ?? 0).toLocaleString('en-US')} />
+              <span className="sep" />
+              <K label="مجموع افغانی" value={money(data?.sumAfn ?? 0)} tone="bad" />
+              {data?.sumUsd ? <><span className="sep" /><K label="مجموع دالری" value={`$${money(data.sumUsd)}`} tone="warn" /></> : null}
+              <span className="sep" />
+              <span className="muted">دالری تبدیل نمی‌شود و در سود/زیان نمی‌آید</span>
+            </SummaryBar>
+          </div>
+
+          {!data ? <Spinner /> : (<>
+            <Table head={['شماره', 'تاریخ', 'شرح', 'نوع', 'مربوط', 'فروشگاه', 'افغانی', 'دالری', 'پرداخت‌کننده', 'روش', '']}>
+              {data.rows.map((r: any) => (
+                <tr key={r.id}>
+                  <td className="mono" style={{ fontWeight: 700 }}>{r.no}</td>
+                  <td className="mono">{r.dateDisplay}</td>
+                  <td>
+                    <div style={{ fontWeight: 600 }}>{r.description || '—'}</div>
+                    {r.purchaseBillNo ? <div className="cell-sub mono">بل {r.purchaseBillNo}</div> : null}
+                  </td>
+                  <td>{r.categoryName || '—'}</td>
+                  <td className="small muted-cell hide-md">{r.contractorName || '—'}</td>
+                  <td className="hide-sm">{r.shopName || '—'}</td>
+                  <td className="num" style={{ fontWeight: 700 }}>{money(r.amountAfn)}</td>
+                  <td className="num muted-cell hide-sm">{r.amountUsd ? `$${money(r.amountUsd)}` : '—'}</td>
+                  <td className="hide-md">{r.payerName || '—'}</td>
+                  <td><span className={`badge ${r.paymentType === 'cash' ? 'ok' : 'warn'}`}>{r.paymentType === 'cash' ? 'نقده' : 'باقی'}</span></td>
+                  <td><div className="actions hover-actions">
+                    <button className="btn sm" onClick={() => openEdit(r)}>ویرایش</button>
+                    {isManager ? <button className="btn sm danger" onClick={() => remove(r)}>حذف</button> : null}
+                  </div></td>
+                </tr>
+              ))}
+            </Table>
+            <Pager page={data.page} pageSize={data.pageSize} total={data.total} onPage={setPage} />
+          </>)}
+        </div>
       </div>
-
-      {!data ? <Spinner /> : (<>
-        <Table head={['شماره', 'تاریخ', 'شرح', 'نوع مصرف', 'مربوط', 'نمبر بل', 'فروشگاه', 'افغانی', 'دالری', 'پرداخت‌کننده', 'روش', '']}>
-          {data.rows.map((r: any) => (
-            <tr key={r.id}>
-              <td className="mono" style={{ fontWeight: 700 }}>{r.no}</td>
-              <td className="mono">{r.dateDisplay}</td>
-              <td>{r.description}</td>
-              <td>{r.categoryName}</td>
-              <td className="small muted">{r.contractorName}</td>
-              <td className="mono small">{r.purchaseBillNo}</td>
-              <td>{r.shopName}</td>
-              <td className="num" style={{ fontWeight: 700 }}>{money(r.amountAfn)}</td>
-              <td className="num">{r.amountUsd ? `$${money(r.amountUsd)}` : '—'}</td>
-              <td>{r.payerName}</td>
-              <td><span className={`badge ${r.paymentType === 'cash' ? 'ok' : 'warn'}`}>{r.paymentType === 'cash' ? 'نقده' : 'باقی'}</span></td>
-              <td><div className="actions">
-                <button className="btn sm" onClick={() => { setForm({ ...r }); setDateStr(toInputDate(r.date, calendar)); }}>ویرایش</button>
-                {isManager ? <button className="btn sm danger" onClick={() => remove(r)}>حذف</button> : null}
-              </div></td>
-            </tr>
-          ))}
-        </Table>
-        <Pager page={data.page} pageSize={data.pageSize} total={data.total} onPage={setPage} />
-      </>)}
 
       {form ? (
         <Modal title={form.id ? `ویرایش مصرف ${form.no}` : 'مصرف نو'} onClose={() => setForm(null)} footer={
@@ -113,7 +149,7 @@ export default function ExpensesPage() {
             <button className="btn" onClick={() => setForm(null)}>انصراف</button></>}>
           <div className="form-grid">
             <Field label="شماره سند"><Text value={form.no} onChange={(v) => setForm({ ...form, no: v })} readOnly={!!form.id} /></Field>
-            <Field label="تاریخ" required><Text value={dateStr} onChange={setDateStr} /></Field>
+            <Field label="تاریخ" required><DatePicker value={dateISO} onChange={setDateISO} calendar={calendar} /></Field>
             <Field label="نوع مصرف">
               <Select value={form.categoryId} placeholder="انتخاب…" onChange={(v) => setForm({ ...form, categoryId: v })}
                 options={(lk.expense_category || []).map((c: any) => ({ value: c.id, label: c.name }))} />

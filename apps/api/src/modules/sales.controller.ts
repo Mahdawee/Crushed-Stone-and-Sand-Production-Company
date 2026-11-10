@@ -29,13 +29,17 @@ export class SalesController {
       where.push(`("no" LIKE ? OR "customerName" LIKE ? OR "driverName" LIKE ? OR "truckPlate" LIKE ? OR "destination" LIKE ? OR "materialName" LIKE ? OR "contractorName" LIKE ?)`);
       for (let i = 0; i < 7; i++) args.push(`%${q}%`);
     }
-    if (from) { where.push(`"date" >= ?`); args.push(parseUserDate(from, mode)); }
-    if (to) { where.push(`"date" <= ?`); args.push(parseUserDate(to, mode)); }
+    try {
+      if (from) { where.push(`"date" >= ?`); args.push(parseUserDate(from, mode)); }
+      if (to) { where.push(`"date" <= ?`); args.push(parseUserDate(to, mode)); }
+    } catch (e: any) { throw new HttpException(e.message, 400); }
     if (customerId) { where.push(`"customerId" = ?`); args.push(Number(customerId)); }
     if (material) { where.push(`"materialName" = ?`); args.push(material); }
     if (paymentType) { where.push(`"paymentType" = ?`); args.push(paymentType); }
     const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
-    const total: any[] = await db().$queryRawUnsafe(`SELECT COUNT(*) as c, COALESCE(SUM("total"),0) as sum FROM "Sale" ${w}`, ...args);
+    const total: any[] = await db().$queryRawUnsafe(
+      `SELECT COUNT(*) as c, COALESCE(SUM("total"),0) as sum, COALESCE(SUM("volume"),0) as volumeSum,
+              COALESCE(SUM("freightTotal"),0) as freightSum FROM "Sale" ${w}`, ...args);
     const p = Math.max(1, Number(page) || 1);
     const ps = Math.min(500, Math.max(5, Number(pageSize) || 25));
     const rows: any[] = await db().$queryRawUnsafe(
@@ -46,6 +50,8 @@ export class SalesController {
       rows: rows.map((r) => ({ ...r, dateDisplay: formatDate(r.date, mode) })),
       total: Number(total?.[0]?.c ?? 0),
       sum: Number(total?.[0]?.sum ?? 0),
+      volumeSum: Number(total?.[0]?.volumeSum ?? 0),
+      freightSum: Number(total?.[0]?.freightSum ?? 0),
       page: p, pageSize: ps, calendar: mode,
     };
   }
@@ -70,7 +76,9 @@ export class SalesController {
     await ensureSchemaAsync();
     const mode = await settingsService.calendar();
     if (!body?.customerId) throw new HttpException('مشتری را انتخاب کنید.', 400);
-    const date = body.date ? parseUserDate(body.date, mode) : (await import('../common/calendar')).todayISO();
+    let date = '';
+    try { date = body.date ? parseUserDate(body.date, mode) : (await import('../common/calendar')).todayISO(); }
+    catch (e: any) { throw new HttpException(e.message, 400); }
     const volume = Number(body.volume) || 0;
     const unitPrice = Number(body.unitPrice) || 0;
     const freightPerUnit = Number(body.freightPerUnit) || 0;
@@ -103,7 +111,10 @@ export class SalesController {
   @Put(':id')
   async update(@Param('id') id: string, @Body() body: any) {
     const mode = await settingsService.calendar();
-    const date = body.date ? parseUserDate(body.date, mode) : '';
+    let date = '';
+    try { date = body.date ? parseUserDate(body.date, mode) : ''; }
+    catch (e: any) { throw new HttpException(e.message, 400); }
+    if (!date) throw new HttpException('تاریخ بل را وارد کنید.', 400);
     const volume = Number(body.volume) || 0;
     const unitPrice = Number(body.unitPrice) || 0;
     const freightPerUnit = Number(body.freightPerUnit) || 0;

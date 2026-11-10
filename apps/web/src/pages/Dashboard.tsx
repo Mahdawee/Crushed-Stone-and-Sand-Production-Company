@@ -25,13 +25,13 @@ export default function Dashboard() {
     <div className="col" style={{ gap: 16 }}>
       <div className="row between wrap">
         <div>
-          <h1>خوش آمدید 👋</h1>
-          <p className="small muted">امروز {t.label} — خلاصه وضعیت شرکت</p>
+          <h1 style={{ fontSize: '1.15rem' }}>خلاصه امروز</h1>
+          <p className="small muted">{t.label} — وضعیت لحظه‌ای شرکت</p>
         </div>
         <div className="row wrap">
-          <Link to="/sales?new=1" className="btn primary">＋ بل فروش نو</Link>
-          <Link to="/receipts?new=1" className="btn">＋ رسید نو</Link>
-          <Link to="/expenses?new=1" className="btn">＋ مصرف نو</Link>
+          <Link to="/sales?new=1" className="btn primary">＋ بل فروش</Link>
+          <Link to="/receipts?new=1" className="btn">＋ رسید</Link>
+          <Link to="/expenses?new=1" className="btn">＋ مصرف</Link>
         </div>
       </div>
 

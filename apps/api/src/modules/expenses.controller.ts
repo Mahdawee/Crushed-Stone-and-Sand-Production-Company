@@ -25,8 +25,10 @@ export class ExpensesController {
       where.push(`("no" LIKE ? OR "description" LIKE ? OR "shopName" LIKE ? OR "categoryName" LIKE ? OR "payerName" LIKE ? OR "contractorName" LIKE ?)`);
       for (let i = 0; i < 6; i++) args.push(`%${q}%`);
     }
-    if (from) { where.push(`"date" >= ?`); args.push(parseUserDate(from, mode)); }
-    if (to) { where.push(`"date" <= ?`); args.push(parseUserDate(to, mode)); }
+    try {
+      if (from) { where.push(`"date" >= ?`); args.push(parseUserDate(from, mode)); }
+      if (to) { where.push(`"date" <= ?`); args.push(parseUserDate(to, mode)); }
+    } catch (e: any) { throw new HttpException(e.message, 400); }
     if (category) { where.push(`"categoryName"=?`); args.push(category); }
     if (payer) { where.push(`"payerName"=?`); args.push(payer); }
     if (paymentType) { where.push(`"paymentType"=?`); args.push(paymentType); }
@@ -64,7 +66,9 @@ export class ExpensesController {
     const amountAfn = Number(body.amountAfn) || 0;
     const amountUsd = Number(body.amountUsd) || 0;
     if (amountAfn <= 0 && amountUsd <= 0) throw new HttpException('مبلغ مصرف را وارد کنید (افغانی یا دالری).', 400);
-    const date = body.date ? parseUserDate(body.date, mode) : todayISO();
+    let date = '';
+    try { date = body.date ? parseUserDate(body.date, mode) : todayISO(); }
+    catch (e: any) { throw new HttpException(e.message, 400); }
     const prefix = await settingsService.get('docPrefixExpense');
     const no = String(body.no || '').trim() || (await nextDocNo(prefix, mode, date));
     try {
@@ -88,7 +92,9 @@ export class ExpensesController {
   @Put(':id')
   async update(@Param('id') id: string, @Body() body: any) {
     const mode = await settingsService.calendar();
-    const date = parseUserDate(body.date, mode);
+    let date = '';
+    try { date = parseUserDate(body.date, mode); }
+    catch (e: any) { throw new HttpException(e.message, 400); }
     await db().$executeRawUnsafe(
       `UPDATE "Expense" SET "date"=?, "description"=?, "categoryId"=?, "categoryName"=?, "contractorId"=?, "contractorName"=?,
        "purchaseBillNo"=?, "shopName"=?, "amountAfn"=?, "amountUsd"=?, "payerId"=?, "payerName"=?, "paymentType"=?, "note"=?

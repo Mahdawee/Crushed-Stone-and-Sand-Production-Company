@@ -24,8 +24,10 @@ export class ReceiptsController {
       where.push(`("no" LIKE ? OR "customerName" LIKE ? OR "relatedBillNo" LIKE ? OR "receivedBy" LIKE ? OR "note" LIKE ?)`);
       for (let i = 0; i < 5; i++) args.push(`%${q}%`);
     }
-    if (from) { where.push(`"date" >= ?`); args.push(parseUserDate(from, mode)); }
-    if (to) { where.push(`"date" <= ?`); args.push(parseUserDate(to, mode)); }
+    try {
+      if (from) { where.push(`"date" >= ?`); args.push(parseUserDate(from, mode)); }
+      if (to) { where.push(`"date" <= ?`); args.push(parseUserDate(to, mode)); }
+    } catch (e: any) { throw new HttpException(e.message, 400); }
     if (customerId) { where.push(`"customerId"=?`); args.push(Number(customerId)); }
     if (source) { where.push(`"sourceName"=?`); args.push(source); }
     const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
@@ -60,7 +62,9 @@ export class ReceiptsController {
     if (!body?.customerId) throw new HttpException('مشتری را انتخاب کنید.', 400);
     const amount = Number(body.amount) || 0;
     if (amount <= 0) throw new HttpException('مبلغ رسید باید بزرگتر از صفر باشد.', 400);
-    const date = body.date ? parseUserDate(body.date, mode) : todayISO();
+    let date = '';
+    try { date = body.date ? parseUserDate(body.date, mode) : todayISO(); }
+    catch (e: any) { throw new HttpException(e.message, 400); }
     const cust: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Customer" WHERE "id"=?`, Number(body.customerId));
     if (!cust?.length) throw new HttpException('مشتری پیدا نشد.', 400);
     const prefix = await settingsService.get('docPrefixReceipt');
@@ -83,7 +87,9 @@ export class ReceiptsController {
   @Put(':id')
   async update(@Param('id') id: string, @Body() body: any) {
     const mode = await settingsService.calendar();
-    const date = parseUserDate(body.date, mode);
+    let date = '';
+    try { date = parseUserDate(body.date, mode); }
+    catch (e: any) { throw new HttpException(e.message, 400); }
     const cust: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Customer" WHERE "id"=?`, Number(body.customerId));
     await db().$executeRawUnsafe(
       `UPDATE "Receipt" SET "date"=?, "customerId"=?, "customerName"=?, "amount"=?, "relatedBillNo"=?,

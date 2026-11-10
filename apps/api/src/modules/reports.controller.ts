@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, HttpException } from '@nestjs/common';
 import { db } from '../db';
 import { ensureSchemaAsync } from '../schema';
 import { AuthGuard } from '../common/auth';
@@ -6,6 +6,7 @@ import { settingsService } from '../common/settings';
 import {
   CalendarMode, monthBucket, yearBucket, todayISO, formatDate, monthName, pad2,
   toCalendar, fromCalendar, startOfMonth, endOfMonth, startOfYear, endOfYear, daysBetween, addDays,
+  parseUserDate, assertRange,
 } from '../common/calendar';
 
 type Row = Record<string, number>;
@@ -85,8 +86,9 @@ export class ReportsController {
     await ensureSchemaAsync();
     const mode = await settingsService.calendar();
     const today = todayISO();
-    const start = from ? (from.match(/^\d{4}-\d{2}-\d{2}$/) ? from : startOfMonth(today, mode)) : startOfMonth(today, mode);
-    const end = to ? (to.match(/^\d{4}-\d{2}-\d{2}$/) ? to : endOfMonth(today, mode)) : endOfMonth(today, mode);
+    const start = from ? parseUserDate(from, mode) : startOfMonth(today, mode);
+    const end = to ? parseUserDate(to, mode) : endOfMonth(today, mode);
+    try { assertRange(start, end); } catch (e: any) { throw new HttpException(e.message, 400); }
     const days = daysBetween(start, end).reverse(); // newest first
     const rows = [];
     let running = 0;
@@ -190,6 +192,7 @@ export class ReportsController {
     const today = todayISO();
     const start = from || startOfMonth(today, mode);
     const end = to || endOfMonth(today, mode);
+    try { assertRange(start, end); } catch (e: any) { throw new HttpException(e.message, 400); }
     const p = db();
     const entries: any[] = [];
     const sales: any[] = await p.$queryRawUnsafe(
@@ -224,6 +227,7 @@ export class ReportsController {
     const today = todayISO();
     const start = from || startOfYear(today, mode);
     const end = to || today;
+    try { assertRange(start, end); } catch (e: any) { throw new HttpException(e.message, 400); }
     const p = db();
     const q = async (sql: string) => (await p.$queryRawUnsafe(sql, start, end)) as any[];
     const byMaterial = await q(

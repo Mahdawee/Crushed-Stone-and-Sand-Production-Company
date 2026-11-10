@@ -93,3 +93,76 @@ export const money = (v: any): string => {
   const n = Number(v) || 0;
   return n.toLocaleString('en-US', { maximumFractionDigits: 2 });
 };
+
+/* =========================== date picker helpers ========================= */
+
+/** ابتدای هفته در افغانستان: شنبه */
+export const WEEKDAYS = ['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج'];
+export const WEEKDAYS_FULL = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه'];
+
+/** شماره ستون روز در هفته (۰ = شنبه) برای یک تاریخ تقویمی. */
+export function weekdayIndex(y: number, m: number, d: number, mode: CalendarMode): number {
+  const isoStr = fromCalendar(y, m, d, mode);
+  const [gy, gm, gd] = isoStr.split('-').map(Number);
+  return (new Date(Date.UTC(gy, gm - 1, gd)).getUTCDay() + 1) % 7;
+}
+
+export const daysInMonth = (y: number, m: number, mode: CalendarMode) => monthLength(y, m, mode);
+
+/** ساخت شبکه ماه برای تقویم: null = خانه خالی قبل از روز اول. */
+export function monthGrid(y: number, m: number, mode: CalendarMode): (number | null)[] {
+  const pad = weekdayIndex(y, m, 1, mode);
+  const len = monthLength(y, m, mode);
+  const cells: (number | null)[] = Array(pad).fill(null);
+  for (let d = 1; d <= len; d++) cells.push(d);
+  while (cells.length % 7) cells.push(null);
+  return cells;
+}
+
+export function shiftMonth(y: number, m: number, delta: number): { y: number; m: number } {
+  let nm = m + delta;
+  let ny = y;
+  while (nm < 1) { nm += 12; ny -= 1; }
+  while (nm > 12) { nm -= 12; ny += 1; }
+  return { y: ny, m: nm };
+}
+
+/** افزودن/کاستن روز از یک تاریخ ISO میلادی. */
+export function addDaysISO(isoStr: string, n: number): string {
+  const [y, m, d] = String(isoStr).slice(0, 10).split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + n));
+  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`;
+}
+
+/** «امروز» به صورت ISO میلادی. */
+export const todayISOValue = () => todayISO();
+
+/**
+ * ورودی کاربر را بدون خطا به ISO میلادی تبدیل می‌کند.
+ * «1405/08/19» یا «۱۴۰۵/۸/۱۹» یا «2026-11-10» — در صورت نامعتبر بودن '' برمی‌گرداند.
+ */
+export function parseLoose(input: string, mode: CalendarMode): string {
+  const raw = normalizeDigits(String(input ?? '')).replace(/\s/g, '').replace(/[.\-]/g, '/');
+  if (!raw) return '';
+  let m = raw.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+  if (!m) {
+    const isoMatch = normalizeDigits(String(input ?? '')).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (isoMatch) return /^\d{4}-\d{2}-\d{2}$/.test(isoMatch[0]) ? isoMatch[0] : '';
+    return '';
+  }
+  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+  if (mo < 1 || mo > 12) return '';
+  if (d < 1 || d > monthLength(y, mo, mode)) return '';
+  return fromCalendar(y, mo, d, mode);
+}
+
+/** تاریخ نسبی خوانا: «۳ روز پیش» / «فردا» / «امروز» */
+export function relativeDay(isoStr: string): string {
+  if (!isoStr) return '';
+  const diff = Math.round((Date.parse(isoStr.slice(0, 10)) - Date.parse(todayISO())) / 86400000);
+  if (diff === 0) return 'امروز';
+  if (diff === 1) return 'فردا';
+  if (diff === -1) return 'دیروز';
+  if (diff > 1) return `${diff} روز بعد`;
+  return `${-diff} روز پیش`;
+}

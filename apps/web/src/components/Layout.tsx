@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useSession, applyThemeToDocument } from '../lib/session';
+import { formatDate, todayISO } from '../lib/calendar';
 
 type NavItem = { to: string; label: string; icon: string; managerOnly?: boolean; children?: NavItem[] };
 type Group = { title: string; items: NavItem[] };
@@ -78,7 +79,7 @@ const PAGE_TITLES: Record<string, { t: string; s: string }> = {
 };
 
 export default function Layout() {
-  const { user, logout, isManager, settings, saveSettings } = useSession();
+  const { user, logout, isManager, settings, saveSettings, calendar } = useSession();
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ '/settings': true });
   const loc = useLocation();
@@ -151,16 +152,18 @@ export default function Layout() {
           <button className="btn ghost icon hamburger" onClick={() => setOpen((v) => !v)} title="منو">☰</button>
           <div className="page-title">{title.t}<small>{title.s}</small></div>
           <div className="topbar-spacer" />
+          <span className="today-chip" title="امروز">
+            <span className="dot" />
+            {formatDate(todayISO(), calendar, true)}
+          </span>
           <button className="btn ghost icon" onClick={toggleTheme} title="روشن / تیره">{dark ? '☀' : '☾'}</button>
-          <div className="row" style={{ gap: 10 }}>
-            <div style={{ textAlign: 'left' }}>
-              <div style={{ fontSize: '.8rem', fontWeight: 700 }}>{user?.fullName || user?.username}</div>
-              <div className="small muted">{user?.role === 'manager' ? 'مدیر سیستم' : 'کارمند'}</div>
+          <div className="user-chip">
+            <div className="avatar">{(user?.fullName || user?.username || '?').slice(0, 1)}</div>
+            <div className="meta">
+              <strong>{user?.fullName || user?.username}</strong>
+              <span>{user?.role === 'manager' ? 'مدیر سیستم' : 'کارمند'}</span>
             </div>
-            <div className="brand-logo" style={{ width: 34, height: 34, fontSize: 14, borderRadius: 10 }}>
-              {(user?.fullName || user?.username || '?').slice(0, 1)}
-            </div>
-            <button className="btn sm" onClick={async () => { await logout(); nav('/login'); }}>خروج</button>
+            <button className="btn sm ghost" onClick={async () => { await logout(); nav('/login'); }} title="خروج از حساب">خروج</button>
           </div>
         </header>
         <main className="content">

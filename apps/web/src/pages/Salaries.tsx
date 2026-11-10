@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, downloadCsv } from '../lib/api';
 import { useSession } from '../lib/session';
-import { useToast, Field, Text, Num, Table, Spinner, Select, Stat, Modal } from '../components/ui';
-import { money, monthName, months, monthKey, pad2, toCalendar, toInputDate, parseInputDate, todayISO } from '../lib/calendar';
+import { useToast, Num, Table, Spinner, Select, Stat } from '../components/ui';
+import { DatePicker, MonthPicker } from '../components/DatePicker';
+import { money, monthKey, todayISO, formatDate } from '../lib/calendar';
 
 export default function SalariesPage() {
   const { calendar } = useSession();
@@ -11,7 +12,7 @@ export default function SalariesPage() {
   const [month, setMonth] = useState(monthKey(calendar));
   const [sheet, setSheet] = useState<any>(null);
   const [rows, setRows] = useState<any[]>([]);
-  const [payDate, setPayDate] = useState(toInputDate(todayISO(), calendar));
+  const [payDate, setPayDate] = useState(todayISO());
   const [payers, setPayers] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
   const [history, setHistory] = useState<any>(null);
@@ -21,7 +22,7 @@ export default function SalariesPage() {
   const load = async () => {
     const s = await api.get(`/salaries/sheet?month=${month}`);
     setSheet(s); setRows(s.rows);
-    if (s.rows[0]?.payDate) setPayDate(toInputDate(s.rows[0].payDate, calendar));
+    if (s.rows[0]?.payDate) setPayDate(s.rows[0].payDate);
   };
   useEffect(() => { load().catch((e) => toast.error('بارگذاری نشد', e.message)); }, [month]);
   useEffect(() => { api.get('/lookups').then((r) => setPayers(r.items.payer || [])).catch(() => {}); }, []);
@@ -39,12 +40,11 @@ export default function SalariesPage() {
   };
 
   const save = async () => {
-    let pd = '';
-    try { pd = parseInputDate(payDate, calendar); } catch (e: any) { toast.error('تاریخ پرداخت', e.message); return; }
+    if (!payDate) { toast.error('تاریخ پرداخت', 'تاریخ پرداخت را انتخاب کنید.'); return; }
     setBusy(true);
     try {
-      const res = await api.post('/salaries/sheet', { month, payDate: pd, rows });
-      toast.success(`معاش ${res.label} ذخیره شد`, `${res.saved} کارمند — تاریخ پرداخت ${payDate}`);
+      const res = await api.post('/salaries/sheet', { month, payDate, rows });
+      toast.success(`معاش ${res.label} ذخیره شد`, `${res.saved} کارمند — تاریخ پرداخت ${formatDate(payDate, calendar)}`);
       await load();
     } catch (e: any) { toast.error('ذخیره نشد', e.message); }
     finally { setBusy(false); }
@@ -60,9 +60,7 @@ export default function SalariesPage() {
             <button className={tab === 'sheet' ? 'on' : ''} onClick={() => setTab('sheet')}>ورق معاش</button>
             <button className={tab === 'history' ? 'on' : ''} onClick={() => setTab('history')}>سابقه اسناد</button>
           </div>
-          <Select value={m} onChange={(v) => setMonth(`${y}-${pad2(Number(v))}`)} options={months(calendar).map((n, i) => ({ value: i + 1, label: n }))} />
-          <Select value={y} onChange={(v) => setMonth(`${v}-${pad2(m)}`)}
-            options={[0, 1, 2].map((k) => { const yy = toCalendar(todayISO(), calendar).jy - k; return { value: yy, label: String(yy) }; })} />
+          <MonthPicker value={month} onChange={setMonth} calendar={calendar} yearsBack={3} />
           <span className="badge info">{sheet?.label || ''}</span>
         </div>
         <div className="row wrap">
@@ -71,7 +69,7 @@ export default function SalariesPage() {
             <>
               <div className="field" style={{ minWidth: 150 }}>
                 <label style={{ fontSize: '.72rem' }}>تاریخ پرداخت</label>
-                <Text value={payDate} onChange={setPayDate} />
+                <DatePicker value={payDate} onChange={setPayDate} calendar={calendar} width={150} />
               </div>
               <button className="btn primary" onClick={save} disabled={busy}>{busy ? 'ذخیره…' : 'ذخیره ورق معاش'}</button>
             </>

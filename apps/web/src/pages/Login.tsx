@@ -40,8 +40,8 @@ export default function LoginPage() {
         <div className="card">
           <div className="card-b">
             <div className="login-logo">ف</div>
-            <h1 style={{ fontSize: '1.3rem' }}>شرکت تولیدی فردای روشن</h1>
-            <p className="small muted" style={{ marginBottom: 20 }}>سیستم مدیریت سنگ، کرش، جغل و ریگ — کاملاً محلی و آفلاین</p>
+            <h1 style={{ fontSize: '1.25rem' }}>شرکت تولیدی فردای روشن</h1>
+            <p className="small muted" style={{ marginBottom: 20 }}>مدیریت فروش، مصارف و معاشات — کاملاً محلی و آفلاین</p>
 
             <form onSubmit={submit} className="col" style={{ gap: 12 }}>
               <Field label="نام کاربری" required>

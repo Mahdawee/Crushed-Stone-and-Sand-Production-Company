@@ -187,12 +187,67 @@ export function Pager({ page, pageSize, total, onPage }: {
   page: number; pageSize: number; total: number; onPage: (p: number) => void;
 }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
+  if (total <= 0) return null;
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(total, page * pageSize);
   return (
     <div className="pager no-print">
+      <button className="btn sm" disabled={page <= 1} onClick={() => onPage(1)} title="صفحه اول">«</button>
       <button className="btn sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>قبلی</button>
-      <span>صفحه {page} از {pages} — {total.toLocaleString('en-US')} ردیف</span>
+      <span className="small">
+        ردیف <b>{from.toLocaleString('en-US')}</b> تا <b>{to.toLocaleString('en-US')}</b>
+        {' '}از <b>{total.toLocaleString('en-US')}</b>
+        <span className="muted"> — صفحه {page} از {pages}</span>
+      </span>
       <button className="btn sm" disabled={page >= pages} onClick={() => onPage(page + 1)}>بعدی</button>
+      <button className="btn sm" disabled={page >= pages} onClick={() => onPage(pages)} title="صفحه آخر">»</button>
     </div>
+  );
+}
+
+/* =============================== list head ============================ */
+/**
+ * نوار ابزار یکدست فهرست‌ها: جستجو + فیلترها + دکمه‌ها.
+ * جایگزین تکرار «toolbar» در همه صفحات می‌شود تا هر جا یک شکل و اندازه باشد.
+ */
+export function ListHead({ children, actions }: { children?: React.ReactNode; actions?: React.ReactNode }) {
+  return (
+    <div className="list-head">
+      {children}
+      <div style={{ flex: 1 }} />
+      {actions}
+    </div>
+  );
+}
+
+export function SearchBox({ value, onChange, placeholder = 'جستجو…', width }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; width?: number;
+}) {
+  return (
+    <div className="search" style={width ? { maxWidth: width } : undefined}>
+      <span className="ico">⌕</span>
+      <input
+        className="input"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
+  );
+}
+
+/** خلاصه بالای جدول: «۲۳ سند — مجموع ۱٬۲۳۴٬۵۶۷ افغانی» */
+export function SummaryBar({ children }: { children: React.ReactNode }) {
+  return <div className="summary-bar">{children}</div>;
+}
+
+/** جفت کلید-مقدار کوچک برای داخل نوار خلاصه */
+export function K({ label, value, tone }: { label: string; value: React.ReactNode; tone?: 'ok' | 'bad' | 'warn' | '' }) {
+  return (
+    <span className="k">
+      <span className="muted">{label}:</span>
+      <b style={tone ? { color: `var(--${tone === 'bad' ? 'danger' : tone === 'ok' ? 'ok' : tone === 'warn' ? 'warn' : 'text'})` } : undefined}>{value}</b>
+    </span>
   );
 }
 

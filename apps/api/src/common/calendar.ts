@@ -117,12 +117,29 @@ export function addDays(isoStr: string, n: number): string {
   return iso(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate());
 }
 
+/** Hard limit for a single report range — guards against a typo like 2000→2030. */
+export const MAX_RANGE_DAYS = 400;
+
+/**
+ * Validate a user-picked range. Returns the inclusive day count, throws a
+ * Persian error when the range is reversed or too long.
+ */
+export function assertRange(fromISO: string, toISO: string): number {
+  if (!isValidISO(fromISO) || !isValidISO(toISO)) throw new Error('تاریخ‌های بازه درست نیستند.');
+  if (fromISO > toISO) throw new Error('«از تاریخ» بعد از «تا تاریخ» است.');
+  const days = Math.round(
+    (Date.parse(toISO + 'T00:00:00Z') - Date.parse(fromISO + 'T00:00:00Z')) / 86400000,
+  ) + 1;
+  if (days > MAX_RANGE_DAYS) throw new Error(`بازه حداکثر ${MAX_RANGE_DAYS} روز می‌تواند باشد (الان ${days} روز).`);
+  return days;
+}
+
 /** All calendar days between two ISO dates (inclusive) as Gregorian ISO strings. */
 export function daysBetween(startISO: string, endISO: string): string[] {
   const out: string[] = [];
   let cur = startISO;
   let guard = 0;
-  while (cur <= endISO && guard++ < 400) {
+  while (cur <= endISO && guard++ < MAX_RANGE_DAYS) {
     out.push(cur);
     cur = addDays(cur, 1);
   }
@@ -130,18 +147,31 @@ export function daysBetween(startISO: string, endISO: string): string[] {
 }
 
 /**
- * Parse a user-entered date. Accepts Dari/Arabic digits ("۱۴۰۴/۰۵/۱۲",
- * "1404-5-12") and normalises it into a Gregorian ISO string using the
- * active calendar. Throws a friendly Persian error on bad input.
+ * Parse a user-entered date into a Gregorian ISO string.
+ *
+ * IMPORTANT: a bare "YYYY-MM-DD" is ALWAYS Gregorian — that is how the UI and
+ * other API clients hand dates over. A date with slashes ("۱۴۰۵/۰۸/۱۹" or
+ * "1405/08/19") is read in the calendar the user has chosen (jalali/gregorian).
+ *
+ * The old version treated an ISO string as if it were in the active calendar,
+ * so with the Jalali calendar on, storing "2026-11-10" ended up as year ۲۰۲۶
+ * هجری شمسی (doc numbers like S-2026-0001) or, in lists, re-interpreting
+ * already-Gregorian values as Jalali and shifting every filter by ~۶۲۱ سال.
  */
 export function parseUserDate(input: string, mode: CalendarMode): string {
   const raw = fromDariDigits(String(input ?? '').trim());
-  const m = raw.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
-  if (!m) {
-    if (isValidISO(raw)) return raw;
-    throw new Error('تاریخ درست نیست. نمونه درست: ۱۴۰۴/۰۵/۱۲');
+  if (!raw) throw new Error('تاریخ را وارد کنید.');
+
+  // already Gregorian ISO (what the UI sends)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    if (!isValidISO(raw)) throw new Error('تاریخ میلادی درست نیست.');
+    return raw;
   }
+
+  const m = raw.match(/^(\d{3,4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
+  if (!m) throw new Error('تاریخ درست نیست. نمونه درست: ۱۴۰۵/۰۸/۱۹');
   const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+
   if (mode === 'jalali') {
     if (!jalaali.isValidJalaaliDate(y, mo, d)) throw new Error('تاریخ شمسی درست نیست.');
     return fromCalendar(y, mo, d, 'jalali');
@@ -149,6 +179,11 @@ export function parseUserDate(input: string, mode: CalendarMode): string {
   const candidate = iso(y, mo, d);
   if (!isValidISO(candidate)) throw new Error('تاریخ میلادی درست نیست.');
   return candidate;
+}
+
+/** Gregorian ISO → the "YYYY-MM-DD" / "YYYY/MM/DD" shape of the active calendar. */
+export function parseInputDateSafe(input: string, mode: CalendarMode): string | null {
+  try { return parseUserDate(input, mode); } catch { return null; }
 }
 
 /** Fiscal-year label shown everywhere, e.g. "۱۴۰۴–۱۴۰۵". */

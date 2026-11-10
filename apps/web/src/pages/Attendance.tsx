@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useToast, Spinner, Select, Table } from '../components/ui';
-import { monthName, months, monthKey, formatDate, pad2, toCalendar } from '../lib/calendar';
+import { DatePicker, MonthPicker } from '../components/DatePicker';
+import { monthKey, formatDate, pad2, toCalendar, todayISO } from '../lib/calendar';
 
 const STATUSES = [
   { value: 'present', label: 'حاضر', short: 'ح', color: 'ok' },
@@ -21,7 +22,7 @@ export default function AttendancePage() {
   const [month, setMonth] = useState(monthKey(calendar));
   const [data, setData] = useState<any>(null);
   const [dayData, setDayData] = useState<any>(null);
-  const [day, setDay] = useState(formatDate(new Date().toISOString().slice(0, 10), calendar));
+  const [day, setDay] = useState(todayISO());
   const [dirty, setDirty] = useState<Record<string, any>>({});
   const [busy, setBusy] = useState(false);
 
@@ -71,7 +72,7 @@ export default function AttendancePage() {
     try {
       await api.post('/attendance/mark-day', { date: bulkDate, employeeIds: ids, status: bulkStatus });
       await load();
-      toast.success('ثبت گروهی انجام شد', `${ids.length} کارمند برای ${bulkDate} — ${STATUSES.find((s) => s.value === bulkStatus)?.label}`);
+      toast.success('ثبت گروهی انجام شد', `${ids.length} کارمند برای ${formatDate(bulkDate, calendar)} — ${STATUSES.find((s) => s.value === bulkStatus)?.label}`);
     } catch (e: any) { toast.error('ثبت گروهی انجام نشد', e.message); }
   };
 
@@ -94,14 +95,9 @@ export default function AttendancePage() {
             <button className={mode === 'day' ? 'on' : ''} onClick={() => setMode('day')}>ورق روزانه</button>
           </div>
           {mode === 'month' ? (
-            <div className="row">
-              <Select value={m} onChange={(v) => setMonth(`${y}-${pad2(Number(v))}`)}
-                options={months(calendar).map((n, i) => ({ value: i + 1, label: n }))} />
-              <Select value={y} onChange={(v) => setMonth(`${v}-${pad2(m)}`)}
-                options={[0, 1, 2, 3, 4].map((k) => { const yy = toCalendar(new Date().toISOString().slice(0, 10), calendar).jy - k; return { value: yy, label: String(yy) }; })} />
-            </div>
+            <MonthPicker value={month} onChange={setMonth} calendar={calendar} yearsBack={4} />
           ) : (
-            <input className="input" style={{ width: 160 }} value={day} onChange={(e) => setDay(e.target.value)} placeholder="۱۴۰۴/۰۵/۱۲" />
+            <DatePicker value={day} onChange={setDay} calendar={calendar} width={152} />
           )}
           <span className="badge info">{data?.label || ''}</span>
         </div>
@@ -109,7 +105,7 @@ export default function AttendancePage() {
           {mode === 'month' ? (
             <>
               <div className="row wrap" style={{ gap: 6 }}>
-                <input className="input" style={{ width: 130 }} placeholder="روز (۱۴۰۵/۰۸/۱۹)" value={bulkDate} onChange={(e) => setBulkDate(e.target.value)} />
+                <DatePicker compact value={bulkDate} onChange={setBulkDate} calendar={calendar} width={138} placeholder="روز" />
                 <Select value={bulkStatus} onChange={setBulkStatus} options={STATUSES.map((s) => ({ value: s.value, label: s.label }))} />
                 <button className="btn" onClick={markAll}>ثبت گروهی همه</button>
               </div>

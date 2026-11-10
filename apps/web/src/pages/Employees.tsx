@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { api, downloadCsv } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select } from '../components/ui';
-import { money, formatDate, toInputDate, parseInputDate, normalizeDigits } from '../lib/calendar';
+import { money, formatDate, todayISO } from '../lib/calendar';
+import { DatePicker } from '../components/DatePicker';
 
 const empty = {
   code: '', name: '', fatherName: '', position: '', hireDate: '', baseSalary: 0,
@@ -17,7 +18,7 @@ export default function EmployeesPage() {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
   const [form, setForm] = useState<any>(null);
-  const [hire, setHire] = useState('');
+  const [hire, setHire] = useState('');   // ISO میلادی
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
@@ -29,15 +30,13 @@ export default function EmployeesPage() {
   const openNew = async () => {
     const { code } = await api.get('/employees/next-code');
     setForm({ ...empty, code });
-    setHire(toInputDate(new Date().toISOString().slice(0, 10), calendar));
+    setHire(todayISO());
   };
-  const openEdit = (r: any) => { setForm({ ...r }); setHire(r.hireDate ? toInputDate(r.hireDate, calendar) : ''); };
+  const openEdit = (r: any) => { setForm({ ...r }); setHire(r.hireDate || ''); };
 
   const save = async () => {
     if (!form.name?.trim()) { toast.warn('نام کارمند را وارد کنید.'); return; }
-    let hireDate = '';
-    try { hireDate = hire ? parseInputDate(hire, calendar) : ''; }
-    catch (e: any) { toast.error('تاریخ استخدام', e.message); return; }
+    const hireDate = hire || '';
     setBusy(true);
     try {
       if (form.id) await api.put(`/employees/${form.id}`, { ...form, hireDate });
@@ -112,8 +111,8 @@ export default function EmployeesPage() {
             <Field label="نام" required><Text value={form.name} onChange={(v) => setForm({ ...form, name: v })} /></Field>
             <Field label="نام پدر"><Text value={form.fatherName} onChange={(v) => setForm({ ...form, fatherName: v })} /></Field>
             <Field label="وظیفه"><Text value={form.position} onChange={(v) => setForm({ ...form, position: v })} placeholder="راننده، کارگر، اپراتور…" /></Field>
-            <Field label="تاریخ استخدام" hint={calendar === 'jalali' ? 'شمسی — نمونه: ۱۴۰۴/۰۵/۱۲' : 'میلادی — نمونه: 2025/05/12'}>
-              <Text value={hire} onChange={setHire} placeholder={calendar === 'jalali' ? '۱۴۰۴/۰۵/۱۲' : '2025/05/12'} />
+            <Field label="تاریخ استخدام" hint={calendar === 'jalali' ? 'شمسی' : 'میلادی'}>
+              <DatePicker value={hire} onChange={setHire} calendar={calendar} clearable />
             </Field>
             <Field label="معاش ثابت (افغانی)"><Num value={form.baseSalary} onChange={(v) => setForm({ ...form, baseSalary: v })} /></Field>
             <Field label="شماره تماس"><Text value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} /></Field>

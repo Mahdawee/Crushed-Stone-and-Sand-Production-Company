@@ -2,8 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, downloadCsv } from '../lib/api';
 import { useSession } from '../lib/session';
-import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, Pager } from '../components/ui';
-import { money, formatDate, toInputDate, parseInputDate, num, monthName, todayISO, toCalendar } from '../lib/calendar';
+import { useDebounced } from '../lib/useDebounced';
+import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, Pager, ListHead, SearchBox, SummaryBar, K } from '../components/ui';
+import { DatePicker } from '../components/DatePicker';
+import { money, num, todayISO, formatDate, addDaysISO } from '../lib/calendar';
+
+type Filters = { q: string; from: string; to: string; paymentType: string; material: string };
 
 export default function SalesPage() {
   const { calendar, isManager } = useSession();
@@ -11,29 +15,35 @@ export default function SalesPage() {
   const [sp, setSp] = useSearchParams();
   const [data, setData] = useState<any>(null);
   const [page, setPage] = useState(1);
-  const [filters, setFilters] = useState({ q: '', from: '', to: '', paymentType: '', material: '' });
+  const [filters, setFilters] = useState<Filters>({ q: '', from: '', to: '', paymentType: '', material: '' });
+  const dq = useDebounced(filters.q);
   const [lookups, setLookups] = useState<any>({ material: [], contractor: [] });
   const [customers, setCustomers] = useState<any[]>([]);
   const [form, setForm] = useState<any>(null);
-  const [dateStr, setDateStr] = useState('');
+  const [dateISO, setDateISO] = useState('');
   const [busy, setBusy] = useState(false);
 
   const load = async (p = page) => {
     const qs = new URLSearchParams({ page: String(p), pageSize: '25' });
-    Object.entries(filters).forEach(([k, v]) => { if (v) qs.set(k, v as string); });
+    if (dq) qs.set('q', dq);
+    if (filters.from) qs.set('from', filters.from);
+    if (filters.to) qs.set('to', filters.to);
+    if (filters.paymentType) qs.set('paymentType', filters.paymentType);
+    if (filters.material) qs.set('material', filters.material);
     setData(await api.get(`/sales?${qs.toString()}`));
   };
-
-  useEffect(() => { load(page).catch((e) => toast.error('بارگذاری نشد', e.message)); }, [page, filters]);
+  useEffect(() => { load(page).catch((e) => toast.error('بارگذاری نشد', e.message)); }, [page, dq, filters.from, filters.to, filters.paymentType, filters.material]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     api.get('/lookups').then((r) => setLookups(r.items)).catch(() => {});
     api.get('/customers').then(setCustomers).catch(() => {});
   }, []);
-
   useEffect(() => {
     if (sp.get('new') === '1') { setSp({}); openNew(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sp]);
+
+  const patch = (p: Partial<Filters>) => { setPage(1); setFilters((f) => ({ ...f, ...p })); };
+  const hasFilter = Boolean(filters.q || filters.from || filters.to || filters.paymentType || filters.material);
 
   const openNew = async () => {
     const { no } = await api.get('/sales/next-no');
@@ -41,13 +51,10 @@ export default function SalesPage() {
       no, customerId: '', driverName: '', truckPlate: '', destination: '', materialId: '', materialName: '',
       volume: 0, unitPrice: 0, freightPerUnit: 0, contractorId: '', contractorName: '', paymentType: 'cash', note: '',
     });
-    setDateStr(toInputDate(todayISO(), calendar));
+    setDateISO(todayISO());
   };
 
-  const openEdit = (r: any) => {
-    setForm({ ...r });
-    setDateStr(toInputDate(r.date, calendar));
-  };
+  const openEdit = (r: any) => { setForm({ ...r }); setDateISO(r.date); };
 
   const calc = useMemo(() => {
     if (!form) return { freightTotal: 0, total: 0 };
@@ -58,13 +65,12 @@ export default function SalesPage() {
 
   const save = async () => {
     if (!form.customerId) { toast.warn('مشتری را انتخاب کنید.'); return; }
-    let date = '';
-    try { date = parseInputDate(dateStr, calendar); } catch (e: any) { toast.error('تاریخ بل', e.message); return; }
+    if (!dateISO) { toast.error('تاریخ بل', 'تاریخ را انتخاب یا وارد کنید.'); return; }
     const cust = customers.find((c) => String(c.id) === String(form.customerId));
     setBusy(true);
     try {
       const payload = {
-        ...form, date, customerName: cust?.name || form.customerName,
+        ...form, date: dateISO, customerName: cust?.name || form.customerName,
         materialName: form.materialId ? (lookups.material.find((m: any) => String(m.id) === String(form.materialId))?.name || form.materialName) : form.materialName,
         contractorName: form.contractorId ? (lookups.contractor.find((m: any) => String(m.id) === String(form.contractorId))?.name || '') : '',
       };
@@ -86,63 +92,73 @@ export default function SalesPage() {
   });
 
   return (
-    <div className="col" style={{ gap: 14 }}>
+    <div className="col" style={{ gap: 12 }}>
       <div className="card">
-        <div className="card-b">
-          <div className="toolbar">
-            <Field label="جستجو"><input className="input" style={{ width: 200 }} value={filters.q}
-              onChange={(e) => { setPage(1); setFilters({ ...filters, q: e.target.value }); }} placeholder="بل، مشتری، دریور…" /></Field>
-            <Field label="از تاریخ"><input className="input mono" style={{ width: 130 }} value={filters.from}
-              onChange={(e) => { setPage(1); setFilters({ ...filters, from: e.target.value }); }} placeholder="۱۴۰۴/۰۵/۰۱" /></Field>
-            <Field label="تا تاریخ"><input className="input mono" style={{ width: 130 }} value={filters.to}
-              onChange={(e) => { setPage(1); setFilters({ ...filters, to: e.target.value }); }} placeholder="۱۴۰۴/۰۵/۳۱" /></Field>
-            <Field label="مواد"><Select value={filters.material} onChange={(v) => { setPage(1); setFilters({ ...filters, material: v }); }}
-              placeholder="همه" options={(lookups.material || []).map((m: any) => ({ value: m.name, label: m.name }))} /></Field>
-            <Field label="پرداخت"><Select value={filters.paymentType} onChange={(v) => { setPage(1); setFilters({ ...filters, paymentType: v }); }}
-              placeholder="همه" options={[{ value: 'cash', label: 'نقده' }, { value: 'credit', label: 'باقی' }]} /></Field>
-            <div className="spacer" />
-            <button className="btn" onClick={() => downloadCsv('sales')}>⤓ اکسل</button>
+        <ListHead actions={
+          <>
+            <button className="btn" onClick={() => downloadCsv('sales')} title="خروجی اکسل">⤓ اکسل</button>
             <button className="btn primary" onClick={openNew}>＋ بل فروش نو</button>
+          </>
+        }>
+          <SearchBox value={filters.q} onChange={(v) => patch({ q: v })} placeholder="بل، مشتری، دریور، پلیت…" width={330} />
+          <div className="filters">
+            <DatePicker compact value={filters.from} onChange={(v) => patch({ from: v })} calendar={calendar} clearable placeholder="از تاریخ" width={132} title="از تاریخ" />
+            <DatePicker compact value={filters.to} onChange={(v) => patch({ to: v })} calendar={calendar} clearable placeholder="تا تاریخ" width={132} title="تا تاریخ" />
+            <Select value={filters.material} onChange={(v) => patch({ material: v })} placeholder="همه مواد"
+              options={(lookups.material || []).map((m: any) => ({ value: m.name, label: m.name }))} />
+            <Select value={filters.paymentType} onChange={(v) => patch({ paymentType: v })} placeholder="همه پرداخت‌ها"
+              options={[{ value: 'cash', label: 'نقده' }, { value: 'credit', label: 'باقی' }]} />
+            {hasFilter ? <button className="btn ghost sm" onClick={() => setFilters({ q: '', from: '', to: '', paymentType: '', material: '' })}>پاک کردن</button> : null}
           </div>
+        </ListHead>
+
+        <div className="card-b tight">
+          <div className="row between wrap" style={{ padding: '0 4px 6px' }}>
+            <SummaryBar>
+              <K label="بل‌ها" value={(data?.total ?? 0).toLocaleString('en-US')} />
+              <span className="sep" />
+              <K label="مجموع مبلغ" value={`${money(data?.sum ?? 0)} افغانی`} />
+              {data?.volumeSum ? <><span className="sep" /><K label="متراژ" value={`${money(data.volumeSum)} م³`} /></> : null}
+            </SummaryBar>
+            <span className="small muted">کرایه در بل حساب شده است</span>
+          </div>
+
+          {!data ? <Spinner /> : (
+            <>
+              <Table head={['شماره', 'تاریخ', 'مشتری', 'دریور / پلیت', 'مواد', 'متراژ', 'فی متر', 'کرایه', 'مجموع', 'پرداخت', '']}>
+                {data.rows.map((r: any) => (
+                  <tr key={r.id}>
+                    <td className="mono" style={{ fontWeight: 700 }}>{r.no}</td>
+                    <td className="mono">{r.dateDisplay}</td>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{r.customerName}</div>
+                      {r.destination ? <div className="cell-sub">{r.destination}</div> : null}
+                    </td>
+                    <td>
+                      <div>{r.driverName || '—'}</div>
+                      <div className="cell-sub mono">{r.truckPlate}</div>
+                    </td>
+                    <td>{r.materialName || '—'}</td>
+                    <td className="num">{money(r.volume)}</td>
+                    <td className="num muted-cell hide-sm">{money(r.unitPrice)}</td>
+                    <td className="num muted-cell hide-md">{r.freightPerUnit ? money(r.freightPerUnit) : '—'}</td>
+                    <td className="num" style={{ fontWeight: 700 }}>{money(r.total)}</td>
+                    <td><span className={`badge ${r.paymentType === 'cash' ? 'ok' : 'warn'}`}>{r.paymentType === 'cash' ? 'نقده' : 'باقی'}</span></td>
+                    <td>
+                      <div className="actions hover-actions">
+                        <Link className="btn sm" to={`/print/sale/${r.id}`}>چاپ</Link>
+                        <button className="btn sm" onClick={() => openEdit(r)}>ویرایش</button>
+                        {isManager ? <button className="btn sm danger" onClick={() => remove(r)}>حذف</button> : null}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </Table>
+              <Pager page={data.page} pageSize={data.pageSize} total={data.total} onPage={setPage} />
+            </>
+          )}
         </div>
       </div>
-
-      <div className="row between wrap">
-        <div className="row wrap">
-          <span className="badge info">{data?.total ?? 0} بل</span>
-          <span className="badge ok">مجموع: {money(data?.sum ?? 0)} افغانی</span>
-        </div>
-        <span className="small muted">قیمت‌ها به افغانی — کرایه به صورت جداگانه محاسبه می‌شود</span>
-      </div>
-
-      {!data ? <Spinner /> : (
-        <>
-          <Table head={['شماره', 'تاریخ', 'مشتری', 'دریور / پلیت', 'مقصد', 'مواد', 'متراژ', 'قیمت فی متر', 'کرایه فی متر', 'مجموع کرایه', 'مجموع', 'پرداخت', '']}>
-            {data.rows.map((r: any) => (
-              <tr key={r.id}>
-                <td className="mono" style={{ fontWeight: 700 }}>{r.no}</td>
-                <td className="mono">{r.dateDisplay}</td>
-                <td>{r.customerName}</td>
-                <td><div>{r.driverName}</div><div className="small muted mono">{r.truckPlate}</div></td>
-                <td className="small">{r.destination}</td>
-                <td>{r.materialName}</td>
-                <td className="num">{money(r.volume)}</td>
-                <td className="num">{money(r.unitPrice)}</td>
-                <td className="num">{money(r.freightPerUnit)}</td>
-                <td className="num">{money(r.freightTotal)}</td>
-                <td className="num" style={{ fontWeight: 700 }}>{money(r.total)}</td>
-                <td><span className={`badge ${r.paymentType === 'cash' ? 'ok' : 'warn'}`}>{r.paymentType === 'cash' ? 'نقده' : 'باقی'}</span></td>
-                <td><div className="actions">
-                  <Link className="btn sm" to={`/print/sale/${r.id}`}>چاپ</Link>
-                  <button className="btn sm" onClick={() => openEdit(r)}>ویرایش</button>
-                  {isManager ? <button className="btn sm danger" onClick={() => remove(r)}>حذف</button> : null}
-                </div></td>
-              </tr>
-            ))}
-          </Table>
-          <Pager page={data.page} pageSize={data.pageSize} total={data.total} onPage={setPage} />
-        </>
-      )}
 
       {form ? (
         <Modal title={form.id ? `ویرایش بل ${form.no}` : 'بل فروش نو'} onClose={() => setForm(null)} footer={
@@ -151,7 +167,7 @@ export default function SalesPage() {
             <button className="btn" onClick={() => setForm(null)}>انصراف</button>
             <div className="spacer" />
             <div className="row" style={{ gap: 16 }}>
-              <span className="small muted">مجموع کرایه: <b className="mono">{money(calc.freightTotal)}</b></span>
+              <span className="small muted">کرایه: <b className="mono">{money(calc.freightTotal)}</b></span>
               <span className="small">مجموع بل: <b className="mono" style={{ fontSize: '1.05rem', color: 'var(--accent)' }}>{money(calc.total)}</b></span>
             </div>
           </>
@@ -159,7 +175,7 @@ export default function SalesPage() {
           <div className="form-grid">
             <Field label="شماره بل"><Text value={form.no} onChange={(v) => setForm({ ...form, no: v })} readOnly={!!form.id} /></Field>
             <Field label="تاریخ" required hint={calendar === 'jalali' ? 'شمسی' : 'میلادی'}>
-              <Text value={dateStr} onChange={setDateStr} placeholder="۱۴۰۴/۰۵/۱۲" />
+              <DatePicker value={dateISO} onChange={setDateISO} calendar={calendar} />
             </Field>
             <Field label="مشتری" required>
               <Select value={form.customerId} placeholder="انتخاب مشتری…" onChange={(v) => {
@@ -191,7 +207,7 @@ export default function SalesPage() {
             <Field label="توضیحات" span={3}><TextArea value={form.note} onChange={(v) => setForm({ ...form, note: v })} /></Field>
           </div>
           <div className="small muted" style={{ marginTop: 12, padding: 10, background: 'var(--surface-2)', borderRadius: 9 }}>
-            فورمول: مجموع کرایه = متراژ × کرایه فی متر — مجموع بل = (متراژ × قیمت فی متر) + مجموع کرایه
+            مجموع کرایه = متراژ × کرایه فی متر — مجموع بل = (متراژ × قیمت فی متر) + مجموع کرایه
           </div>
         </Modal>
       ) : null}
