@@ -1,3 +1,4 @@
+import { IconChevron, IconPlus } from '../components/icons';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -114,7 +115,7 @@ export default function LookupsPage() {
           <h1 style={{ fontSize: '1.15rem' }}>{meta.title}</h1>
           <p className="small muted">{meta.hint}</p>
         </div>
-        <Link className="btn" to="/settings">← تنظیمات</Link>
+        <Link className="btn" to="/settings"><IconChevron dir="start" size={14} /> تنظیمات</Link>
       </div>
 
       <div className="card">
@@ -151,7 +152,7 @@ export default function LookupsPage() {
             <Field label="نام"><Text value={newRow.name} onChange={(v) => setNewRow({ ...newRow, name: v })} onEnter={add} /></Field>
             <Field label={meta.extraLabel}><Text value={newRow.extra} onChange={(v) => setNewRow({ ...newRow, extra: v })} /></Field>
             <Field label="ترتیب"><Text value={newRow.sortOrder} onChange={(v) => setNewRow({ ...newRow, sortOrder: v })} /></Field>
-            <button className="btn primary" onClick={add}>＋ افزودن</button>
+            <button className="btn primary" onClick={add}><IconPlus size={15} /> افزودن</button>
           </div>
         </div></div>
       ) : null}

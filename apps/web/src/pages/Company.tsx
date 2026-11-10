@@ -1,3 +1,4 @@
+import { IconPlus } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
@@ -79,7 +80,7 @@ export default function CompanyPage() {
           <h3>انواع و تعداد ماشینری</h3>
           <span className="badge info">{mach.length} نوع / {totalMachines} عراده</span>
           <div style={{ flex: 1 }} />
-          <button className="btn primary sm" onClick={() => setEdit({ name: '', model: '', plateNo: '', count: 1, status: 'active', note: '' })}>＋ ماشین نو</button>
+          <button className="btn primary sm" onClick={() => setEdit({ name: '', model: '', plateNo: '', count: 1, status: 'active', note: '' })}><IconPlus size={15} /> ماشین نو</button>
         </div>
         <div className="card-b tight">
           <Table head={['#', 'نام ماشین', 'مودل', 'پلیت', 'تعداد', 'حالت', 'توضیحات', '']}>

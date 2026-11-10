@@ -1,3 +1,4 @@
+import { IconAlert, IconChevron, IconPrint } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -15,7 +16,7 @@ export default function CustomerStatement() {
   const [range, setRange] = useState({ from: '', to: '' });
   useEffect(() => { api.get(`/customers/${id}/statement`).then(setD).catch(() => setD(false)); }, [id]);
   if (d === null) return <Spinner />;
-  if (d === false) return <Empty icon="⚠" title="مشتری پیدا نشد" action={<Link className="btn" to="/customers">بازگشت</Link>} />;
+  if (d === false) return <Empty icon={<IconAlert size={16} />} title="مشتری پیدا نشد" action={<Link className="btn" to="/customers">بازگشت</Link>} />;
 
   const c = d.customer;
 
@@ -34,8 +35,8 @@ export default function CustomerStatement() {
           <DatePicker compact value={range.from} onChange={(v) => setRange({ ...range, from: v })} calendar={calendar} clearable placeholder="از تاریخ" width={130} />
           <DatePicker compact value={range.to} onChange={(v) => setRange({ ...range, to: v })} calendar={calendar} clearable placeholder="تا تاریخ" width={130} />
           {range.from || range.to ? <button className="btn sm ghost" onClick={() => setRange({ from: '', to: '' })}>همه</button> : null}
-          <button className="btn" onClick={() => window.print()}>🖨 چاپ صورت حساب</button>
-          <Link className="btn" to="/customers">← بازگشت</Link>
+          <button className="btn" onClick={() => window.print()}><IconPrint size={15} /> چاپ صورت حساب</button>
+          <Link className="btn" to="/customers"><IconChevron dir="start" size={14} /> بازگشت</Link>
         </div>
       </div>
 

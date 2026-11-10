@@ -1,3 +1,4 @@
+import { IconAlert, IconCheck, IconChevron, IconClock, IconCoins, IconReceipt } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -11,7 +12,7 @@ export default function EmployeeProfile() {
   const [d, setD] = useState<any>(null);
   useEffect(() => { api.get(`/employees/${id}`).then(setD).catch(() => setD(false)); }, [id]);
   if (d === null) return <Spinner />;
-  if (d === false) return <Empty icon="⚠" title="کارمند پیدا نشد" action={<Link className="btn" to="/employees">بازگشت</Link>} />;
+  if (d === false) return <Empty icon={<IconAlert size={16} />} title="کارمند پیدا نشد" action={<Link className="btn" to="/employees">بازگشت</Link>} />;
 
   const e = d.employee;
   const att = d.attendance || [];
@@ -32,14 +33,14 @@ export default function EmployeeProfile() {
             <p className="small muted">کد {e.code} — {e.position} — ولد {e.fatherName}</p>
           </div>
         </div>
-        <Link className="btn" to="/employees">← بازگشت به فهرست</Link>
+        <Link className="btn" to="/employees"><IconChevron dir="start" size={14} /> بازگشت به فهرست</Link>
       </div>
 
       <div className="grid c4">
-        <Stat label="معاش ثابت" value={money(e.baseSalary)} foot="افغانی" icon="💰" />
-        <Stat label="ایام حاضر (آخرین سوابق)" value={sum.present} foot={`غایب ${sum.absent} — رخصت ${sum.leave}`} kind="ok" icon="✔" />
-        <Stat label="اضافه کاری" value={`${money(sum.overtime)} ساعت`} foot="مجموع ثبت‌شده" icon="⏱" />
-        <Stat label="مجموع معاش پرداخت‌شده" value={money(totalSalary)} foot={`${(d.salaries || []).length} سند`} icon="🧾" />
+        <Stat label="معاش ثابت" value={money(e.baseSalary)} foot="افغانی" icon={<IconCoins size={16} />} />
+        <Stat label="ایام حاضر (آخرین سوابق)" value={sum.present} foot={`غایب ${sum.absent} — رخصت ${sum.leave}`} kind="ok" icon={<IconCheck size={16} />} />
+        <Stat label="اضافه کاری" value={`${money(sum.overtime)} ساعت`} foot="مجموع ثبت‌شده" icon={<IconClock size={16} />} />
+        <Stat label="مجموع معاش پرداخت‌شده" value={money(totalSalary)} foot={`${(d.salaries || []).length} سند`} icon={<IconReceipt size={16} />} />
       </div>
 
       <div className="grid c2">
@@ -82,7 +83,7 @@ export default function EmployeeProfile() {
       </div>
 
       <div className="card">
-        <div className="card-h"><h3>حضور و غیاب اخیر</h3><div style={{ flex: 1 }} /><Link className="small" to="/attendance">رفتن به شیت حضور و غیاب ←</Link></div>
+        <div className="card-h"><h3>حضور و غیاب اخیر</h3><div style={{ flex: 1 }} /><Link className="small" to="/attendance">رفتن به شیت حضور و غیاب</Link></div>
         <div className="card-b tight">
           <Table head={['تاریخ', 'وضعیت', 'ورود', 'خروج', 'اضافه کاری', 'توضیحات']} compact empty="سابقه‌ای موجود نیست.">
             {att.map((r: any) => (

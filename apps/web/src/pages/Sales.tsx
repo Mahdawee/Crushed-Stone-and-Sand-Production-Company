@@ -1,3 +1,4 @@
+import { IconDownload, IconPlus } from '../components/icons';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, downloadCsv } from '../lib/api';
@@ -96,8 +97,8 @@ export default function SalesPage() {
       <div className="card">
         <ListHead actions={
           <>
-            <button className="btn" onClick={() => downloadCsv('sales')} title="خروجی اکسل">⤓ اکسل</button>
-            <button className="btn primary" onClick={openNew}>＋ بل فروش نو</button>
+            <button className="btn" onClick={() => downloadCsv('sales')} title="خروجی اکسل"><IconDownload size={15} /> اکسل</button>
+            <button className="btn primary" onClick={openNew}><IconPlus size={15} /> بل فروش نو</button>
           </>
         }>
           <SearchBox value={filters.q} onChange={(v) => patch({ q: v })} placeholder="بل، مشتری، دریور، پلیت…" width={330} />

@@ -1,3 +1,4 @@
+import { IconDownload, IconPlus } from '../components/icons';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, downloadCsv } from '../lib/api';
@@ -72,8 +73,8 @@ export default function EmployeesPage() {
             <span className="badge ok">{totals.active} فعال</span>
             <span className="badge muted">{totals.inactive} غیر فعال</span>
             <span className="badge info">معاش ثابت: {money(totals.salary)}</span>
-            <button className="btn" onClick={() => downloadCsv('employees')}>⤓ اکسل</button>
-            <button className="btn primary" onClick={openNew}>＋ کارمند نو</button>
+            <button className="btn" onClick={() => downloadCsv('employees')}><IconDownload size={15} /> اکسل</button>
+            <button className="btn primary" onClick={openNew}><IconPlus size={15} /> کارمند نو</button>
           </>
         }>
           <SearchBox value={q} onChange={setQ} placeholder="نام، کد، وظیفه…" width={280} />

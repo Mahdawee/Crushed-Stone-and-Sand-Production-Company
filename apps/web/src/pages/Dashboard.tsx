@@ -1,3 +1,4 @@
+import { IconAlert, IconCash, IconChart, IconCheck, IconCoins, IconContact, IconPackage, IconPlus, IconTruck, IconWallet } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -17,7 +18,7 @@ export default function Dashboard() {
     api.get('/reports/dashboard').then(setD).catch((e) => setErr(e.message));
   }, []);
 
-  if (err) return <Empty icon="⚠" title="داشبورد بارگذاری نشد" hint={err} />;
+  if (err) return <Empty icon={<IconAlert size={16} />} title="داشبورد بارگذاری نشد" hint={err} />;
   if (!d) return <Spinner />;
 
   const t = d.today;
@@ -29,26 +30,26 @@ export default function Dashboard() {
           <p className="small muted">{t.label} — وضعیت لحظه‌ای شرکت</p>
         </div>
         <div className="row wrap">
-          <Link to="/sales?new=1" className="btn primary">＋ بل فروش</Link>
-          <Link to="/receipts?new=1" className="btn">＋ رسید</Link>
-          <Link to="/expenses?new=1" className="btn">＋ مصرف</Link>
+          <Link to="/sales?new=1" className="btn primary"><IconPlus size={15} /> بل فروش</Link>
+          <Link to="/receipts?new=1" className="btn"><IconPlus size={15} /> رسید</Link>
+          <Link to="/expenses?new=1" className="btn"><IconPlus size={15} /> مصرف</Link>
         </div>
       </div>
 
       <div className="grid c4">
         <Stat label="موجودی دخل امروز" value={money(t.cashBalance)} foot={`${t.cashMode === 'accurate' ? 'حالت دقیق' : 'حالت ساده'} — ${t.dateDisplay}`}
-          kind={t.cashBalance >= 0 ? 'ok' : 'bad'} icon="🏦" />
-        <Stat label="فروشات امروز" value={money(t.allSales)} foot={`نقده ${money(t.cashSales)} / قرضه ${money(t.creditSales)}`} icon="🚚" />
-        <Stat label="متراژ امروز" value={`${money(t.volume)} م³`} foot={`${money(t.receipts)} افغانی رسید`} icon="📦" />
-        <Stat label="مجموع بدهی مشتریان" value={money(d.debtTotal)} foot={`${d.debtors.length}+ مشتری باقی دار`} kind="warn" icon="👤" />
+          kind={t.cashBalance >= 0 ? 'ok' : 'bad'} icon={<IconCash size={16} />} />
+        <Stat label="فروشات امروز" value={money(t.allSales)} foot={`نقده ${money(t.cashSales)} / قرضه ${money(t.creditSales)}`} icon={<IconTruck size={16} />} />
+        <Stat label="متراژ امروز" value={`${money(t.volume)} م³`} foot={`${money(t.receipts)} افغانی رسید`} icon={<IconPackage size={16} />} />
+        <Stat label="مجموع بدهی مشتریان" value={money(d.debtTotal)} foot={`${d.debtors.length}+ مشتری باقی دار`} kind="warn" icon={<IconContact size={16} />} />
       </div>
 
       <div className="grid c4">
-        <Stat label={`فروشات ${d.month.label}`} value={money(d.month.sales)} foot={`${money(d.month.volume)} متر مکعب`} icon="📈" />
-        <Stat label="مصارف این ماه" value={money(d.month.expenses)} foot="افغانی" kind="bad" icon="💸" />
-        <Stat label="معاشات این ماه" value={money(d.month.salaries)} foot={`${d.counts.salaryDoneThisMonth} سند پرداخت`} icon="💰" />
+        <Stat label={`فروشات ${d.month.label}`} value={money(d.month.sales)} foot={`${money(d.month.volume)} متر مکعب`} icon={<IconChart size={16} />} />
+        <Stat label="مصارف این ماه" value={money(d.month.expenses)} foot="افغانی" kind="bad" icon={<IconWallet size={16} />} />
+        <Stat label="معاشات این ماه" value={money(d.month.salaries)} foot={`${d.counts.salaryDoneThisMonth} سند پرداخت`} icon={<IconCoins size={16} />} />
         <Stat label="سود ناخالص این ماه" value={money(d.month.profit)} foot="فروشات − (مصارف + معاشات)"
-          kind={d.month.profit >= 0 ? 'ok' : 'bad'} icon="✅" />
+          kind={d.month.profit >= 0 ? 'ok' : 'bad'} icon={<IconCheck size={16} />} />
       </div>
 
       <div className="grid" style={{ gridTemplateColumns: '1.6fr 1fr' }}>
@@ -81,7 +82,7 @@ export default function Dashboard() {
         <div className="card">
           <div className="card-h"><h3>بدهی مشتریان</h3><div style={{ flex: 1 }} /><Link to="/reports/detail" className="small">همه</Link></div>
           <div className="card-b tight">
-            {d.debtors.length === 0 ? <Empty icon="🎉" title="هیچ بدهی باقی نیست" /> : (
+            {d.debtors.length === 0 ? <Empty icon={<IconCheck size={16} />} title="هیچ بدهی باقی نیست" /> : (
               <div className="col" style={{ gap: 2 }}>
                 {d.debtors.map((c: any) => (
                   <Link key={c.id} to={`/customers/${c.id}`} className="row between"

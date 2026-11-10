@@ -1,3 +1,4 @@
+import { IconCheck, IconClock, IconCoins, IconDownload, IconUsers } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, downloadCsv } from '../lib/api';
@@ -64,7 +65,7 @@ export default function SalariesPage() {
           <span className="badge info">{sheet?.label || ''}</span>
         </div>
         <div className="row wrap">
-          <button className="btn" onClick={() => downloadCsv('salaries')}>⤓ اکسل</button>
+          <button className="btn" onClick={() => downloadCsv('salaries')}><IconDownload size={15} /> اکسل</button>
           {tab === 'sheet' ? (
             <>
               <div className="field" style={{ minWidth: 150 }}>
@@ -81,10 +82,10 @@ export default function SalariesPage() {
         !sheet ? <Spinner /> : (
           <>
             <div className="grid c4">
-              <Stat label="کارمندان فعال" value={rows.length} icon="👷" />
-              <Stat label="مجموع معاش ثابت" value={money(rows.reduce((a, r) => a + Number(r.baseSalary || 0), 0))} icon="💰" />
-              <Stat label="اضافه کاری (ساعت)" value={rows.reduce((a, r) => a + Number(r.overtimeHours || 0), 0)} icon="⏱" />
-              <Stat label="مجموع پرداخت این ماه" value={money(total)} kind="ok" icon="✅" />
+              <Stat label="کارمندان فعال" value={rows.length} icon={<IconUsers size={16} />} />
+              <Stat label="مجموع معاش ثابت" value={money(rows.reduce((a, r) => a + Number(r.baseSalary || 0), 0))} icon={<IconCoins size={16} />} />
+              <Stat label="اضافه کاری (ساعت)" value={rows.reduce((a, r) => a + Number(r.overtimeHours || 0), 0)} icon={<IconClock size={16} />} />
+              <Stat label="مجموع پرداخت این ماه" value={money(total)} kind="ok" icon={<IconCheck size={16} />} />
             </div>
 
             <div className="card">

@@ -1,3 +1,4 @@
+import { IconDatabase, IconDownload, IconFolder, IconHistory } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { api, getToken, API_BASE } from '../lib/api';
 import { useToast, Table, Spinner, Stat } from '../components/ui';
@@ -49,10 +50,10 @@ export default function BackupPage() {
   return (
     <div className="col" style={{ gap: 14 }}>
       <div className="grid c3">
-        <Stat label="تعداد پشتیبان‌ها" value={d.rows.length} foot="۳۰ فایل آخر نگه داشته می‌شود" icon="💾" />
+        <Stat label="تعداد پشتیبان‌ها" value={d.rows.length} foot="۳۰ فایل آخر نگه داشته می‌شود" icon={<IconDatabase size={16} />} />
         <Stat label="آخرین پشتیبان" value={last ? new Date(last.createdAt).toLocaleDateString('fa-IR') : '—'}
-          foot={days === null ? 'هنوز پشتیبان ساخته نشده' : `${days} روز پیش`} kind={days !== null && days > 7 ? 'warn' : 'ok'} icon="🕘" />
-        <Stat label="پوشه پشتیبان" value={<span className="small mono">{d.dir}</span>} foot="همین کمپیوتر" icon="📁" />
+          foot={days === null ? 'هنوز پشتیبان ساخته نشده' : `${days} روز پیش`} kind={days !== null && days > 7 ? 'warn' : 'ok'} icon={<IconHistory size={16} />} />
+        <Stat label="پوشه پشتیبان" value={<span className="small mono">{d.dir}</span>} foot="همین کمپیوتر" icon={<IconFolder size={16} />} />
       </div>
 
       <div className="card">
@@ -67,7 +68,7 @@ export default function BackupPage() {
                 <td className="num">{(r.size / 1024).toFixed(0)} KB</td>
                 <td><div className="actions">
                   <a className="btn sm" href={`${API_BASE}/system/backup/download?file=${encodeURIComponent(r.file)}`}
-                    onClick={(e) => { e.preventDefault(); download(r.file); }}>⤓ دانلود</a>
+                    onClick={(e) => { e.preventDefault(); download(r.file); }}><IconDownload size={15} /> دانلود</a>
                   <button className="btn sm" onClick={() => restore(r)}>بازگردانی</button>
                 </div></td>
               </tr>

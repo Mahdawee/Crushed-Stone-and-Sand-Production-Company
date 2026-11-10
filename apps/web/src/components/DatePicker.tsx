@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { IconCalendar, IconChevron, IconClose } from './icons';
 import {
   CalendarMode, WEEKDAYS, WEEKDAYS_FULL, addDaysISO, formatDate, fromCalendar, monthGrid,
   monthName, monthLength, months, pad2, parseLoose, shiftMonth, toCalendar, todayISO, todayISOValue,
@@ -142,7 +143,7 @@ export function DatePicker({
           type="button" className="dp-icon" tabIndex={-1} disabled={disabled}
           onClick={() => { if (!disabled) { setOpen((v) => !v); setTyping(false); } }}
           aria-label="باز کردن تقویم" title="تقویم"
-        >▦</button>
+        ><IconCalendar size={16} /></button>
         <input
           id={id}
           ref={inputRef}
@@ -173,7 +174,7 @@ export function DatePicker({
           <button
             type="button" className="dp-clear" tabIndex={-1} title="پاک کردن"
             onClick={() => { setText(''); setErr(''); onChange(''); }}
-          >✕</button>
+          ><IconClose size={12} /></button>
         ) : null}
       </div>
       {err ? <span className="dp-err">{err}</span> : null}
@@ -186,7 +187,7 @@ export function DatePicker({
           onMouseDown={(e) => e.stopPropagation()}
         >
           <div className="dp-head">
-            <button type="button" className="dp-nav" onClick={() => shift(-1)} title="ماه قبل">‹</button>
+            <button type="button" className="dp-nav" onClick={() => shift(-1)} title="ماه قبل"><IconChevron dir="start" size={15} /></button>
             <div className="dp-title">
               <button type="button" className="dp-title-btn" onClick={() => setPicker(picker === 'months' ? 'days' : 'months')}>
                 {monthName(view.m, calendar)}
@@ -195,7 +196,7 @@ export function DatePicker({
                 {view.y}
               </button>
             </div>
-            <button type="button" className="dp-nav" onClick={() => shift(1)} title="ماه بعد">›</button>
+            <button type="button" className="dp-nav" onClick={() => shift(1)} title="ماه بعد"><IconChevron dir="end" size={15} /></button>
           </div>
 
           {picker === 'days' ? (

@@ -1,3 +1,4 @@
+import { IconPrint } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
@@ -33,7 +34,7 @@ export default function ReportsDaily() {
         <div className="field"><label>تا تاریخ</label>
           <DatePicker value={range.to} onChange={(v) => setRange({ ...range, to: v })} calendar={calendar} width={140} /></div>
         <button className="btn primary" onClick={load}>نمایش</button>
-        <button className="btn" onClick={() => window.print()}>🖨 چاپ</button>
+        <button className="btn" onClick={() => window.print()}><IconPrint size={15} /> چاپ</button>
         <div className="spacer" />
         <span className="small muted">موجودی دخل هر روز + مجموع دوره</span>
       </div></div></div>

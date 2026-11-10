@@ -1,3 +1,4 @@
+import { IconPlus } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
@@ -36,7 +37,7 @@ export default function UsersPage() {
     <div className="col" style={{ gap: 14 }}>
       <div className="card">
         <ListHead actions={
-          <button className="btn primary" onClick={() => setF({ username: '', fullName: '', password: '', role: 'employee', active: true })}>＋ کاربر نو</button>
+          <button className="btn primary" onClick={() => setF({ username: '', fullName: '', password: '', role: 'employee', active: true })}><IconPlus size={15} /> کاربر نو</button>
         }>
           <SummaryBar>
             <K label="کاربران" value={(rows || []).length} />

@@ -1,3 +1,4 @@
+import { IconDownload, IconPlus } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, downloadCsv } from '../lib/api';
@@ -84,8 +85,8 @@ export default function ExpensesPage() {
       <div className="card">
         <ListHead actions={
           <>
-            <button className="btn" onClick={() => downloadCsv('expenses')}>⤓ اکسل</button>
-            <button className="btn primary" onClick={openNew}>＋ مصرف نو</button>
+            <button className="btn" onClick={() => downloadCsv('expenses')}><IconDownload size={15} /> اکسل</button>
+            <button className="btn primary" onClick={openNew}><IconPlus size={15} /> مصرف نو</button>
           </>
         }>
           <SearchBox value={filters.q} onChange={(v) => patch({ q: v })} placeholder="شرح، فروشگاه، بل…" width={280} />

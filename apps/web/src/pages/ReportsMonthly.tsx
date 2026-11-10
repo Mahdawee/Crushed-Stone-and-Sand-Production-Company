@@ -1,3 +1,4 @@
+import { IconAlert, IconChart, IconCheck, IconPrint, IconWallet } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
@@ -21,17 +22,17 @@ export default function ReportsMonthly() {
       <div className="row between wrap no-print">
         <div className="row">
           <Select value={year} onChange={(v) => setYear(Number(v))} options={years.map((y) => ({ value: y, label: String(y) }))} />
-          <button className="btn" onClick={() => window.print()}>🖨 چاپ</button>
+          <button className="btn" onClick={() => window.print()}><IconPrint size={15} /> چاپ</button>
         </div>
         <span className="small muted">سود = کل فروشات − (کل مصارف + کل معاشات)</span>
       </div>
 
       {!d ? <Spinner /> : (<>
         <div className="grid c4">
-          <Stat label="کل فروشات سال" value={money(d.totals.totalSales)} icon="📈" />
-          <Stat label="کل مصارف + معاشات" value={money(d.totals.totalExpenses)} kind="bad" icon="💸" />
-          <Stat label="سود کل" value={money(d.totals.profit)} kind="ok" icon="✅" />
-          <Stat label="زیان کل" value={money(d.totals.loss)} kind={d.totals.loss > 0 ? 'bad' : ''} icon="⚠" />
+          <Stat label="کل فروشات سال" value={money(d.totals.totalSales)} icon={<IconChart size={16} />} />
+          <Stat label="کل مصارف + معاشات" value={money(d.totals.totalExpenses)} kind="bad" icon={<IconWallet size={16} />} />
+          <Stat label="سود کل" value={money(d.totals.profit)} kind="ok" icon={<IconCheck size={16} />} />
+          <Stat label="زیان کل" value={money(d.totals.loss)} kind={d.totals.loss > 0 ? 'bad' : ''} icon={<IconAlert size={16} />} />
         </div>
 
         <div className="card">

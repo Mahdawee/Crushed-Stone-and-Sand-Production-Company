@@ -1,3 +1,4 @@
+import { IconDownload, IconPlus } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, downloadCsv } from '../lib/api';
@@ -50,8 +51,8 @@ export default function CustomersPage() {
           <>
             <span className="badge info">{(rows || []).length} مشتری</span>
             <span className="badge bad">مجموع بدهی: {money(totalDebt)}</span>
-            <button className="btn" onClick={() => downloadCsv('customers')}>⤓ اکسل</button>
-            <button className="btn primary" onClick={openNew}>＋ مشتری نو</button>
+            <button className="btn" onClick={() => downloadCsv('customers')}><IconDownload size={15} /> اکسل</button>
+            <button className="btn primary" onClick={openNew}><IconPlus size={15} /> مشتری نو</button>
           </>
         }>
           <SearchBox value={q} onChange={setQ} placeholder="نام، کد، تماس، شخص رابط…" width={330} />

@@ -1,3 +1,4 @@
+import { IconPrint } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useToast, Table, Spinner } from '../components/ui';
@@ -13,7 +14,7 @@ export default function ReportsYearly() {
     <div className="col" style={{ gap: 14 }}>
       <div className="row between no-print">
         <span className="small muted">خلاصه هر سال مالی — افغانی</span>
-        <button className="btn" onClick={() => window.print()}>🖨 چاپ</button>
+        <button className="btn" onClick={() => window.print()}><IconPrint size={15} /> چاپ</button>
       </div>
       <div className="card">
         <div className="card-h"><h3>راپور سالانه</h3></div>

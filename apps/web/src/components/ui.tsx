@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { IconAlert, IconCheck, IconChevron, IconClose, IconInfo, IconSearchDoc } from './icons';
 
 /* =============================== toasts =============================== */
 type ToastKind = 'ok' | 'bad' | 'warn' | 'info';
@@ -41,7 +42,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const ico: Record<ToastKind, string> = { ok: '✔', bad: '⛔', warn: '⚠', info: 'ℹ' };
+  const ico: Record<ToastKind, React.ReactNode> = {
+    ok: <IconCheck size={17} />, bad: <IconAlert size={17} />, warn: <IconAlert size={17} />, info: <IconInfo size={17} />,
+  };
   return (
     <ToastCtx.Provider value={api}>
       {children}
@@ -86,7 +89,7 @@ export function Modal({ title, onClose, children, footer, size = '' }: {
     <div className="modal-back no-print" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={`modal ${size}`}>
         <div className="modal-h"><h3>{title}</h3><div style={{ flex: 1 }} />
-          <button className="btn ghost icon" onClick={onClose} title="بستن">✕</button>
+          <button className="btn ghost icon" onClick={onClose} title="بستن"><IconClose size={16} /></button>
         </div>
         <div className="modal-b">{children}</div>
         {footer ? <div className="modal-f">{footer}</div> : null}
@@ -192,7 +195,7 @@ export function Pager({ page, pageSize, total, onPage }: {
   const to = Math.min(total, page * pageSize);
   return (
     <div className="pager no-print">
-      <button className="btn sm" disabled={page <= 1} onClick={() => onPage(1)} title="صفحه اول">«</button>
+      <button className="btn sm icon" disabled={page <= 1} onClick={() => onPage(1)} title="صفحه اول">«</button>
       <button className="btn sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>قبلی</button>
       <span className="small">
         ردیف <b>{from.toLocaleString('en-US')}</b> تا <b>{to.toLocaleString('en-US')}</b>
@@ -200,7 +203,7 @@ export function Pager({ page, pageSize, total, onPage }: {
         <span className="muted"> — صفحه {page} از {pages}</span>
       </span>
       <button className="btn sm" disabled={page >= pages} onClick={() => onPage(page + 1)}>بعدی</button>
-      <button className="btn sm" disabled={page >= pages} onClick={() => onPage(pages)} title="صفحه آخر">»</button>
+      <button className="btn sm icon" disabled={page >= pages} onClick={() => onPage(pages)} title="صفحه آخر">»</button>
     </div>
   );
 }
@@ -252,10 +255,10 @@ export function K({ label, value, tone }: { label: string; value: React.ReactNod
 }
 
 /* ============================== empty state ========================= */
-export function Empty({ icon = '📄', title, hint, action }: { icon?: string; title: string; hint?: string; action?: React.ReactNode }) {
+export function Empty({ icon, title, hint, action }: { icon?: React.ReactNode; title: string; hint?: string; action?: React.ReactNode }) {
   return (
-    <div style={{ textAlign: 'center', padding: '40px 16px', color: 'var(--text-3)' }}>
-      <div style={{ fontSize: 38, marginBottom: 8, opacity: .7 }}>{icon}</div>
+    <div className="empty-state">
+      <div className="empty-ico">{icon ?? <IconSearchDoc size={26} />}</div>
       <div style={{ fontWeight: 700, color: 'var(--text-2)' }}>{title}</div>
       {hint ? <div className="small" style={{ marginTop: 4 }}>{hint}</div> : null}
       {action ? <div style={{ marginTop: 14 }}>{action}</div> : null}
@@ -276,7 +279,7 @@ export function Spinner({ label = 'در حال بارگذاری…' }: { label?:
   );
 }
 
-export function Stat({ label, value, foot, kind = '', icon }: { label: string; value: React.ReactNode; foot?: React.ReactNode; kind?: '' | 'ok' | 'bad' | 'warn'; icon?: string }) {
+export function Stat({ label, value, foot, kind = '', icon }: { label: string; value: React.ReactNode; foot?: React.ReactNode; kind?: '' | 'ok' | 'bad' | 'warn'; icon?: React.ReactNode }) {
   return (
     <div className={`card stat ${kind}`}>
       {icon ? <div className="spark">{icon}</div> : null}

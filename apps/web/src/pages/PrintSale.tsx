@@ -1,3 +1,4 @@
+import { IconChevron, IconPrint } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -35,8 +36,8 @@ export default function PrintSale() {
   return (
     <>
       <div className="doc-toolbar">
-        <button className="btn primary" onClick={() => window.print()}>🖨 چاپ / ذخیره PDF</button>
-        <button className="btn" onClick={() => nav(-1)}>← بازگشت</button>
+        <button className="btn primary" onClick={() => window.print()}><IconPrint size={15} /> چاپ / ذخیره PDF</button>
+        <button className="btn" onClick={() => nav(-1)}><IconChevron dir="start" size={14} /> بازگشت</button>
       </div>
       <div className="doc-page">
         <DocHeader title="بل فروش" meta={rows.slice(0, 2).map(([label, value]) => ({ label, value }))} />
