@@ -180,6 +180,66 @@ ok('`tauri::App::primary_monitor` بدون ایمپورت اضافی صدا زد
 /* آکولادهای نامتوازن در رشته‌های format! */
 ok('هیچ رشته‌ی خامی در format! آکولاد تک ندارد (خطای گزارش‌شده)', /ERROR_PAGE\.replace\("@@BODY@@"/.test(main));
 
+console.log('\n— مسیرهای ویندوز که به Node داده می‌شود (باگ EISDIR lstat C:)  —');
+/*
+ * گزارش کاربر (نسخه‌ی نصب‌شده):
+ *   Error: EISDIR: illegal operation on a directory, lstat 'C:'
+ *     at Object.realpathSync (node:fs) … at resolveMainPath
+ * ریشه: `resource_dir()`/`canonicalize` روی ویندوز مسیر verbatim می‌دهند
+ * (`\\?\C:\…`) و Node نمی‌تواند از چنین مسیری ماژول اصلی را پیدا کند.
+ * پس: هر مسیری که به Node/Command می‌رود باید از `plain_path` بگذرد.
+ */
+ok('تابع plain_path پیشوند verbatim ویندوز را برمی‌دارد', /pub fn plain_path\(p: &Path\) -> PathBuf/.test(side));
+ok('plain_path فرم UNC را هم پوشش می‌دهد', side.includes('UNC') && /strip_prefix/.test(side));
+ok('arg_path مسیر را قبل از دادن به Node معمولی می‌کند', /fn arg_path[\s\S]{0,400}plain_path\(p\)/.test(side));
+ok('resource_dir خروجی‌اش را معمولی می‌کند', /pub fn resource_dir[\s\S]{0,600}plain_path\(&dir\)/.test(side));
+ok('canonicalize در جست‌وجوی منابع با plain_path پاک می‌شود',
+  /canonicalize\(c\)[\s\S]{0,400}plain_path\(&real\)/.test(side));
+ok('ابلاغ node.exe با مسیر معمولی اجرا می‌شود', /Command::new\(plain_path\(&program\)\)/.test(side));
+ok('current_dir با مسیر معمولی تنظیم می‌شود', /\.current_dir\(plain_path\(&dir\)\)/.test(side));
+ok('حالت CLI هم مسیر معمولی می‌دهد',
+  /Command::new\(api_sidecar::plain_path\(&node\)\)/.test(main) &&
+  /arg\(api_sidecar::plain_path\(&entry\)\)/.test(main));
+ok('پوشه‌ی داده هم از حالت verbatim در می‌آید',
+  (main.match(/app_data_dir\(\)\s*\n\s*\.map\(\|p\| api_sidecar::plain_path\(&p\)\)/g) || []).length >= 2);
+/*
+ * منطق plain_path را با همان ورودی‌های ویندوزی شبیه‌سازی می‌کنیم: نباید هیچ
+ * مسیر ورودی «verbatim» به Node برسد و نباید مسیر معمولی خراب شود.
+ */
+const stripVerbatim = (s) => {
+  let r;
+  if (s.startsWith('\\\\?\\UNC\\')) r = '\\\\' + s.slice(8);
+  else if (s.startsWith('\\\\?\\')) {
+    const rest = s.slice(4);
+    r = rest.length >= 2 && /[A-Za-z]/.test(rest[0]) && rest[1] === ':' ? rest : s;
+  } else r = s;
+  return r.length > 259 || !r ? s : r;
+};
+const winCases = [
+  ['\\\\?\\C:\\Users\\DELL\\AppData\\Local\\Programs\\Farday Roshan\\_up_\\api\\app.js', 'C:\\Users\\DELL'],
+  ['C:\\Users\\DELL\\app.js', 'C:\\Users\\DELL'],
+  ['\\\\?\\UNC\\srv\\share\\app.js', '\\\\srv\\share'],
+  ['\\\\?\\Volume{9f}\\app.js', '\\\\?\\Volume{9f}'],
+];
+let pathBad = 0;
+for (const [input, expectedPrefix] of winCases) {
+  const output = stripVerbatim(input);
+  if (!output.startsWith(expectedPrefix)) { pathBad++; console.log(`     ↳ ${input} → ${output}`); }
+  if (/^\\\\\?\\[A-Za-z]:/.test(output)) { pathBad++; console.log(`     ↳ verbatim باقی ماند: ${output}`); }
+}
+ok('شبیه‌سازی plain_path: هیچ مسیر verbatim درایوی به Node نمی‌رسد', pathBad === 0);
+
+/* اگر Node اجرا نشود باید سریع خبر بدهد، نه ۶۰ ثانیه سکوت */
+ok('مرگ زودهنگام سرویس تشخیص داده می‌شود (try_wait)',
+  /try_wait\(\)[\s\S]{0,200}سرویس داخلی بلافاصله بسته شد/.test(side));
+ok('مسیرهای اجرای سرویس در لاگ نوشته می‌شود', /اجرای سرویس: node=/.test(side));
+ok('خطاهای آشنا ترجمه‌ی فارسی دارند (EISDIR / Cannot find module)',
+  /pub fn log_hint/.test(side) && /EISDIR/.test(side) && /Cannot find module/.test(side));
+ok('صفحه‌ی خطا راهنمای فارسی را نشان می‌دهد', /api_sidecar::log_hint\(&tail\)/.test(main));
+/* هیچ format! ای نباید رشته‌ی خام با آکولاد تکی بگیرد — باگ بعدی همین بود */
+ok('plain_path از format! با رشته‌ی خام استفاده نمی‌کند',
+  !/format!\(\s*r#?"[\s\S]{0,80}\{[\s\S]{0,80}"#?\s*\)/.test(side));
+
 console.log('\n— ایمنی‌های زبان Rust —');
 ok('هیچ unwrap در مسیر راه‌اندازی (بدون کامنت)', !/\.unwrap\(\)/.test(parseRust(main).code.replace(/expect\(/g, 'expect(')));
 ok('let-else فقط با نسخه‌ی Rust پشتیبانی‌شده', /rust-version = "1\.77/.test(fs.readFileSync(path.join(root, 'src-tauri/Cargo.toml'), 'utf8')));

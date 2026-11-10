@@ -70,7 +70,7 @@ fn recovery(app: tauri::AppHandle, arg: String) {
     let data_dir = app
         .path()
         .app_data_dir()
-        .map(|p| p.to_path_buf())
+        .map(|p| api_sidecar::plain_path(&p))
         .unwrap_or_else(|_| std::env::temp_dir().join("af.farday.roshan"));
     std::fs::create_dir_all(&data_dir).ok();
 
@@ -118,8 +118,10 @@ fn main() {
                 std::process::exit(1);
             }
         };
-        let mut cmd = std::process::Command::new(node);
-        cmd.arg(entry).arg("--recovery");
+        /* مسیر معمولی (بدون `\\?\`) — وگرنه Node با
+           `EISDIR ... lstat 'C:'` می‌میرد. */
+        let mut cmd = std::process::Command::new(api_sidecar::plain_path(&node));
+        cmd.arg(api_sidecar::plain_path(&entry)).arg("--recovery");
         for extra in std::env::args().skip(2) {
             cmd.arg(extra);
         }
@@ -159,7 +161,7 @@ fn main() {
             let data_dir = app
                 .path()
                 .app_data_dir()
-                .map(|p| p.to_path_buf())
+                .map(|p| api_sidecar::plain_path(&p))
                 .unwrap_or_else(|_| std::env::temp_dir().join("af.farday.roshan"));
             std::fs::create_dir_all(&data_dir).ok();
             api_sidecar::log_line(
@@ -266,6 +268,14 @@ fn main() {
                     api_sidecar::wait_until_ready(&data_dir_bg, api_port, 60)
                 };
                 if let Some(p) = ready {
+                    if p != api_port {
+                        /* برای تشخیص آینده در لاگ بماند: پورت انتخابی نود با
+                           آنچه ما فرض کرده بودیم یکی نبود (نه 4317، نه 0) */
+                        api_sidecar::log_line(
+                            &data_dir_bg,
+                            &format!("پورت اعلام‌شده {p} با پورت پیش‌بینی‌شده {api_port} فرق داشت"),
+                        );
+                    }
                     api_port = p;
                     /* پورت را برای اجرای بعدی نگه دار (جلوگیری از نمونه‌ی دوم) */
                     api_sidecar::save_port(&data_dir_bg, p);
@@ -309,9 +319,13 @@ fn main() {
                         if ready.is_none() && !reason.contains("جواب نداد") {
                             reason.push_str("\nسرویس داخلی هم جواب نداد.");
                         }
+                        let tail = api_sidecar::tail_log(&data_dir_bg, 25);
+                        /* خطاهای آشنا یک جمله‌ی فارسی می‌گیرند (متن خام هم می‌ماند) */
+                        let hint = api_sidecar::log_hint(&tail)
+                            .map(|h| format!("\n\n🔎 {h}"))
+                            .unwrap_or_default();
                         let details = format!(
-                            "{reason}\n\n— آخرین خطوط api.log —\n{}\n\nپوشه داده: {}",
-                            api_sidecar::tail_log(&data_dir_bg, 25),
+                            "{reason}{hint}\n\n— آخرین خطوط api.log —\n{tail}\n\nپوشه داده: {}",
                             data_dir_bg.display()
                         );
                         api_sidecar::log_line(&data_dir_bg, &format!("مشکل راه‌اندازی:\n{details}"));

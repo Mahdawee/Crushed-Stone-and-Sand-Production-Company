@@ -109,12 +109,64 @@ pub fn port_busy(port: u16) -> bool {
 /* locating the bundled files                                          */
 /* ------------------------------------------------------------------ */
 
+/// حذف پیشوند «مسیر verbatim» ویندوز: `\\?\C:\...` → `C:\...`.
+///
+/// **باگ بزرگی که همین‌جا کشف شد (گزارش کاربر):**
+/// `app.path().resource_dir()` و `std::fs::canonicalize` روی ویندوز مسیر را
+/// به شکل verbatim برمی‌گردانند: `\\?\C:\Users\DELL\...\_up_\api\app.js`.
+/// اجرای `node.exe` با چنین آرگومانی **کار نمی‌کند**: خودِ Node پیش از اجرای
+/// یک خط کد می‌میرد با
+/// `Error: EISDIR: illegal operation on a directory, lstat 'C:'`
+/// (در `resolveMainPath` → `realpathSync`؛ پیشوند `\\?\` باعث می‌شود ریشه‌ی
+/// مسیر به‌صورت `C:` تجزیه شود). یعنی سرویس داخلی هیچ‌وقت بالا نمی‌آمد و
+/// پوسته بعد از ۶۰ ثانیه «سرویس جواب نداد» می‌گفت.
+/// راه‌حل استاندارد: پیشوند را برداریم و مسیر معمولی Win32 بدهیم.
+///
+/// به `\\?\UNC\server\share` هم رسیدگی می‌شود (`\\server\share`).
+/// فرم `\\?\Volume{...}` دست نمی‌خورد چون شکل معمولی ندارد.
+/// اگر مسیر معمولی از سقف ۲۶۰ کاراکتر بگذرد، پیشوند نگه داشته می‌شود
+/// (وگرنه ویندوز فایل را پیدا نمی‌کند).
+pub fn plain_path(p: &Path) -> PathBuf {
+    if !cfg!(windows) {
+        return p.to_path_buf();
+    }
+    let s = p.to_string_lossy().to_string();
+    let stripped = if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        if rest.is_empty() {
+            return p.to_path_buf();
+        }
+        /* بدون format!: آکولاد تکی داخل رشته‌ی خام، الگوی همان باگ فرمت است */
+        let mut unc = String::from("\\\\");
+        unc.push_str(rest);
+        unc
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        /* `\\?\C:\...` → `C:\...` — فقط شکل «حرف درایو» */
+        let is_drive = rest.len() >= 2
+            && rest.as_bytes()[0].is_ascii_alphabetic()
+            && (rest.as_bytes()[1] == b':');
+        if !is_drive {
+            return p.to_path_buf();
+        }
+        rest.to_string()
+    } else {
+        return p.to_path_buf();
+    };
+    if stripped.len() > 259 || stripped.is_empty() {
+        /* خیلی بلند است: بدون پیشوند ویندوز پیدا نمی‌کند، پس همان verbatim */
+        return p.to_path_buf();
+    }
+    PathBuf::from(stripped)
+}
+
 /// Normalises a path for use in a Windows process argument.
 ///
 /// Windows accepts forward slashes, and using them removes the need to quote
 /// paths that contain spaces — one less thing that can break for the user.
 fn arg_path(p: &Path) -> std::ffi::OsString {
-    let s = p.to_string_lossy().to_string();
+    /* مهم: هر مسیری که به Node می‌رود اول از حالت verbatim در می‌آید،
+       وگرنه Node با `EISDIR ... lstat 'C:'` می‌میرد. */
+    let plain = plain_path(p);
+    let s = plain.to_string_lossy().to_string();
     if cfg!(windows) {
         std::ffi::OsString::from(s.replace('\\', "/"))
     } else {
@@ -130,9 +182,14 @@ pub fn resource_dir(app: &tauri::AppHandle) -> PathBuf {
     use tauri::Manager;
     let mut bases: Vec<PathBuf> = Vec::new();
     if let Ok(dir) = app.path().resource_dir() {
-        bases.push(dir);
+        /* ⚠️ روی ویندوز این مسیر verbatim است (`\\?\C:\...`). اگر همین‌طور
+           به Node برسد، با `EISDIR ... lstat 'C:'` می‌میرد — همان خطایی که
+           کاربر در `api.log` دید. */
+        bases.push(plain_path(&dir));
     }
-    resource_dir_from(bases)
+    let dir = resource_dir_from(bases);
+    /* مسیر نهایی هم باید معمولی باشد (canonicalize دوباره verbatim می‌کند) */
+    plain_path(&dir)
 }
 
 /// مثل `resource_dir` ولی بدون نیاز به `AppHandle` — برای حالت `--cli`
@@ -166,6 +223,8 @@ fn resource_dir_from(bases: Vec<PathBuf>) -> PathBuf {
         candidates.push(dir.join("..").join("_up_").join("api"));
     }
     if let Ok(exe) = std::env::current_exe() {
+        /* `current_exe` روی ویندوز هم ممکن است verbatim باشد → معمولی شود */
+        let exe = plain_path(&exe);
         if let Some(parent) = exe.parent() {
             candidates.push(parent.join("api")); // portable: exe + api/
             candidates.push(parent.to_path_buf());
@@ -193,7 +252,9 @@ fn resource_dir_from(bases: Vec<PathBuf>) -> PathBuf {
 
     for c in &candidates {
         if c.join("app.js").exists() || c.join("dist/main.js").exists() {
-            return std::fs::canonicalize(c).unwrap_or_else(|_| c.clone());
+            let real = std::fs::canonicalize(c).unwrap_or_else(|_| c.clone());
+            /* canonicalize روی ویندوز `\\?\` اضافه می‌کند؛ Node با آن کار نمی‌کند */
+            return plain_path(&real);
         }
     }
     candidates.into_iter().next().unwrap_or_else(|| PathBuf::from("."))
@@ -223,7 +284,8 @@ fn bundled_node(dir: &Path) -> Option<PathBuf> {
         for rel in NODE_CANDIDATES {
             let p = root.join(rel);
             if p.is_file() {
-                return Some(p);
+                /* مسیر node.exe هم باید معمولی به Node/Command برسد */
+                return Some(plain_path(&p));
             }
         }
     }
@@ -333,7 +395,7 @@ pub fn start(app: &tauri::AppHandle, data_dir: &Path) -> Result<Started, String>
     }
     let fixed_port_free = !port_open(API_PORT);
 
-    let dir = resource_dir(app);
+    let dir = plain_path(&resource_dir(app));
     let entry = if dir.join("app.js").exists() {
         dir.join("app.js")
     } else if dir.join("dist/main.js").exists() {
@@ -389,9 +451,9 @@ pub fn start(app: &tauri::AppHandle, data_dir: &Path) -> Result<Started, String>
         );
     }
 
-    let mut cmd = Command::new(&program);
+    let mut cmd = Command::new(plain_path(&program));
     cmd.arg(arg_path(&entry))
-        .current_dir(&dir)
+        .current_dir(plain_path(&dir))
         .env("FD_DATA_DIR", data_dir)
         .env("FD_PORT", requested_port.to_string())
         .env("FD_HOST", "127.0.0.1")
@@ -410,9 +472,35 @@ pub fn start(app: &tauri::AppHandle, data_dir: &Path) -> Result<Started, String>
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
 
+    /* مسیرها را در لاگ بنویس: بدون این، اگر سرویس بالا نیاید هیچ‌کس نمی‌داند
+       Node با چه آرگومانی اجرا شده است (همان چیزی که عیب‌یابی EISDIR را
+       ساعت‌ها طولانی کرد). */
+    log_line(
+        data_dir,
+        &format!(
+            "اجرای سرویس: node={} · entry={} · cwd={} · port={}",
+            plain_path(&program).display(),
+            arg_path(&entry).to_string_lossy(),
+            plain_path(&dir).display(),
+            requested_port
+        ),
+    );
+
     let child = cmd
         .spawn()
         .map_err(|e| format!("اجرای سرویس داخلی ناموفق بود ({how}): {e}"))?;
+
+    /* اگر Node در چند ثانیه‌ی اول بمیرد (مثل خطای مسیر ویندوزی)، به‌جای
+       انتظار بی‌فایده‌ی ۶۰ ثانیه همان اول خبر بده. */
+    let mut child = child;
+    for _ in 0..12 {
+        std::thread::sleep(Duration::from_millis(250));
+        if let Ok(Some(status)) = child.try_wait() {
+            return Err(format!(
+                "سرویس داخلی بلافاصله بسته شد (کد {status}). دلیلش در api.log است."
+            ));
+        }
+    }
 
     if !log_note.is_empty() {
         log_line(data_dir, log_note.trim_end());
@@ -451,6 +539,43 @@ pub fn wait_until_ready(data_dir: &Path, requested_port: u16, seconds: u64) -> O
     /* آخرین تلاش: شاید پورت اعلام شده ولی بررسی ما دیر شده باشد */
     if requested_port == 0 {
         return read_announced_port(&log_path).filter(|p| ours_is_running(*p));
+    }
+    None
+}
+
+/// ترجمه‌ی «خطاهای آشنا»ی Node به یک جمله‌ی فارسی که به کاربر بگوید چه کند.
+///
+/// صفحه‌ی خطا در نهایت متن خام `api.log` را نشان می‌دهد (که برای پشتیبانی
+/// لازم است)، ولی کاربر فارسی‌زبان باید در یک نگاه بفهمد مشکل چیست.
+pub fn log_hint(tail: &str) -> Option<String> {
+    if tail.contains("EISDIR") && tail.contains("lstat 'C:'") {
+        return Some(
+            "سرویس داخلی به‌خاطر مسیر ویندوزی (\\?\C:\…) اجرا نشد — این خطا در نسخه‌های \
+             قدیمی بود و در نسخه‌ی فعلی رفع شده است. اگر این پیام را می‌بینید، برنامه را \
+             یک بار دیگر نصب کنید (نصب‌کننده باید نسخه‌ی تازه باشد)."
+                .into(),
+        );
+    }
+    if tail.contains("Cannot find module") {
+        return Some(
+            "یکی از فایل‌های سرویس داخلی ناقص نصب شده است (Cannot find module). \
+             برنامه را روی همین نسخه دوباره نصب کنید؛ داده‌های شما محفوظ می‌ماند."
+                .into(),
+        );
+    }
+    if tail.contains("EADDRINUSE") {
+        return Some(
+            "پورت در اختیار برنامه‌ی دیگری است. برنامه را کامل ببندید (یا یک بار ویندوز را \
+             ری‌استارت کنید) و دوباره باز کنید؛ خود برنامه پورت آزاد را پیدا می‌کند."
+                .into(),
+        );
+    }
+    if tail.contains("libsql") && tail.contains("Cannot find") {
+        return Some(
+            "کتابخانه‌ی دیتابیس ویندوزی همراه بسته نبوده است. برنامه را با نصب‌کننده‌ی \
+             رسمی دوباره نصب کنید."
+                .into(),
+        );
     }
     None
 }
@@ -525,11 +650,11 @@ pub fn run_recovery(app: &tauri::AppHandle, data_dir: &Path, extra_args: &[&str]
             .map_err(|e| format!("فایل لاگ نجات باز نشد: {e}"))
     };
 
-    let mut cmd = Command::new(&node);
+    let mut cmd = Command::new(plain_path(&node));
     cmd.arg(arg_path(&entry))
         .arg("--recovery")
         .args(extra_args)
-        .current_dir(entry.parent().unwrap_or(Path::new(".")))
+        .current_dir(plain_path(entry.parent().unwrap_or(Path::new("."))))
         .env("FD_DATA_DIR", data_dir)
         .env("NODE_ENV", "production")
         .env("NODE_OPTIONS", "--no-warnings")
