@@ -28,6 +28,7 @@
     "doctor": "node scripts/doctor.mjs"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4",
     "concurrently": "^9.2.5"
   }
 }
