@@ -142,14 +142,21 @@ export const todayISOValue = () => todayISO();
  * «1405/08/19» یا «۱۴۰۵/۸/۱۹» یا «2026-11-10» — در صورت نامعتبر بودن '' برمی‌گرداند.
  */
 export function parseLoose(input: string, mode: CalendarMode): string {
-  const raw = normalizeDigits(String(input ?? '')).replace(/\s/g, '').replace(/[.\-]/g, '/');
-  if (!raw) return '';
-  let m = raw.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
-  if (!m) {
-    const isoMatch = normalizeDigits(String(input ?? '')).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (isoMatch) return /^\d{4}-\d{2}-\d{2}$/.test(isoMatch[0]) ? isoMatch[0] : '';
-    return '';
+  const normalized = normalizeDigits(String(input ?? '')).replace(/\s/g, '');
+  if (!normalized) return '';
+
+  /* «YYYY-MM-DD» همیشه میلادی است — همان چیزی که در دیتابیس ذخیره می‌شود */
+  const isoMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    const y = Number(isoMatch[1]), mo = Number(isoMatch[2]), d = Number(isoMatch[3]);
+    const dt = new Date(Date.UTC(y, mo - 1, d));
+    const ok = dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
+    return ok ? `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}` : '';
   }
+
+  const raw = normalized.replace(/[.\-]/g, '/');
+  const m = raw.match(/^(\d{3,4})\/(\d{1,2})\/(\d{1,2})$/);
+  if (!m) return '';
   const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
   if (mo < 1 || mo > 12) return '';
   if (d < 1 || d > monthLength(y, mo, mode)) return '';

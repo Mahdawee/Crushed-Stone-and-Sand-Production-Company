@@ -155,10 +155,11 @@ export function DatePicker({
             setTyping(true);
             setText(e.target.value);
             if (err) setErr('');
-            /* تایپ کامل → مقدار فوراً همگام می‌شود (فیلترها بدون Enter هم کار کنند) */
+            /* پاک کردن کامل فیلد → مقدار هم پاک می‌شود (فیلترها با یک حرکت) */
+            if (!e.target.value.trim() && value) onChange('');
+            /* تاریخ کامل تایپ‌شده → همان لحظه اعمال می‌شود */
             const iso = parseLoose(e.target.value, calendar);
             if (iso && iso !== value) onChange(iso);
-            if (!e.target.value.trim() && value) onChange('');
           }}
           onFocus={(e) => e.currentTarget.select()}
           onBlur={(e) => { setTyping(false); commitText(e.target.value); }}
@@ -176,6 +177,7 @@ export function DatePicker({
         ) : null}
       </div>
       {err ? <span className="dp-err">{err}</span> : null}
+      {!compact && !err && value && value === todayISOValue() ? <span className="dp-hint">امروز</span> : null}
 
       {open ? createPortal(
         <div
