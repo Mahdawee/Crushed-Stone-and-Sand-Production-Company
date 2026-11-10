@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { AuthGuard } from './common/auth';
 import { PrismaService } from './prisma.service';
 import { AuthController } from './modules/auth.controller';
+import { RootController } from './modules/root.controller';
 import { CompanyController } from './modules/company.controller';
 import { EmployeesController } from './modules/employees.controller';
 import { CustomersController } from './modules/customers.controller';
@@ -17,7 +18,7 @@ import { ExportController } from './modules/importexport.controller';
 
 @Module({
   controllers: [
-    AuthController, CompanyController, EmployeesController, CustomersController,
+    RootController, AuthController, CompanyController, EmployeesController, CustomersController,
     SalesController, ReceiptsController, ExpensesController, SalariesController,
     LookupsController, ReportsController, SystemController, ExportController,
   ],

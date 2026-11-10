@@ -96,6 +96,9 @@
 - ساختار جداول در `apps/api/src/schema.ts` آمده و **در اولین اجرا خودکار ساخته/ترمیم می‌شود**
   (نه به `prisma migrate` و انترنت نیاز دارد، نه به ابزار بیرونی).
 - API روی `127.0.0.1:4317` گوش می‌دهد — از بیرون قابل دسترس نیست.
+- باز کردن آدرس `/api` در مرورگر، به جای خطای `Cannot GET /api`، یک صفحه راهنما نشان می‌دهد
+  («این سرویس داخلی است — خود برنامه در آدرس `/` است») با دکمه «رفتن به برنامه» و فهرست آدرس‌ها.
+  برای کلاینت‌های برنامه‌نویسی، همان آدرس JSON برمی‌گرداند.
 
 ### ساختار پوشه‌ها
 
@@ -144,9 +147,6 @@
 
 نیازمندی‌ها: **Node 22+**، **Rust** (برای دسکتاپ) و در ویندوز **WebView2** (در ویندوز ۱۰/۱۱ از قبل موجود است).
 
-> ابزار Tauri در بسته‌های نصب عادی نیامده (چون برای همه لازم نیست). یک بار اجرا کنید:
-> `npm run desktop:setup`  — سپس `npm run desktop:dev` / `npm run desktop:build`
-
 ```bash
 npm install
 
@@ -157,6 +157,7 @@ npm run dev          # API روی 4317 + وب روی 5173  →  http://localhost
 npm run seed:demo
 
 # ۳) پنجره دسکتاپ واقعی (Tauri)
+npm run desktop:setup     # یک بار: نصب ابزار Tauri CLI
 npm run desktop:dev
 ```
 
@@ -165,14 +166,128 @@ npm run desktop:dev
 ### ج) ساخت نصب‌کننده ویندوز
 
 ```bash
-npm install
-npm run package:api      # API + node.exe را آماده می‌کند  (نیاز به انترنت فقط همین یک بار)
+npm run doctor           # بررسی پیش‌نیازها با پیام دری
 npm run desktop:build    # خروجی: src-tauri/target/release/bundle/nsis/*.exe
 ```
 
 نصب‌کننده به صورت **per-user** نصب می‌شود (نیاز به دسترسی مدیر ویندوز ندارد).
+راهنمای کامل و گام‌به‌گام: **[`docs/TAURI-BUILD.md`](docs/TAURI-BUILD.md)**
 
 ---
+
+## ۴-۱) نصب و ساخت نسخه دسکتاپ (Tauri) — گام‌به‌گام
+
+> این بخش را یک بار روی کمپیوتر **برنامه‌نویس** انجام دهید تا فایل `.exe` ساخته شود.
+> کمپیوتر شرکت فقط همان فایل نصب را می‌خواهد (نه Rust، نه Node).
+
+### گام ۰ — بررسی خودکار محیط
+
+```bash
+npm run doctor
+```
+اگر همه موارد ✔ شد، به گام ۵ بروید. هر مورد ✘ راه‌حل خودش را نشان می‌دهد.
+
+### گام ۱ — Node.js
+
+از <https://nodejs.org> نسخه **LTS 22** را نصب کنید (نه نسخه عجیب/قدیمی).
+بررسی: `node -v` → باید `v22.x` یا بالاتر باشد.
+
+### گام ۲ — Rust
+
+| ویندوز | لینوکس / مک |
+|---|---|
+| از <https://rustup.rs> فایل `rustup-init.exe` را اجرا کنید (گزینه ۱ = پیش‌فرض) | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| یا در PowerShell: `winget install Rustlang.Rustup` | سپس: `source "$HOME/.cargo/env"` |
+
+بعد از نصب، **ترمینال را ببندید و دوباره باز کنید** و بررسی کنید:
+```
+rustc --version      →  rustc 1.7x.x
+cargo --version
+```
+> اگر `rustc` شناخته نشد، یعنی متغیر PATH تازه نشده — ویندوز را یک بار Log off/on کنید.
+
+### گام ۳ — ابزارهای ساخت (Windows)
+
+Tauri برای لینک کردن به کامپایلر C++ نیاز دارد:
+
+1. **Visual Studio Build Tools** را از
+   <https://visualstudio.microsoft.com/visual-cpp-build-tools/> دانلود و نصب کنید.
+2. در نصب، تیک **«Desktop development with C++»** را بزنید (شامل MSVC و Windows SDK).
+3. نیازی به Visual Studio کامل نیست؛ همین Build Tools کافی است.
+
+> **WebView2**: در ویندوز ۱۰/۱۱ از قبل نصب است. اگر نبود، از
+> <https://developer.microsoft.com/microsoft-edge/webview2/> نصب کنید — نصب‌کننده نهایی هم
+> در صورت نبود، خودش لینک دانلود را نشان می‌دهد.
+
+**لینوکس (اوبونتو/دبیان)** — یک دستور:
+```bash
+sudo apt update && sudo apt install -y build-essential curl wget file \
+  libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+```
+
+### گام ۴ — بسته‌های پروژه و ابزار Tauri
+
+```bash
+npm install
+npm run desktop:setup      # نصب @tauri-apps/cli (یک بار)
+```
+> اگر شبکه محدود است و npm نصب نشد، می‌توانید ابزار را از
+> <https://crates.io/crates/tauri-cli> با `cargo install tauri-cli --version "^2"` هم نصب کنید
+> و به جای `npm run desktop:dev` از `cargo tauri dev` استفاده کنید.
+
+### گام ۵ — اجرای حالت دسکتاپ (آزمایش)
+
+```bash
+npm run desktop:dev
+```
+این دستور: رابط را build می‌کند → پروسه API محلی را استارت می‌کند → پنجره برنامه را باز می‌کند.
+اولین اجرا چند دقیقه طول می‌کشد (کامپایل Rust).
+
+### گام ۶ — ساخت نصب‌کننده
+
+```bash
+npm run desktop:build
+```
+این دستور دو کار می‌کند:
+1. `package:api` → فایل‌های API + `node.exe` (نسخه پرتابل ویندوز) + رابط build شده را در
+   `src-tauri/api/` می‌گذارد تا **کمپیوتر شرکت به Node نیاز نداشته باشد**.
+2. `tauri build` → نصب‌کننده را می‌سازد.
+
+خروجی‌ها:
+
+| فایل | مسیر |
+|---|---|
+| **نصب‌کننده ویندوز (پیشنهادی)** | `src-tauri/target/release/bundle/nsis/Farday Roshan_0.1.0_x64-setup.exe` |
+| نصب‌کننده MSI | `src-tauri/target/release/bundle/msi/*.msi` |
+| نسخه بدون نصب (exe تنها) | `src-tauri/target/release/farday-roshan.exe` (کنارش پوشه `api/` لازم است) |
+| لینوکس | `src-tauri/target/release/bundle/deb/*.deb` و `.../appimage/*.AppImage` |
+
+> **برای توزیع به کمپیوتر شرکت:** فقط فایل `*-setup.exe` را کپی کنید. همین.
+
+### گام ۷ — ساخت نصب‌کننده بدون انترنت
+
+Tauri در اولین ساخت، crateهای Rust را از اینترنت می‌گیرد. برای ساخت **کاملاً آفلاین**:
+
+1. روی یک کمپیوتر با انترنت یک بار `npm run desktop:build` را اجرا کنید.
+2. پوشه‌های `~/.cargo/registry` و `C:\Users\<user>\.cargo\registry` و `src-tauri/target` را
+   به همان مسیر در کمپیوتر آفلاین کپی کنید، و `node.exe` را از قبل داخل `src-tauri/api/` بگذارید
+   (`npm run package:api` این کار را می‌کند).
+3. در کمپیوتر آفلاین: `npm install --offline` (اگر `node_modules` را هم کپی کرده‌اید نیازی نیست)
+   و بعد `npx tauri build --offline`.
+
+نصب‌کننده ساخته‌شده، خودش **هیچ نیازی به انترنت ندارد** — این محدودیت فقط برای مرحله ساخت است.
+
+### خطاهای رایج و راه‌حل
+
+| خطا | علت | راه‌حل |
+|---|---|---|
+| `error: linker `link.exe` not found` | Build Tools نصب نیست | گام ۳ را انجام دهید |
+| `failed to run custom build command for ... webkit` | بسته‌های سیستمی لینوکس کم است | دستور `apt install` در گام ۳ |
+| `'cargo' is not recognized` | PATH تازه نشده | ترمینال/ویندوز را ببندید و باز کنید |
+| `API entry not found ...` هنگام اجرا | API build نشده | `npm run build -w @farday/api` |
+| `node.exe not found` در نصب‌شده | بدون `package:api` ساخته شده | `npm run package:api` و بعد `npx tauri build` |
+| پنجره سفید می‌ماند | API دیر شروع شده | ۱۰ ثانیه صبر؛ `npm run doctor` و `dist` را بررسی کنید |
+| `EADDRINUSE: 4317` | یک نسخه دیگر در حال اجراست | برنامه قبلی یا `node apps/api/dist/main.js` را ببندید |
 
 ## ۵) خط فرمان (بدون UI)
 
@@ -220,6 +335,7 @@ node apps/api/dist/cli/reset.js --status   # شمارش ردیف‌ها
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | راه‌اندازی محیط توسعه، ساختار کد، افزودن شیت تازه |
 | [`docs/DATA-MODEL.md`](docs/DATA-MODEL.md) | جدول‌ها، ستون‌ها و رابطه‌ها |
 | [`docs/FAQ.md`](docs/FAQ.md) | پرسش‌های متداول و رفع مشکلات |
+| [`docs/TAURI-BUILD.md`](docs/TAURI-BUILD.md) | گام‌به‌گام نصب Tauri و ساخت نصب‌کننده (کامل) |
 | [`docs/RUN-IN-BROWSER.md`](docs/RUN-IN-BROWSER.md) | اجرا در مرورگر، پورت‌ها و متغیرهای محیطی |
 
 ---

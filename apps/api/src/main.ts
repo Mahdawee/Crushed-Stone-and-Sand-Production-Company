@@ -22,6 +22,7 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['error', 'warn', 'log'],
   });
+  app.set('trust proxy', true);
   app.setGlobalPrefix('api');
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: false }));
   app.enableCors({ origin: true });
@@ -42,6 +43,8 @@ async function bootstrap() {
     expressApp.use(express.static(webDist, { index: false, fallthrough: true }));
     app.use((req: any, res: any, next: any) => {
       if (req.method !== 'GET' || req.path.startsWith('/api')) return next();
+      // never answer API/asset paths with the HTML shell
+      if (/\.[a-z0-9]{2,5}$/i.test(req.path)) return next();
       res.sendFile(join(webDist, 'index.html'));
     });
     console.log(`FARDAY_WEB_READY ${webDist}`);

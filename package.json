@@ -24,7 +24,8 @@
     "desktop:dev": "tauri dev",
     "desktop:build": "npm run package:api && tauri build",
     "test:api": "npm run test -w @farday/api",
-    "desktop:setup": "npm i -D @tauri-apps/cli@2"
+    "desktop:setup": "npm i -D @tauri-apps/cli@2",
+    "doctor": "node scripts/doctor.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.5"
