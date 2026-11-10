@@ -108,21 +108,31 @@ export function DatePicker({
     });
     setPicker('days');
     setTyping(false);
+    const typed = withText ?? inputRef.current?.value ?? '';
     if (withText !== undefined) setText(withText);
+    /* اگر کاربر تاریخ را دستی تایپ کرده، نمای تقویم روی همان تاریخ برود */
+    const typedISO = typed.trim() ? parseLoose(typed, calendar) : null;
+    if (typedISO) {
+      const c = toCalendar(typedISO, calendar);
+      setView({ y: c.jy, m: c.jm });
+    }
     setOpen(true);
   };
 
+  /** متن را به تاریخ تبدیل می‌کند؛ اگر نامعتبر بود متن قبلی برمی‌گردد */
   const commitText = (raw: string) => {
     const trimmed = raw.trim();
-    if (!trimmed) { onChange(''); setErr(''); return; }
+    if (!trimmed) { onChange(''); setErr(''); return true; }
     const iso = parseLoose(trimmed, calendar);
     if (!iso) {
       setErr(calendar === 'jalali' ? 'تاریخ شمسی درست نیست — نمونه: ۱۴۰۵/۰۸/۱۹' : 'تاریخ میلادی درست نیست — نمونه: 2026-11-10');
-      return;
+      setText(value ? formatDate(value, calendar) : '');
+      return false;
     }
     setErr('');
     onChange(iso);
     setText(formatDate(iso, calendar));
+    return true;
   };
 
   const pickDay = (d: number) => {
@@ -179,7 +189,12 @@ export function DatePicker({
           }}
           onFocus={(e) => { if (disabled) return; openCal(); e.currentTarget.select(); }}
           onClick={() => { if (!open) openCal(); }}
-          onBlur={(e) => { setTyping(false); commitText(e.target.value); }}
+          onBlur={(e) => {
+            setTyping(false);
+            const to = e.relatedTarget as Node | null;
+            if (to && hostRef.current?.contains(to)) return;   /* کلیک روی آیکن تقویم */
+            commitText(e.target.value);
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') { e.preventDefault(); commitText(text); setOpen(false); }
             if (e.key === 'Escape') { setErr(''); setTyping(false); setText(value ? formatDate(value, calendar) : ''); setOpen(false); }
