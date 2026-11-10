@@ -4,6 +4,7 @@
  *   node scripts/ui-check/sidebar.test.mjs
  */
 import { JSDOM } from 'jsdom';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
@@ -59,13 +60,13 @@ await tick();
 ok('سایدبار رندر شد', !!$('.sidebar'));
 ok('دکمه سه‌خط در لپ‌تاپ ساخته نمی‌شود', !$('.drawer-btn'));
 ok('دکمه بستن (×) در لپ‌تاپ ساخته نمی‌شود', !$('.sb-close'));
-ok('دکمه جمع کردن سایدبار هست', !!$('.sb-collapse'));
+ok('دکمه جمع کردن سایدبار هست', !!$('.sb-toggle'));
 ok('body کلاس is-drawer ندارد', !document.body.classList.contains('is-drawer'));
 
 const app = $('.app');
 ok('سایدبار در حالت پهلو expand است (بدون rail)', !app.classList.contains('rail'));
 
-click($('.sb-collapse'));
+click($('.sb-toggle'));
 await tick();
 ok('کلیک روی دکمه → حالت ریل فعال', $('.app').classList.contains('rail'));
 ok('body کلاس is-rail می‌گیرد', document.body.classList.contains('is-rail'));
@@ -82,20 +83,49 @@ key({ key: 'Escape' });
 await tick();
 ok('Esc → پنل شناور بسته می‌شود', !$('.nav-pop'));
 
-click($('.sb-collapse'));
+click($('.sb-toggle'));
 await tick();
 ok('کلیک دوباره → ریل خاموش و منو باز', !$('.app').classList.contains('rail'));
 
-const heads = document.querySelectorAll('.nav-group-head');
-ok('همه گروه‌ها سرتیتر دارند', heads.length === 4, String(heads.length));
-click(heads[1]);
-await tick();
-/* گروه صفحه جاری همیشه باز می‌ماند؛ بقیه باید بسته شوند */
-const expandedHeadings = [...document.querySelectorAll('.nav-group')]
+const heads = () => [...document.querySelectorAll('.nav-group-head')];
+const openGroups = () => [...document.querySelectorAll('.nav-group')]
   .filter((g) => g.querySelector('.nav-items.expanded'))
   .map((g) => g.querySelector('.nav-group-title').textContent);
-ok('آکاردئون: گروه کلیک‌شده + گروه صفحه جاری', expandedHeadings.length <= 2, expandedHeadings.join(' | '));
-ok('آکاردئون: گروه سوم/چهارم بسته است', expandedHeadings.length < 4, expandedHeadings.join(' | '));
+
+ok('همه گروه‌ها سرتیتر دارند', heads().length === 4, String(heads().length));
+ok('در ابتدا همه گروه‌ها باز هستند', openGroups().length === 4, openGroups().join(' | '));
+
+/* بستن گروه دوم — بقیه نباید عوض شوند */
+click(heads()[1]); await tick();
+ok('بستن یک گروه بقیه را نمی‌بندد', openGroups().length === 3, openGroups().join(' | '));
+ok('گروه بسته‌شده همان است که کلیک شد', !openGroups().includes('معاملات'), openGroups().join(' | '));
+
+/* بستن گروهی که شاخه‌ی فعال دارد (گروه «عمومی» — صفحه «داشبورد») */
+click(heads()[0]); await tick();
+ok('گروه دارای شاخه فعال هم بسته می‌شود', !openGroups().includes('عمومی'), openGroups().join(' | '));
+/* آیتم‌ها در DOM می‌مانند (برای انیمیشن) ولی ارتفاع پنل صفر می‌شود؛
+   نشانه‌ی بسته بودن، نبودن کلاس expanded است. */
+const generalItems = document.querySelectorAll('.nav-group')[0].querySelector('.nav-items');
+ok('بستن گروه، کلاس expanded را برمی‌دارد', !generalItems.classList.contains('expanded'));
+ok('پنل گروه بسته با CSS جمع می‌شود (0fr)', /\.nav-items \{\s*display: grid; grid-template-rows: 0fr/.test(
+  fs.readFileSync(path.join(root, 'apps/web/src/styles/app.css'), 'utf8')));
+ok('بستن گروه، صفحه‌ی جاری را عوض نمی‌کند', host.textContent.includes('صفحه آزمایشی'));
+
+/* باز کردن دوباره همان گروه */
+click(heads()[1]); await tick();
+ok('همان گروه دوباره باز می‌شود', openGroups().includes('معاملات'), openGroups().join(' | '));
+
+/* همه بسته و همه باز با Alt+G */
+key({ key: 'g', altKey: true }); await tick();
+const afterToggleAll = openGroups().length;
+key({ key: 'g', altKey: true }); await tick();
+ok('Alt+G همه را می‌بندد/باز می‌کند', afterToggleAll === 0 || afterToggleAll === 4, String(afterToggleAll));
+ok('Alt+G دوباره وضعیت را برمی‌گرداند', openGroups().length === 4 - afterToggleAll, openGroups().join(' | '));
+
+/* چرخش فلش سرگروه با وضعیت */
+const chev = heads()[0].querySelector('.nav-group-chev');
+ok('فلش سرگروه کلاس up را با باز بودن می‌گیرد',
+  chev.classList.contains('up') === heads()[0].classList.contains('open'));
 
 /* ---------- حالت کشو (لپ‌تاپ کوچک/تبلت) ---------- */
 console.log('\n— عرض باریک (≤ ۱۱۰۰px) —');

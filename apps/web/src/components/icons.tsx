@@ -107,6 +107,20 @@ export const IconChevron = (p: P & { dir?: 'start' | 'end' | 'down' | 'up' }) =>
     </Svg>
   );
 };
+/**
+ * آیکن «جمع/باز کردن سایدبار» — یک قاب با خط عمودی و فلش کوچک.
+ * مدرن و مینیمال: یک مسیر پیوسته، بدون جزئیات اضافه.
+ */
+export const IconPanel = (p: P & { open?: boolean }) => {
+  const { open, ...rest } = p;
+  return (
+    <Svg {...rest} size={rest.size ?? 15}>
+      <rect x="3" y="4" width="18" height="16" rx="3" />
+      <path d="M9.5 4v16" />
+      {open ? <path d="M17.5 9.5 15 12l2.5 2.5" /> : <path d="M15 9.5 17.5 12 15 14.5" />}
+    </Svg>
+  );
+};
 export const IconMenu = (p: P) => (<Svg {...p}><path d="M4 7h16M4 12h16M4 17h16" /></Svg>);
 export const IconSun = (p: P) => (
   <Svg {...p}><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></Svg>

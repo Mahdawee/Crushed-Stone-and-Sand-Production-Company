@@ -3,8 +3,7 @@ import { createPortal } from 'react-dom';
 import { IconCalendar, IconChevron, IconClose } from './icons';
 import {
   CalendarMode, WEEKDAYS, WEEKDAYS_FULL, addDaysISO, formatDate, fromCalendar, monthGrid,
-  monthName, monthLength, months, pad2, parseLoose, shiftMonth, toCalendar, todayISO, todayISOValue,
-  weekdayIndex,
+  monthName, monthLength, months, pad2, shiftMonth, toCalendar, todayISOValue, weekdayIndex,
 } from '../lib/calendar';
 
 type Props = {
@@ -27,32 +26,29 @@ type Props = {
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 
 /**
- * تقویم شمسی/میلادی با ورودی تایپ‌شدنی.
+ * انتخاب تاریخ شمسی/میلادی — **فقط از تقویم** (بدون ورود دستی).
  *
- * • تایپ: «۱۴۰۵/۰۸/۱۹» یا «1405/8/19» — با Enter تأیید، با Esc لغو
- * • کلیک روی آیکن تقویم: شبکه ماه (هفته از شنبه)، تغییر ماه/سال، «امروز»
- * • خروجی همیشه ISO میلادی است؛ نمایش همیشه با تقویم انتخابی سیستم
+ * • کل کادر یک دکمه است: کلیک در هر جای آن تقویم را باز می‌کند.
+ * • تقویم: شبکه ماه (هفته از شنبه)، تغییر ماه/سال، «امروز».
+ * • آیکن، متن و متن راهنما هر کدام جای خود در چیدمان flex دارند؛
+ *   هیچ‌کدام با position:absolute روی دیگری نمی‌افتد و با هر عرضی
+ *   (۱۱۰px تا ۳۲۰px) هم‌پوشانی ندارد.
+ * • خروجی همیشه ISO میلادی است؛ نمایش همیشه با تقویم انتخابی سیستم.
  */
 export function DatePicker({
   value, onChange, calendar, placeholder, clearable, disabled, compact, id, width, title,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
-  const [text, setText] = useState(() => (value ? formatDate(value, calendar) : ''));
-  const [typing, setTyping] = useState(false);
-  const [err, setErr] = useState('');
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
 
   const view0 = toCalendar(value || todayISOValue(), calendar);
   const [view, setView] = useState({ y: view0.jy, m: view0.jm });
   const [picker, setPicker] = useState<'days' | 'months' | 'years'>('days');
 
-  /* نمایش متن همیشه با تقویم فعال — ولی وقتی کاربر در حال تایپ است دست نمی‌زنیم */
-  useEffect(() => {
-    if (!typing) setText(value ? formatDate(value, calendar) : '');
-  }, [value, calendar, typing]);
+  /* متن نمایش‌داده‌شده همیشه از مقدار می‌آید (بدون حالت میانی/ورود دستی) */
+  const text = value ? formatDate(value, calendar) : '';
 
   /* با باز شدن، نمای تقویم را روی مقدار فعلی بگذار */
   useEffect(() => {
@@ -60,7 +56,6 @@ export function DatePicker({
     const c = toCalendar(value || todayISOValue(), calendar);
     setView({ y: c.jy, m: c.jm });
     setPicker('days');
-    setErr('');
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* جای‌گذاری پاپ‌آور (portal → از کلیپ‌شدن داخل کارت/جدول در امان است) */
@@ -83,7 +78,7 @@ export function DatePicker({
       if (hostRef.current?.contains(t) || popRef.current?.contains(t)) return;
       setOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setOpen(false); setErr(''); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
     const onMove = () => place();
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
@@ -98,57 +93,23 @@ export function DatePicker({
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
-  /** باز کردن تقویم با حفظ متن فعلی */
-  const openCal = (withText?: string) => {
+  /** باز کردن تقویم روی ماهِ مقدار فعلی (یا امروز) */
+  const openCal = () => {
     if (disabled) return;
-    setErr('');
-    setView(() => {
-      const c = toCalendar(value || todayISOValue(), calendar);
-      return { y: c.jy, m: c.jm };
-    });
+    const c = toCalendar(value || todayISOValue(), calendar);
+    setView({ y: c.jy, m: c.jm });
     setPicker('days');
-    setTyping(false);
-    const typed = withText ?? inputRef.current?.value ?? '';
-    if (withText !== undefined) setText(withText);
-    /* اگر کاربر تاریخ را دستی تایپ کرده، نمای تقویم روی همان تاریخ برود */
-    const typedISO = typed.trim() ? parseLoose(typed, calendar) : null;
-    if (typedISO) {
-      const c = toCalendar(typedISO, calendar);
-      setView({ y: c.jy, m: c.jm });
-    }
     setOpen(true);
   };
 
-  /** متن را به تاریخ تبدیل می‌کند؛ اگر نامعتبر بود متن قبلی برمی‌گردد */
-  const commitText = (raw: string) => {
-    const trimmed = raw.trim();
-    if (!trimmed) { onChange(''); setErr(''); return true; }
-    const iso = parseLoose(trimmed, calendar);
-    if (!iso) {
-      setErr(calendar === 'jalali' ? 'تاریخ شمسی درست نیست — نمونه: ۱۴۰۵/۰۸/۱۹' : 'تاریخ میلادی درست نیست — نمونه: 2026-11-10');
-      setText(value ? formatDate(value, calendar) : '');
-      return false;
-    }
-    setErr('');
-    onChange(iso);
-    setText(formatDate(iso, calendar));
-    return true;
-  };
-
   const pickDay = (d: number) => {
-    const iso = fromCalendar(view.y, view.m, d, calendar);
-    onChange(iso);
-    setText(formatDate(iso, calendar));
+    onChange(fromCalendar(view.y, view.m, d, calendar));
     setOpen(false);
-    setErr('');
   };
 
   const pickToday = () => {
-    const iso = todayISOValue();
-    onChange(iso);
-    setText(formatDate(iso, calendar));
+    onChange(todayISOValue());
     setOpen(false);
-    setErr('');
   };
 
   const shift = (delta: number) => {
@@ -163,64 +124,40 @@ export function DatePicker({
 
   return (
     <div className={`dp-host ${compact ? 'dp-compact' : ''}`} ref={hostRef} style={{ width }} title={title}>
-      <div className="dp-input-wrap">
-        {/* کلیک روی هر جای کادر (including آیکن) تقویم را باز می‌کند */}
+      {/*
+        کادر انتخاب تاریخ — یک دکمه‌ی کامل، نه input.
+        چیدمان: [آیکن] [متن] [پاک کردن]  →  هر کدام در جریان flex،
+        بنابراین آیکن و متن هرگز روی هم نمی‌افتند (نه absolute، نه padding ترفندی).
+      */}
+      <div className="dp-field">
         <button
-          type="button" className="dp-icon" tabIndex={-1} disabled={disabled}
+          type="button" className="dp-trigger" disabled={disabled}
           onClick={() => (open ? setOpen(false) : openCal())}
-          aria-label="باز کردن تقویم" title="تقویم" aria-expanded={open}
-        ><IconCalendar size={16} /></button>
-        <input
-          id={id}
-          ref={inputRef}
-          className={`input dp-input ${err ? 'dp-invalid' : ''}`}
-          value={text}
-          disabled={disabled}
-          inputMode="numeric"
-          placeholder={placeholder || (calendar === 'jalali' ? '۱۴۰۵/۰۸/۱۹' : '2026-11-10')}
-          onChange={(e) => {
-            setTyping(true);
-            setText(e.target.value);
-            if (err) setErr('');
-            /* پاک کردن کامل فیلد → مقدار هم پاک می‌شود (فیلترها با یک حرکت) */
-            if (!e.target.value.trim() && value) onChange('');
-            /* تاریخ کامل تایپ‌شده → همان لحظه اعمال می‌شود */
-            const iso = parseLoose(e.target.value, calendar);
-            if (iso && iso !== value) onChange(iso);
-          }}
-          onFocus={(e) => { if (disabled) return; openCal(); e.currentTarget.select(); }}
-          onClick={() => { if (!open) openCal(); }}
-          onBlur={(e) => {
-            setTyping(false);
-            const to = e.relatedTarget as Node | null;
-            if (to && hostRef.current?.contains(to)) return;   /* کلیک روی آیکن تقویم */
-            commitText(e.target.value);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') { e.preventDefault(); commitText(text); setOpen(false); }
-            if (e.key === 'Escape') { setErr(''); setTyping(false); setText(value ? formatDate(value, calendar) : ''); setOpen(false); }
-            if (e.key === 'ArrowDown' && !open) { e.preventDefault(); setOpen(true); }
-          }}
-        />
-        {clearable && value ? (
+          aria-haspopup="dialog" aria-expanded={open}
+          title={open ? 'بستن تقویم' : 'انتخاب تاریخ'}
+        >
+          <span className="dp-cal" aria-hidden="true"><IconCalendar size={compact ? 15 : 16} /></span>
+          <span className={`dp-value ${text ? '' : 'is-empty'}`} dir={text ? 'ltr' : 'rtl'}>
+            {text || placeholder || (calendar === 'jalali' ? 'انتخاب تاریخ' : 'Select date')}
+          </span>
+        </button>
+
+        {clearable && value && !disabled ? (
           <button
-            type="button" className="dp-clear" tabIndex={-1} title="پاک کردن" aria-label="پاک کردن تاریخ"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => { setText(''); setErr(''); onChange(''); setOpen(false); }}
-          ><IconClose size={12} /></button>
+            type="button" className="dp-clear" title="پاک کردن" aria-label="پاک کردن تاریخ"
+            onClick={() => { onChange(''); setOpen(false); }}
+          ><IconClose size={11} /></button>
         ) : null}
       </div>
-      {err ? <span className="dp-err">{err}</span> : null}
-      {!compact && !err && value && value === todayISOValue() ? <span className="dp-hint">امروز</span> : null}
 
       {open ? createPortal(
         <div
-          className="dp-pop" ref={popRef} dir="rtl"
+          className="dp-pop" ref={popRef} dir="rtl" role="dialog" aria-label="تقویم"
           style={{ top: pos.top, left: pos.left, width: Math.max(302, pos.width) }}
           onMouseDown={(e) => e.stopPropagation()}
         >
           <div className="dp-head">
-            <button type="button" className="dp-nav" onClick={() => shift(-1)} title="ماه قبل"><IconChevron dir="start" size={15} /></button>
+            <button type="button" className="dp-nav" onClick={() => shift(-1)} title="ماه قبل" aria-label="ماه قبل"><IconChevron dir="start" size={15} /></button>
             <div className="dp-title">
               <button type="button" className="dp-title-btn" onClick={() => setPicker(picker === 'months' ? 'days' : 'months')}>
                 {monthName(view.m, calendar)}
@@ -229,7 +166,7 @@ export function DatePicker({
                 {view.y}
               </button>
             </div>
-            <button type="button" className="dp-nav" onClick={() => shift(1)} title="ماه بعد"><IconChevron dir="end" size={15} /></button>
+            <button type="button" className="dp-nav" onClick={() => shift(1)} title="ماه بعد" aria-label="ماه بعد"><IconChevron dir="end" size={15} /></button>
           </div>
 
           {picker === 'days' ? (

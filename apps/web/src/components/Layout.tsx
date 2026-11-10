@@ -5,8 +5,8 @@ import { formatDate, todayISO } from '../lib/calendar';
 import {
   IconBuilding, IconCalendar, IconCash, IconChart, IconChevron, IconClose, IconCoins,
   IconContact, IconDashboard, IconDatabase, IconHelp, IconHistory, IconLock, IconLogout,
-  IconMenu, IconMoon, IconPlus, IconReceipt, IconSearchDoc, IconSettings, IconSun, IconTrend,
-  IconTruck, IconUsers, IconWallet,
+  IconMenu, IconMoon, IconPanel, IconPlus, IconReceipt, IconSearchDoc, IconSettings, IconSun,
+  IconTrend, IconTruck, IconUsers, IconWallet,
 } from './icons';
 
 type NavItem = { to: string; label: string; icon: React.FC<{ size?: number }>; managerOnly?: boolean };
@@ -17,13 +17,17 @@ type NavGroup = { id: string; title: string; icon: React.FC<{ size?: number }>; 
  *
  * همیشه فقط یکی از این دو رفتار فعال است (با عرض پنجره تعیین می‌شود):
  *
- *  ① «پهلو»  (≥ ۱۱۰۱px): سایدبار همیشه دیده می‌شود؛ دکمه‌ی بالای آن با آن
- *     محتوا را جمع می‌کند (حالت ریل ۶۴px با پنل شناور گروه‌ها). دکمه‌ی سه‌خط و
+ *  ① «پهلو»  (≥ ۱۱۰۱px): سایدبار همیشه دیده می‌شود. یک دکمه‌ی کوچک و مینیمال
+ *     (sb-toggle) بالای سایدبار آن را به ریل ۶۴px جمع می‌کند و در ریل هم همان
+ *     دکمه (که حالا کنار لوگو شناور است) دوباره بازش می‌کند. دکمه‌ی سه‌خط و
  *     ضربدر «بستن» در این حالت وجود ندارند چون معنایی ندارند.
  *
  *  ② «کشو» (≤ ۱۱۰۰px): سایدبار روی محتوا می‌آید. دکمه‌ی سه‌خط در نوار بالا آن را
  *     باز/بسته می‌کند؛ ضربدر گوشه‌ی سایدبار و کلیک روی پشت‌زمینه هم می‌بندند.
- *     زیرمنوها همیشه تاشو هستند (آکاردئون).
+ *
+ * در هر دو حالت، سرگروه‌های منو **مستقلاً** باز/بسته می‌شوند (آکاردئون نیست:
+ * بستن یک گروه بقیه را نمی‌بندد) و گروهی که صفحه‌ی جاری در آن است هم قابل
+ * بستن است.
  */
 const NAV: NavGroup[] = [
   {
@@ -107,9 +111,15 @@ export default function Layout() {
   const [open, setOpen] = useState(false);
   /** حالت ریل (فقط پهلو) — انتخاب کاربر */
   const [rail, setRail] = useState(() => localStorage.getItem(RAIL_KEY) === '1');
-  /** گروه‌های بسته‌شده (آکاردئون) — دسته‌ی صفحه‌ی جاری همیشه باز می‌ماند */
+  /**
+   * گروه‌های بسته‌شده — هر گروه مستقل باز/بسته می‌شود (نه آکاردئون)، و
+   * گروهِ صفحه‌ی جاری هم قابل بستن است. پیش‌فرض: همه باز.
+   */
   const [closed, setClosed] = useState<Record<string, boolean>>(() => {
-    try { return JSON.parse(localStorage.getItem(CLOSED_KEY) || '{}'); } catch { return {}; }
+    try {
+      const saved = JSON.parse(localStorage.getItem(CLOSED_KEY) || '{}');
+      return saved && typeof saved === 'object' ? saved : {};
+    } catch { return {}; }
   });
   /** پنل شناور در حالت ریل */
   const [hoverGroup, setHoverGroup] = useState('');
@@ -176,7 +186,7 @@ export default function Layout() {
       if (k === 'g') {
         e.preventDefault();
         setClosed((prev) => {
-          const allOpen = NAV.every((g) => prev[g.id] === false || g.id === activeGroup);
+          const allOpen = NAV.every((g) => !prev[g.id]);
           const next: Record<string, boolean> = {};
           NAV.forEach((g) => { next[g.id] = allOpen; });
           return next;
@@ -193,15 +203,12 @@ export default function Layout() {
     try { await saveSettings({ theme: next.theme }); } catch { /* ignore */ }
   };
 
-  /** آکاردئونی: باز کردن یک گروه، بقیه را می‌بندد (منو کم‌شلوغ می‌ماند) */
+  /**
+   * باز/بسته کردن یک سرگروه — کاملاً مستقل.
+   * بقیه‌ی گروه‌ها دست نمی‌خورند، و گروهی که شاخه‌ی فعال دارد هم بسته می‌شود.
+   */
   const toggleGroup = (id: string, isOpen: boolean) => {
-    /* گروه صفحه‌ی جاری قابل بستن نیست تا کاربر گم نشود */
-    if (id === activeGroup) return;
-    if (isOpen) { setClosed({ ...closed, [id]: true }); return; }
-    const next: Record<string, boolean> = {};
-    NAV.forEach((g) => { next[g.id] = true; });
-    next[id] = false;
-    setClosed(next);
+    setClosed((prev) => ({ ...prev, [id]: isOpen }));
   };
 
   /** موقعیت پنل شناور ریل: کنار همان گروه */
@@ -226,14 +233,14 @@ export default function Layout() {
             <span>سنگ، کرش، جغل و ریگ</span>
           </div>
 
-          {/* ① جمع کردن سایدبار — فقط در حالت پهلو */}
+          {/* ① ریل/باز کردن سایدبار — دکمه‌ی مینیمال، فقط در حالت پهلو */}
           <button
-            className="sb-collapse" onClick={() => setRail((v) => !v)} type="button"
+            className="sb-toggle" onClick={() => setRail((v) => !v)} type="button"
             title={rail ? 'باز کردن سایدبار (Alt+S)' : 'جمع کردن سایدبار (Alt+S)'}
             aria-label={rail ? 'باز کردن سایدبار' : 'جمع کردن سایدبار'}
             aria-expanded={!rail}
           >
-            <IconChevron dir={rail ? 'start' : 'end'} size={15} />
+            <IconPanel size={15} open={rail} />
           </button>
 
           {/* ② بستن کشو — فقط در حالت کشو (در دسکتاپ اصلاً ساخته نمی‌شود) */}
@@ -251,7 +258,7 @@ export default function Layout() {
           {groups.map((g) => {
             const isActiveGroup = activeGroup === g.id;
             /* در ریل: گروه فقط با هاور/کلیک باز می‌شود؛ در حالت عادی: آکاردئون */
-            const isOpen = railActive ? hoverGroup === g.id : (closed[g.id] === false || isActiveGroup);
+            const isOpen = railActive ? hoverGroup === g.id : !closed[g.id];
             const GIcon = g.icon;
             return (
               <div
@@ -262,7 +269,7 @@ export default function Layout() {
                 <button
                   type="button"
                   ref={(el) => { groupRefs.current[g.id] = el; }}
-                  className={`nav-group-head ${isActiveGroup ? 'has-active' : ''}`}
+                  className={`nav-group-head ${isActiveGroup ? 'has-active' : ''} ${isOpen ? 'open' : ''}`}
                   onClick={() => (railActive ? openPanel(g.id) : toggleGroup(g.id, isOpen))}
                   title={railActive ? g.title : undefined}
                   aria-expanded={isOpen}
@@ -270,7 +277,7 @@ export default function Layout() {
                   <GIcon size={15} />
                   <span className="nav-group-title">{g.title}</span>
                   {railActive ? null : (
-                    <IconChevron dir="down" size={13} className={`nav-group-chev ${isOpen ? 'up' : ''}`} />
+                    <IconChevron dir="down" size={12} className={`nav-group-chev ${isOpen ? 'up' : ''}`} />
                   )}
                 </button>
 

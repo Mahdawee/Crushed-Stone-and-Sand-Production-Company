@@ -75,39 +75,50 @@ const { Picker } = await import(path.join(outDir, 'bundle.mjs'));
 let pass = 0, fail = 0;
 const ok = (n, c, extra = '') => { c ? (pass++, console.log(`  ✔ ${n}`)) : (fail++, console.log(`  ✘ ${n}${extra ? ' → ' + extra : ''}`)); };
 
-/* --- ۲) DatePicker: کلیک روی input تقویم را باز می‌کند --- */
+/* --- ۲) DatePicker: فقط انتخاب از تقویم --- */
 console.log('\n— DatePicker در DOM واقعی —');
 await render(React.createElement(Picker, { initial: '2026-11-10' }));
 const container = host;
-if (!host.innerHTML) console.log('DEBUG bundle import ok but nothing rendered');
-const input = container.querySelector('input.dp-input');
-ok('input رندر شد', !!input);
-ok('مقدار اولیه نمایش داده می‌شود', input.value.length > 0, input.value);
+const val = () => container.querySelector('[data-testid="val"]').textContent;
+const pop = () => document.querySelector('.dp-pop');
+const trigger = () => container.querySelector('.dp-trigger');
 
-fireEvent.click(input); await tick();
-ok('کلیک روی کادر → تقویم باز می‌شود', !!document.querySelector('.dp-pop'));
+ok('کادر انتخاب تاریخ رندر شد', !!trigger());
+ok('کادر یک دکمه است (input تایپ‌شدنی نیست)', !container.querySelector('input'));
+ok('مقدار اولیه به شمسی نمایش داده می‌شود', /۱۴۰۵|1405/.test(trigger().textContent), trigger().textContent);
+
+fireEvent.click(trigger()); await tick();
+ok('کلیک روی کادر → تقویم باز می‌شود', !!pop());
 ok('شبکه‌ی روزها رسم شده', document.querySelectorAll('.dp-cell').length > 25);
 
+/* انتخاب یک روز از شبکه */
+const cells = [...document.querySelectorAll('.dp-cell:not(.empty)')];
+const pick = cells.find((c) => c.textContent === '20') || cells[10];
+fireEvent.click(pick); await tick();
+ok('انتخاب روز → تقویم بسته می‌شود', !pop());
+ok('انتخاب روز → مقدار عوض می‌شود', val() !== '2026-11-10', val());
+ok('مقدار ISO میلادی معتبر است', /^\d{4}-\d{2}-\d{2}$/.test(val()), val());
+ok('مقدار نمایش‌داده‌شده همان روز انتخاب‌شده است', trigger().textContent.includes(pick.textContent), trigger().textContent);
+
+/* باز کردن با کلیک روی آیکن هم کار می‌کند (کل کادر یک دکمه است) */
+fireEvent.click(container.querySelector('.dp-cal')); await tick();
+ok('کلیک روی خود آیکن هم تقویم را باز می‌کند', !!pop());
+
 fireEvent.keyDown(document, { key: 'Escape' }); await tick();
-ok('Esc → تقویم بسته می‌شود', !document.querySelector('.dp-pop'));
+ok('Esc → تقویم بسته می‌شود', !pop());
 
-/* ورود دستی */
-fireEvent.focus(input);
-fireEvent.change(input, { target: { value: '1405/08/20' } });
-await tick();
-ok('تایپ دستی مقدار را تغییر می‌دهد', container.querySelector('[data-testid="val"]').textContent === '2026-11-11',
-  container.querySelector('[data-testid="val"]').textContent);
-ok('با تایپ، تقویم باز است', !!document.querySelector('.dp-pop'));
-fireEvent.keyDown(input, { key: 'Enter' }); await tick();
-ok('Enter → تقویم بسته و مقدار ثبت', !document.querySelector('.dp-pop') &&
-  container.querySelector('[data-testid="val"]').textContent === '2026-11-11');
+/* دکمه امروز */
+fireEvent.click(trigger()); await tick();
+const todayBtn = [...document.querySelectorAll('.dp-foot .btn')].find((b) => b.textContent === 'امروز');
+fireEvent.click(todayBtn); await tick();
+ok('دکمه «امروز» تاریخ امروز را می‌گذارد و می‌بندد', !pop() && val().length === 10, val());
 
-/* تاریخ نامعتبر */
-fireEvent.change(input, { target: { value: '99/99/99' } });
-fireEvent.blur(input);
-await tick();
-ok('تاریخ نامعتبر پیام می‌دهد', !!container.querySelector('.dp-err'));
-ok('متن به مقدار معتبر برمی‌گردد', /^(۱۴۰۵|1405)\/08\/20$/.test(input.value) && !input.value.includes('99'), input.value);
+/* پاک کردن */
+const clear = container.querySelector('.dp-clear');
+ok('دکمه پاک کردن هست', !!clear);
+fireEvent.click(clear); await tick();
+ok('پاک کردن → مقدار خالی می‌شود', val() === '');
+ok('پاک کردن → متن راهنما نشان داده می‌شود', trigger().textContent.includes('انتخاب تاریخ'), trigger().textContent);
 
 cleanup();
 console.log(`\n${fail === 0 ? '✅' : '⛔'} ${pass} موفق، ${fail} ناکام\n`);

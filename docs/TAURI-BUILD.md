@@ -259,7 +259,7 @@ npm run desktop:build
 | `npm run desktop:dev` | پنجره دسکتاپ در حالت توسعه | آزمایش پنجره بدون ساخت نصب‌کننده |
 | `npm run package:api` | فقط بسته API/`src-tauri/api` را آماده می‌کند | به‌ندرت؛ داخل `desktop:build` هست |
 | `npm run test:api` | ۵۳ تست رفتاری API | بعد از تغییرات بک‌اند |
-| `npm run test:ui` | ۶۰ تست واقعی رابط (سایدبار، DatePicker) در DOM | بعد از تغییر ظاهر |
+| `npm run test:ui` | ۸۱ تست واقعی رابط (سایدبار، DatePicker) در DOM | بعد از تغییر ظاهر |
 | `npm run test:nsis` | تنظیمات زبان نصب‌کننده را چک می‌کند (خطای `Persian.nlf`) | قبل از `desktop:build` |
 
 > **قانون طلایی:** پس از `pull`، اگر فقط می‌خواهید ببینید → `npm run setup && npm start`.
