@@ -3,9 +3,13 @@
 این راهنما برای کسی است که می‌خواهد از سورس، **فایل نصب `.exe`** بسازد.
 کمپیوتر شرکت بعداً فقط همان فایل نصب را می‌خواهد — نه Rust، نه Node، نه انترنت.
 
-> خلاصه در یک نگاه:
-> `npm install` → `npm run doctor` → `npm run desktop:setup` → `npm run desktop:build`
-> → فایل `src-tauri/target/release/bundle/nsis/*-setup.exe`
+> **خلاصه در یک نگاه (ویندوز):**
+> ```powershell
+> npm run setup          # نصب بسته‌ها + build (بعد از هر git pull)
+> npm run doctor         # چک پیش‌نیازها
+> npm run desktop:build  # ساخت نصب‌کننده
+> ```
+> خروجی: `src-tauri/target/release/bundle/nsis/Farday Roshan_0.1.0_x64-setup.exe`
 
 ---
 
@@ -73,31 +77,19 @@ sudo apt update && sudo apt install -y build-essential curl wget file \
 
 ## ۴) آماده‌سازی پروژه
 
-```bash
-# در پوشه پروژه
-npm install
-npm run desktop:setup      # نصب @tauri-apps/cli
-npm run doctor             # ✅ بررسی همه پیش‌نیازها با پیام دری
+```powershell
+npm run setup      # = npm install (اگر لازم بود) + Prisma + build API و رابط
+npm run doctor     # ✅ بررسی همه پیش‌نیازها با پیام دری
 ```
+
+`@tauri-apps/cli` از قبل داخل `devDependencies` است؛ پس با `npm install` می‌آید و
+`npm run desktop:setup` دیگر لازم نیست (اگر قبلاً نصب نکرده‌اید و آن را اجرا کردید، فقط دوباره نصب می‌کند).
 
 اگر `doctor` همه موارد را ✔ کرد، ادامه دهید. هر ✘ با راه‌حلش نمایش داده می‌شود.
 
-### اگر `doctor` گفت «npm install اجرا نشده» ولی `node_modules` هست
-
-در نسخه‌های قدیمی doctor این پیام اشتباه بود (پروژه workspaces است و بسته‌ها در
-`node_modules` ریشه جمع می‌شوند). نسخه فعلی وجود `@nestjs/core` و `vite` را بررسی می‌کند.
-اگر همین پیام را دیدید: `git pull` و بعد `npm install` (یک بار، با انترنت).
-
-### ترتیب درست وقت کمبود وقت
-
-`doctor` در پایان، فهرست کارهای باقی‌مانده را **به ترتیب** می‌دهد. معمولاً:
-
-```
-1) npm install            ← یک بار
-2) npm run build          ← API + رابط
-3) npm run desktop:setup  ← نصب Tauri CLI
-   سپس: npm run desktop:build
-```
+> ℹ اگر `npm doctor` گفت «نسخه نود/npm را ارتقا بده» — برای این پروژه **لازم نیست**.
+> Node 2x از ۲۰ به بالا کافی است و نسخه‌های خیلی نو ممکن است بعضی بسته‌ها را ناسازگار کنند.
+> فقط همان `npm run doctor` پروژه ملاک است.
 
 ## ۵) آزمایش پنجره دسکتاپ
 
@@ -106,9 +98,11 @@ npm run desktop:dev
 ```
 
 چه اتفاقی می‌افتد؟
-1. رابط React ساخته می‌شود،
-2. API محلی (NestJS) روی `127.0.0.1:4317` استارت می‌شود،
-3. پنجره Tauri باز می‌شود و همان آدرس را نشان می‌دهد.
+1. `npm run dev` اجرا می‌شود (API روی 4317 + Vite روی 5173)،
+2. پنجره Tauri آدرس **http://localhost:5173** را باز می‌کند (همان UI با hot-reload)،
+3. اگر API از قبل بالا باشد، پوسته از همان استفاده می‌کند.
+
+> در حالت `desktop:dev` لازم نیست `npm run dev` را جدا اجرا کنید؛ خودش اجرا می‌کند.
 
 > **اولین اجرا ۳ تا ۱۰ دقیقه** طول می‌کشد (کامپایل crateهای Rust). دفعات بعد چند ثانیه.
 
@@ -118,14 +112,16 @@ npm run desktop:dev
 npm run desktop:build
 ```
 
-این دستور:
+این دستور (`build:desktop` → `package:api` → `tauri build`):
 
 | مرحله | کار |
 |---|---|
-| `build -w @farday/api` | API را به جاوااسکریپت کامپایل می‌کند |
-| `build -w @farday/web` | رابط را در `apps/web/dist` می‌سازد |
-| `package:api` | `apps/api/dist` + `node.exe` (نسخه پرتابل Node برای ویندوز) + رابط build شده را در `src-tauri/api/` می‌گذارد |
+| `build:desktop` | API و رابط کاربری را از **کد فعلی** می‌سازد (تا نصب‌کننده نسخه کهنه نداشته باشد) |
+| `package:api` | `apps/api/dist` + `node.exe` (نسخه پرتابل Node) + رابط build شده را در `src-tauri/api/` می‌گذارد |
 | `tauri build` | کامپایل Rust + ساخت نصب‌کننده |
+
+> **اگر `npm run package:api` را تنها اجرا کردید** و بعد کد UI را عوض کردید، حتماً دوباره
+> `npm run desktop:build` را اجرا کنید؛ وگرنه نصب‌کننده همان UI قدیمی را نشان می‌دهد.
 
 خروجی‌ها:
 
@@ -198,6 +194,9 @@ npx tauri build --offline
 | پنجره سفید | API دیر بیدار شده | ۱۰ ثانیه صبر؛ `%APPDATA%\af.farday.roshan` را بررسی کنید |
 | نصب‌شده: `node.exe not found` | بدون `package:api` ساخته شده | `npm run package:api` و سپس `npx tauri build` |
 | فونت فارسی درست نیست | WebView2 قدیمی | WebView2 Runtime را تازه کنید |
+| `'unzip' is not recognized` | ویندوز به‌صورت پیش‌فرض `unzip` ندارد (نسخه‌های قبل از این اصلاح) | `git pull` — حالا خود اسکریپت ZIP را باز می‌کند، بدون unzip |
+| `glob pattern binaries/* path not found` | `tauri.conf.json` پوشه `binaries/` را منبع اعلام کرده بود ولی ساخته نمی‌شد | `git pull` (این پوشه حالا خودکار ساخته می‌شود و از `resources` برداشته شد) |
+| پنجره سفید در نسخه نصب‌شده | API هنوز بالا نیامده / آدرس اشتباه | `git pull` — پنجره حالا بعد از آماده شدن API ساخته می‌شود و همیشه `127.0.0.1:4317` را باز می‌کند |
 
 ## ۱۱) بررسی سلامت نسخه نصب‌شده
 
@@ -208,3 +207,51 @@ npx tauri build --offline
     "$env:LOCALAPPDATA\Programs\Farday Roshan\api\cli\backup.js" --list
   ```
   (مسیر نصب ممکن است بر اساس انتخاب شما متفاوت باشد.)
+
+---
+
+## ۱۱) بعد از هر `git pull` چه دستوری بزنم؟
+
+### الف) فقط می‌خواهم برنامه را اجرا/ببینم
+```powershell
+git pull
+npm run setup      # بسته‌ها + build؛ اگر چیزی عوض نشده باشد سریع رد می‌شود
+npm start          # → http://127.0.0.1:4317
+```
+یا برای کار توسعه‌ای (hot reload): `npm run dev` → <http://localhost:5173>
+
+### ب) می‌خواهم دوباره نصب‌کننده بسازم
+```powershell
+git pull
+npm run setup
+npm run desktop:build
+```
+
+### ج) چه وقت لازم است `npm install` جداگانه بزنم؟
+فقط اگر این فایل‌ها عوض شده باشند (چیزی در `package.json`):
+
+```powershell
+git pull
+npm install
+npm run desktop:build
+```
+`npm run setup` خودش این را تشخیص می‌دهد (با مقایسه زمان `package-lock.json`) و
+در صورت نیاز `npm install` را اجرا می‌کند؛ پس در عمل همان `npm run setup` کافی است.
+
+### د) دستورها به زبان ساده
+
+| دستور | چه می‌کند | چه وقت |
+|---|---|---|
+| `npm run setup` | `npm install` (اگر لازم) → Prisma → build API و رابط. فقط چیزهای کهنه را می‌سازد | **بعد از هر pull** |
+| `npm start` | برنامه را در یک آدرس (`127.0.0.1:4317`) اجرا می‌کند | استفاده روزمره/آزمایش |
+| `npm run dev` | حالت توسعه: API + Vite با hot reload روی 5173 | کار روی ظاهر/کد |
+| `npm run doctor` | چک می‌کند Node/Rust/MSVC/WebView2/Tauri آماده‌اند | وقتی ساخت خطا داد |
+| `npm run desktop:build` | نصب‌کننده ویندوز می‌سازد | برای توزیع به کمپیوتر شرکت |
+| `npm run desktop:dev` | پنجره دسکتاپ در حالت توسعه | آزمایش پنجره بدون ساخت نصب‌کننده |
+| `npm run package:api` | فقط بسته API/`src-tauri/api` را آماده می‌کند | به‌ندرت؛ داخل `desktop:build` هست |
+| `npm run test:api` | ۵۳ تست رفتاری API | بعد از تغییرات بک‌اند |
+
+> **قانون طلایی:** پس از `pull`، اگر فقط می‌خواهید ببینید → `npm run setup && npm start`.
+> اگر می‌خواهید نصب‌کننده بدهید → `npm run setup && npm run desktop:build`.
+> هیچ‌وقت `npx tauri build` را بدون `package:api` اجرا نکنید (نسخه‌های قبل همین را می‌گفتند؛
+> حالا `desktop:build` خودش هر سه مرحله را به ترتیب انجام می‌دهد).
