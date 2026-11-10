@@ -11,7 +11,9 @@
     "db:seed": "node dist/cli/seed.js",
     "db:seed:demo": "node dist/cli/seed.js --demo",
     "db:backup": "node dist/cli/backup.js",
-    "db:reset": "node dist/cli/reset.js"
+    "db:reset": "node dist/cli/reset.js",
+    "test": "node test/smoke.test.js",
+    "test:api": "node test/smoke.test.js"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",

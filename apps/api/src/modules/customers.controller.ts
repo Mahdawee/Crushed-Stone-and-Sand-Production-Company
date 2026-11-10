@@ -59,12 +59,20 @@ export class CustomersController {
       ...sales.map((s) => ({
         date: s.date, type: s.paymentType === 'credit' ? 'فروش (باقی)' : 'فروش (نقده)',
         doc: s.no, detail: `${s.materialName} — ${s.volume} متر مکعب`,
-        debit: Number(s.total) || 0, credit: 0, id: `s${s.id}`,
+        // a cash sale is settled on the spot: it appears on both sides so the
+        // running balance only moves with credit sales and receipts
+        debit: Number(s.total) || 0,
+        credit: s.paymentType === 'credit' ? 0 : Number(s.total) || 0,
+        id: `s${s.id}`,
       })),
       ...receipts.map((r) => ({
         date: r.date, type: `رسید (${r.sourceName || 'باقی داری'})`, doc: r.no,
         detail: r.relatedBillNo ? `بل مربوط: ${r.relatedBillNo}` : '',
-        debit: 0, credit: Number(r.amount) || 0, id: `r${r.id}`,
+        // «امانت» پولی است که نزد شرکت امانت است و از بدهی کم نمی‌شود
+        debit: 0,
+        credit: r.sourceName === 'امانت' ? 0 : Number(r.amount) || 0,
+        amount: Number(r.amount) || 0,
+        id: `r${r.id}`,
       })),
     ].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id.localeCompare(b.id)));
     let bal = Number(c[0].openingBalance) || 0;

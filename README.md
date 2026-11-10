@@ -200,7 +200,16 @@ node dist/cli/reset.js --yes --keep-masters   # فقط اسناد، کارمند
 
 ---
 
-## ۷) فهرست مستندات
+## ۷) تست و بررسی سلامت
+
+```bash
+npm run test:api                       # ۴۴ تست سرتاسری API روی دیتابیس موقت
+node apps/api/dist/cli/reset.js --status   # شمارش ردیف‌ها
+```
+در خود برنامه: **تنظیمات → دیتابیس و ساختار** وضعیت ساختار، مسیر فایل، حجم و جداول را نشان می‌دهد
+و دکمه «بررسی و ترمیم» ساختار را خودکار درست می‌کند.
+
+## ۸) فهرست مستندات
 
 | فایل | محتوا |
 |---|---|
@@ -208,10 +217,11 @@ node dist/cli/reset.js --yes --keep-masters   # فقط اسناد، کارمند
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | راه‌اندازی محیط توسعه، ساختار کد، افزودن شیت تازه |
 | [`docs/DATA-MODEL.md`](docs/DATA-MODEL.md) | جدول‌ها، ستون‌ها و رابطه‌ها |
 | [`docs/FAQ.md`](docs/FAQ.md) | پرسش‌های متداول و رفع مشکلات |
+| [`docs/RUN-IN-BROWSER.md`](docs/RUN-IN-BROWSER.md) | اجرا در مرورگر، پورت‌ها و متغیرهای محیطی |
 
 ---
 
-## ۸) تغییرات آینده
+## ۹) تغییرات آینده
 
 ساختار آماده است: یک مدل در `apps/api/prisma/schema.prisma` + یک جدول در `apps/api/src/schema.ts`
 + یک کنترولر در `apps/api/src/modules/` + یک صفحه در `apps/web/src/pages/`.

@@ -12,6 +12,7 @@
     "dev:api": "npm run dev -w @farday/api",
     "dev:web": "npm run dev -w @farday/web",
     "build": "npm run build -w @farday/api && npm run build -w @farday/web",
+    "start": "node apps/api/dist/main.js",
     "typecheck": "npm run typecheck -w @farday/web && npx tsc -p apps/api/tsconfig.json --noEmit",
     "db:generate": "npm run db:generate -w @farday/api",
     "seed": "npm run db:seed -w @farday/api --",
@@ -21,7 +22,8 @@
     "build:desktop": "npm run build -w @farday/api && npm run build -w @farday/web",
     "package:api": "node scripts/build-desktop-api.mjs",
     "desktop:dev": "tauri dev",
-    "desktop:build": "npm run package:api && tauri build"
+    "desktop:build": "npm run package:api && tauri build",
+    "test:api": "npm run test -w @farday/api"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.4",
