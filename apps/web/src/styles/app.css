@@ -477,3 +477,14 @@ html[data-theme='dark'] .user-chip .avatar { color: #8ff0e2; }
   .list-head { padding: 9px; }
   .list-head .filters { width: 100%; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 2px; }
 }
+
+/* ================================= misc bits ========================== */
+.kbd {
+  display: inline-block; padding: 1px 6px; border-radius: 5px; border: 1px solid var(--border-strong);
+  border-bottom-width: 2px; background: var(--surface-2); font-size: .7rem; font-family: var(--font);
+}
+.att-th { position: sticky; top: 0; z-index: 2; }
+.stat .value { font-variant-numeric: tabular-nums; }
+/* جدول‌های شلوغ: اعداد خوانا تر */
+table.tbl td.num { font-weight: 500; }
+table.tbl tfoot td { border-top: 1px solid var(--border-strong); }

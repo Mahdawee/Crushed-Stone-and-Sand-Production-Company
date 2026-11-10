@@ -5,12 +5,14 @@ import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select } f
 
 export default function CompanyPage() {
   const toast = useToast();
-  const { reloadSettings } = useSession();
+  const { reloadSettings, calendar } = useSession();
   const [c, setC] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [mach, setMach] = useState<any[]>([]);
   const [edit, setEdit] = useState<any>(null);
   const [fiscal, setFiscal] = useState('');
+  const [dirty, setDirty] = useState(false);
+  const upd = (patchObj: any) => { setC({ ...c, ...patchObj }); setDirty(true); };
 
   const load = async () => {
     const [company, machinery] = await Promise.all([api.get('/company'), api.get('/machinery')]);
@@ -19,10 +21,14 @@ export default function CompanyPage() {
   useEffect(() => { load().catch((e) => toast.error('بارگذاری انجام نشد', e.message)); }, []);
 
   const save = async () => {
+    if (fiscal && !/^\d{4}$/.test(String(fiscal).trim())) {
+      toast.error('سال مالی', 'سال مالی باید چهار رقم باشد — نمونه: ۱۴۰۵');
+      return;
+    }
     setSaving(true);
     try {
       const next = await api.put('/company', { ...c, fiscalYear: fiscal });
-      setC(next);
+      setC(next); setDirty(false);
       toast.success('مشخصات شرکت ذخیره شد');
     } catch (e: any) { toast.error('ذخیره نشد', e.message); }
     finally { setSaving(false); }
@@ -48,18 +54,22 @@ export default function CompanyPage() {
   return (
     <div className="col" style={{ gap: 16 }}>
       <div className="card">
-        <div className="card-h"><h3>شیت مشخصات شرکت (ثابت)</h3><div style={{ flex: 1 }} />
-          <button className="btn primary" onClick={save} disabled={saving}>{saving ? 'در حال ذخیره…' : 'ذخیره تغییرات'}</button>
+        <div className="card-h"><h3>شیت مشخصات شرکت (ثابت)</h3>
+          {dirty ? <span className="badge warn">تغییر ذخیره‌نشده</span> : null}
+          <div style={{ flex: 1 }} />
+          <button className="btn primary" onClick={save} disabled={saving || !dirty}>
+            {saving ? 'در حال ذخیره…' : 'ذخیره تغییرات'}
+          </button>
         </div>
         <div className="card-b">
           <div className="form-grid">
-            <Field label="نام شرکت" required><Text value={c.name} onChange={(v) => setC({ ...c, name: v })} /></Field>
-            <Field label="نوع فعالیت"><Text value={c.activityType} onChange={(v) => setC({ ...c, activityType: v })} /></Field>
-            <Field label="سال مالی"><Text value={fiscal} onChange={setFiscal} placeholder="۱۴۰۵ یا 2025" /></Field>
-            <Field label="مدیر مالی"><Text value={c.financeManager} onChange={(v) => setC({ ...c, financeManager: v })} /></Field>
-            <Field label="سرپرست"><Text value={c.supervisor} onChange={(v) => setC({ ...c, supervisor: v })} /></Field>
-            <Field label="شماره تماس"><Text value={c.phone} onChange={(v) => setC({ ...c, phone: v })} /></Field>
-            <Field label="آدرس" span={3}><TextArea value={c.address} onChange={(v) => setC({ ...c, address: v })} placeholder="ولایت، ولسوالی، ناحیه…" /></Field>
+            <Field label="نام شرکت" required><Text value={c.name} onChange={(v) => upd({ name: v })} /></Field>
+            <Field label="نوع فعالیت"><Text value={c.activityType} onChange={(v) => upd({ activityType: v })} /></Field>
+            <Field label="سال مالی" hint="چهار رقم — مطابق تقویم انتخابی"><Text value={fiscal} onChange={(v) => { setFiscal(v); setDirty(true); }} placeholder={calendar === 'jalali' ? '۱۴۰۵' : '2026'} /></Field>
+            <Field label="مدیر مالی"><Text value={c.financeManager} onChange={(v) => upd({ financeManager: v })} /></Field>
+            <Field label="سرپرست"><Text value={c.supervisor} onChange={(v) => upd({ supervisor: v })} /></Field>
+            <Field label="شماره تماس"><Text value={c.phone} onChange={(v) => upd({ phone: v })} /></Field>
+            <Field label="آدرس" span={3}><TextArea value={c.address} onChange={(v) => upd({ address: v })} placeholder="ولایت، ولسوالی، ناحیه…" /></Field>
           </div>
         </div>
       </div>

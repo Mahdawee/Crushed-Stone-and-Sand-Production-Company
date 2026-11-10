@@ -50,9 +50,12 @@ export default function LoginPage() {
               <Field label="رمز عبور" required>
                 <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
               </Field>
-              <button className="btn primary btn-block" type="submit" disabled={busy} style={{ marginTop: 6, padding: '11px' }}>
+              <button className="btn primary btn-block" type="submit" disabled={busy} style={{ marginTop: 8, padding: '11px', fontSize: '.92rem' }}>
                 {busy ? 'در حال ورود…' : 'ورود به سیستم'}
               </button>
+              <p className="small muted" style={{ textAlign: 'center', marginTop: -2 }}>
+                با <kbd className="kbd">Enter</kbd> هم وارد می‌شوید
+              </p>
             </form>
 
             {needsSetup ? (
