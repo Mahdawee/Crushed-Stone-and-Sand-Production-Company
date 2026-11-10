@@ -45,15 +45,24 @@ pub fn start(data_dir: &Path) -> Result<Child, String> {
     }
 
     let dir = resource_dir();
-    let entry = dir.join("app.js");
-    if !entry.exists() {
-        return Err(format!("API entry not found at {}", entry.display()));
-    }
+    // packaged build → <api>/app.js ; development → <repo>/apps/api/dist/main.js
+    let entry = if dir.join("app.js").exists() {
+        dir.join("app.js")
+    } else if dir.join("dist/main.js").exists() {
+        dir.join("dist/main.js")
+    } else {
+        return Err(format!(
+            "API entry not found (looked in {}). Run `npm run build -w @farday/api` first.",
+            dir.display()
+        ));
+    };
 
     let node = if cfg!(windows) { dir.join("node.exe") } else { dir.join("node") };
+    let node = if node.exists() { node } else { dir.join("bin").join("node") };
     let program: PathBuf = if node.exists() {
         node
     } else {
+        // fall back to a system Node (development machines)
         PathBuf::from(if cfg!(windows) { "node.exe" } else { "node" })
     };
 

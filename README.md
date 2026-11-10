@@ -144,6 +144,9 @@
 
 نیازمندی‌ها: **Node 22+**، **Rust** (برای دسکتاپ) و در ویندوز **WebView2** (در ویندوز ۱۰/۱۱ از قبل موجود است).
 
+> ابزار Tauri در بسته‌های نصب عادی نیامده (چون برای همه لازم نیست). یک بار اجرا کنید:
+> `npm run desktop:setup`  — سپس `npm run desktop:dev` / `npm run desktop:build`
+
 ```bash
 npm install
 

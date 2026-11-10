@@ -3,6 +3,7 @@ import { api } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useToast, Field, Text, Table, Spinner, Stat } from '../components/ui';
 import { money, todayISO, toCalendar, pad2, fromCalendar } from '../lib/calendar';
+import '../styles/print.css';
 
 export default function CashbookPage() {
   const { calendar } = useSession();

@@ -4,6 +4,7 @@ import { useToast, Field, Text, Table, Spinner, Stat } from '../components/ui';
 import { money, todayISO, toCalendar, pad2, fromCalendar } from '../lib/calendar';
 import { useSession } from '../lib/session';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
+import '../styles/print.css';
 
 const TABS = [
   { key: 'material', label: 'فروشات به نوع مواد' },

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
 import { DocHeader, DocFooter } from '../components/DocHeader';
@@ -8,6 +8,7 @@ import '../styles/print.css';
 
 export default function PrintSale() {
   const { id } = useParams();
+  const nav = useNavigate();
   const { calendar } = useSession();
   const [s, setS] = useState<any>(null);
   useEffect(() => { api.get(`/sales/${id}`).then(setS).catch(() => {}); }, [id]);
@@ -29,7 +30,7 @@ export default function PrintSale() {
     <>
       <div className="doc-toolbar">
         <button className="btn primary" onClick={() => window.print()}>🖨 چاپ</button>
-        <button className="btn" onClick={() => window.close()}>بستن</button>
+        <button className="btn" onClick={() => nav(-1)}>← بازگشت</button>
       </div>
       <div className="doc-page">
         <DocHeader title="بل فروش" meta={rows.slice(0, 2).map(([label, value]) => ({ label, value }))} />

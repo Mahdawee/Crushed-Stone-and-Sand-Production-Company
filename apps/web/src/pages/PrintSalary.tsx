@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { DocHeader, DocFooter } from '../components/DocHeader';
 import { money } from '../lib/calendar';
@@ -7,6 +7,7 @@ import '../styles/print.css';
 
 export default function PrintSalary() {
   const { id } = useParams();
+  const nav = useNavigate();
   const [s, setS] = useState<any>(null);
   useEffect(() => { api.get(`/salaries/${id}`).then(setS).catch(() => {}); }, [id]);
   useEffect(() => { if (s) setTimeout(() => window.print(), 350); }, [s]);
@@ -16,7 +17,7 @@ export default function PrintSalary() {
     <>
       <div className="doc-toolbar">
         <button className="btn primary" onClick={() => window.print()}>🖨 چاپ</button>
-        <button className="btn" onClick={() => window.close()}>بستن</button>
+        <button className="btn" onClick={() => nav(-1)}>← بازگشت</button>
       </div>
       <div className="doc-page">
         <DocHeader title="رسید معاش" meta={[{ label: 'شماره رسید', value: s.no }, { label: 'ماه/سال', value: s.periodLabel }]} />

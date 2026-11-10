@@ -133,7 +133,7 @@ export default function SalesPage() {
                 <td className="num" style={{ fontWeight: 700 }}>{money(r.total)}</td>
                 <td><span className={`badge ${r.paymentType === 'cash' ? 'ok' : 'warn'}`}>{r.paymentType === 'cash' ? 'نقده' : 'باقی'}</span></td>
                 <td><div className="actions">
-                  <Link className="btn sm" to={`/print/sale/${r.id}`} target="_blank">چاپ</Link>
+                  <Link className="btn sm" to={`/print/sale/${r.id}`}>چاپ</Link>
                   <button className="btn sm" onClick={() => openEdit(r)}>ویرایش</button>
                   {isManager ? <button className="btn sm danger" onClick={() => remove(r)}>حذف</button> : null}
                 </div></td>

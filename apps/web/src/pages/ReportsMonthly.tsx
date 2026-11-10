@@ -3,6 +3,7 @@ import { api } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useToast, Table, Spinner, Select, Stat } from '../components/ui';
 import { money, todayISO, toCalendar } from '../lib/calendar';
+import '../styles/print.css';
 
 export default function ReportsMonthly() {
   const { calendar } = useSession();

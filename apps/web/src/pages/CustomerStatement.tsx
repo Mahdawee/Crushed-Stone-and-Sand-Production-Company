@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { useSession } from '../lib/session';
 import { Spinner, Table, Empty, Stat } from '../components/ui';
 import { money, formatDate } from '../lib/calendar';
+import '../styles/print.css';
 
 export default function CustomerStatement() {
   const { id } = useParams();

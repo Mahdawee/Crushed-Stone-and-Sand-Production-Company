@@ -155,7 +155,7 @@ export default function SalariesPage() {
                     <td>{r.payerName}</td>
                     <td><span className="badge info">{r.paymentType === 'cash' ? 'نقد' : 'حواله'}</span></td>
                     <td className="mono">{r.payDateDisplay}</td>
-                    <td><Link className="btn sm" to={`/print/salary/${r.id}`} target="_blank">رسید</Link></td>
+                    <td><Link className="btn sm" to={`/print/salary/${r.id}`}>رسید</Link></td>
                   </tr>
                 ))}
               </Table>

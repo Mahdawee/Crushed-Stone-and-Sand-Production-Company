@@ -42,8 +42,8 @@
       "icons/icon.png"
     ],
     "resources": [
-      "binaries/*",
-      "api/**"
+      "api/**/*",
+      "binaries/*"
     ],
     "windows": {
       "nsis": {

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useToast, Table, Spinner } from '../components/ui';
 import { money } from '../lib/calendar';
+import '../styles/print.css';
 
 export default function ReportsYearly() {
   const toast = useToast();

@@ -25,7 +25,9 @@ fn main() {
                 .to_path_buf();
             std::fs::create_dir_all(&data_dir).ok();
 
-            // 2) start the local API (NestJS + Prisma + SQLite)
+            // 2) start the local API (NestJS + Prisma + SQLite).
+            //    When the shell already runs `npm run dev`, the API is managed by
+            //    npm instead and we simply reuse it.
             match api_sidecar::start(&data_dir) {
                 Ok(child) => {
                     *app.state::<ApiProcess>().0.lock().unwrap() = Some(child);
