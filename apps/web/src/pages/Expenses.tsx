@@ -102,7 +102,7 @@ export default function ExpensesPage() {
           <SearchBox value={filters.q} onChange={(v) => patch({ q: v })} placeholder="شرح، فروشگاه، بل…" width={280} />
           <FilterButton count={[filters.from, filters.to, filters.category, filters.payer, filters.paymentType].filter(Boolean).length}
             open={fOpen} onClick={() => setFOpen((v) => !v)} />
-          <FilterPanel open={fOpen} footer={
+          <FilterPanel open={fOpen} onClose={() => setFOpen(false)} footer={
             <>
               <button className="btn sm primary" onClick={() => setFOpen(false)}>اعمال</button>
               <button className="btn sm ghost" onClick={() => setFilters({ q: filters.q, from: '', to: '', category: '', payer: '', paymentType: '' })}>پاک کردن</button>

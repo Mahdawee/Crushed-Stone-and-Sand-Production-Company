@@ -93,7 +93,7 @@ export default function ReceiptsPage() {
           <SearchBox value={filters.q} onChange={(v) => patch({ q: v })} placeholder="شماره، مشتری، بل…" width={300} />
           <FilterButton count={[filters.from, filters.to, filters.source].filter(Boolean).length}
             open={fOpen} onClick={() => setFOpen((v) => !v)} />
-          <FilterPanel open={fOpen} footer={
+          <FilterPanel open={fOpen} onClose={() => setFOpen(false)} footer={
             <>
               <button className="btn sm primary" onClick={() => setFOpen(false)}>اعمال</button>
               <button className="btn sm ghost" onClick={() => setFilters({ q: filters.q, from: '', to: '', source: '' })}>پاک کردن</button>

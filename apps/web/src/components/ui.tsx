@@ -268,11 +268,28 @@ export function FilterButton({ count, onClick, open }: { count: number; onClick:
   );
 }
 
-/** پنل فیلترها (absolute داخل نوار ابزار) */
-export function FilterPanel({ open, children, footer }: { open: boolean; children: React.ReactNode; footer?: React.ReactNode }) {
+/** پنل فیلترها (absolute داخل نوار ابزار) — با Esc یا کلیک بیرون بسته می‌شود */
+export function FilterPanel({ open, children, footer, onClose }: {
+  open: boolean; children: React.ReactNode; footer?: React.ReactNode; onClose?: () => void;
+}) {
+  const ref = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose?.(); } };
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (ref.current?.contains(t)) return;
+      /* کلیک روی خود دکمه فیلتر، خودش پنل را می‌بندد */
+      if ((t as HTMLElement).closest?.('.tb-filter')) return;
+      onClose?.();
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onDown);
+    return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onDown); };
+  }, [open, onClose]);
   if (!open) return null;
   return (
-    <div className="tb-panel">
+    <div className="tb-panel" ref={ref}>
       <div className="tb-panel-b">{children}</div>
       {footer ? <div className="tb-panel-f">{footer}</div> : null}
     </div>

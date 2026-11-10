@@ -114,7 +114,7 @@ export default function SalesPage() {
           <SearchBox value={filters.q} onChange={(v) => patch({ q: v })} placeholder="بل، مشتری، دریور، پلیت…" width={320} />
           <FilterButton count={[filters.from, filters.to, filters.material, filters.paymentType].filter(Boolean).length}
             open={fOpen} onClick={() => setFOpen((v) => !v)} />
-          <FilterPanel open={fOpen} footer={
+          <FilterPanel open={fOpen} onClose={() => setFOpen(false)} footer={
             <>
               <button className="btn sm primary" onClick={() => setFOpen(false)}>اعمال</button>
               <button className="btn sm ghost" onClick={() => setFilters({ q: filters.q, from: '', to: '', paymentType: '', material: '' })}>پاک کردن</button>
