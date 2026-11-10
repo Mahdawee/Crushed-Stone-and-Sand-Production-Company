@@ -12,7 +12,13 @@ export default function PrintSale() {
   const { calendar } = useSession();
   const [s, setS] = useState<any>(null);
   useEffect(() => { api.get(`/sales/${id}`).then(setS).catch(() => {}); }, [id]);
-  useEffect(() => { if (s) setTimeout(() => window.print(), 350); }, [s]);
+  const [printed, setPrinted] = useState(false);
+  useEffect(() => {
+    /* در پنجره دسکتاپ چاپ خودکار مزاحم است — فقط در حالت مرورگر یک بار چاپ می‌شود */
+    if (!s || printed) return;
+    const t = setTimeout(() => { window.print(); setPrinted(true); }, 400);
+    return () => clearTimeout(t);
+  }, [s, printed]);
   if (!s) return <div style={{ padding: 30 }}>در حال آماده‌سازی…</div>;
 
   const rows = [
@@ -29,7 +35,7 @@ export default function PrintSale() {
   return (
     <>
       <div className="doc-toolbar">
-        <button className="btn primary" onClick={() => window.print()}>🖨 چاپ</button>
+        <button className="btn primary" onClick={() => window.print()}>🖨 چاپ / ذخیره PDF</button>
         <button className="btn" onClick={() => nav(-1)}>← بازگشت</button>
       </div>
       <div className="doc-page">
