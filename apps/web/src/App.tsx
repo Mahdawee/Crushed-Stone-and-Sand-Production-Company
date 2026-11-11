@@ -130,7 +130,8 @@ function Shell() {
         <Route path="/users" element={<UsersPage />} />
         <Route path="/backup" element={<BackupPage />} />
         <Route path="/activity" element={<ActivityPage />} />
-        <Route path="/recycle" element={<RecyclePage />} />
+        {/* سطل بازیافت فقط برای مدیر — همان قاعده‌ای که API دارد */}
+        <Route path="/recycle" element={<Guard managerOnly><RecyclePage /></Guard>} />
         <Route path="/help" element={<HelpPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

@@ -93,7 +93,13 @@ export default function EmployeesPage() {
           </>}
           actions={<>
             <ExportButton type="employees" />
-            <button className="btn" onClick={openImport} title="ورود گروهی از فایل اکسل/CSV">ورود از اکسل</button>
+            {/*
+              ورود گروهی فقط برای مدیر: API هم با @ManagerOnly محافظت شده.
+              دکمه‌ای که کار نمی‌کند بدتر از نبودن دکمه است.
+            */}
+            {isManager ? (
+              <button className="btn" onClick={openImport} title="ورود گروهی از فایل اکسل/CSV">ورود از اکسل</button>
+            ) : null}
             <button className="btn primary" onClick={openNew}><IconPlus size={15} /> کارمند</button>
           </>}
         >
