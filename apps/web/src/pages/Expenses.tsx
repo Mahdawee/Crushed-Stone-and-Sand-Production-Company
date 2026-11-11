@@ -12,6 +12,7 @@ import {
 import { IconPlus } from '../components/icons';
 import { DatePicker } from '../components/DatePicker';
 import { money, todayISO, formatDate } from '../lib/calendar';
+import { pageAfterRemove } from '../lib/paging';
 
 type Filters = { q: string; from: string; to: string; category: string; payer: string; paymentType: string };
 
@@ -86,7 +87,15 @@ export default function ExpensesPage() {
   const remove = (r: any) => toast.confirm({
     title: 'حذف مصرف؟', body: `سند ${r.no} — ${r.description || r.categoryName} به مبلغ ${money(r.amountAfn)} افغانی از فهرست کنار می‌رود.\nداده پاک نمی‌شود — از «سطل بازیافت» قابل بازگرداندن است.`,
     confirmText: 'حذف کن',
-    onConfirm: async () => { try { await api.del(`/expenses/${r.id}`); await load(); toast.success('حذف شد'); } catch (e: any) { toast.error('حذف نشد', e.message); } },
+    onConfirm: async () => {
+      try {
+        await api.del(`/expenses/${r.id}`);
+        /* صفحه‌ی خالی بعد از حذف → یک صفحه عقب */
+        const p = pageAfterRemove(page, data?.pageSize || 25, data?.total || 0);
+        if (p !== page) setPage(p); else await load();
+        toast.success('حذف شد');
+      } catch (e: any) { toast.error('حذف نشد', e.message); }
+    },
   });
 
   return (

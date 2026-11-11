@@ -376,6 +376,31 @@ const makeLicense = ({ privateKey, payload }) => {
     check('رسید مورد نظر برای حذف پیدا شد', false);
   }
 
+  /* ================================================================ */
+  console.log('\n— خروجی با محدوده‌ی تاریخ (باگ: همه‌ی سال‌ها می‌آمد) —');
+
+  /* یک سند در گذشته‌ی دور: نباید در خروجی بازه‌ی «امروز» بیاید */
+  const oldSale = await api('POST', '/sales', {
+    customerId: cid, materialName: 'ریگ', volume: 1, unitPrice: 1, freightPerUnit: 0,
+    paymentType: 'cash', date: '2020-01-15',
+  }, token);
+  check('ثبت بل قدیمی (۲۰۲۰)', oldSale.status === 200 || oldSale.status === 201, String(oldSale.status));
+
+  const expAll = await fetch(`${BASE}/export?type=sales&format=csv`, { headers: { 'x-auth-token': token } });
+  const allText = Buffer.from(await expAll.arrayBuffer()).toString('utf8');
+  const expRange = await fetch(`${BASE}/export?type=sales&format=csv&from=${from}&to=${to}`, { headers: { 'x-auth-token': token } });
+  const rangeText = Buffer.from(await expRange.arrayBuffer()).toString('utf8');
+  const countRows = (t) => t.split('\n').filter((l) => /^"?S-/.test(l)).length;
+  check('خروجی بدون بازه بل قدیمی را دارد', /2020|۱۳۹۸|1398/.test(allText) || allText.includes('S-'), '');
+  check('خروجی با بازه، بل قدیمی را ندارد', !rangeText.includes('2020') && !rangeText.includes('۱۳۹۸'), rangeText.slice(0, 150));
+  check('خروجی با بازه، بل‌های داخل بازه را دارد', countRows(rangeText) >= 1, String(countRows(rangeText)));
+  check('خروجی با بازه از خروجی بی‌بازه کمتر است', countRows(rangeText) < countRows(allText),
+    `${countRows(rangeText)} vs ${countRows(allText)}`);
+
+  const expSalaryRange = await fetch(`${BASE}/export?type=salaries&format=csv&from=2000-01-01&to=2000-01-02`, { headers: { 'x-auth-token': token } });
+  const salText = Buffer.from(await expSalaryRange.arrayBuffer()).toString('utf8');
+  check('خروجی معاشات بازه را روی payDate اعمال می‌کند (ردیفی نمی‌ماند)', salText.split('\n').filter((l) => /^"?SA-/.test(l)).length === 0, salText.slice(0, 120));
+
   try { await client.$disconnect(); } catch { /* */ }
   try { child.kill(); } catch { /* */ }
   finish();

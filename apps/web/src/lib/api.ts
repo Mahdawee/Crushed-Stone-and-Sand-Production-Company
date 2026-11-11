@@ -139,12 +139,21 @@ export type ExportFormat = 'csv' | 'xls';
  * @param type employees | customers | sales | receipts | expenses | salaries | attendance
  * @param format `xls` = کارپوشه‌ی اکسل (پیشنهادی) · `csv` = ساده
  */
-export async function downloadCsv(type: string, format: ExportFormat = 'xls'): Promise<void> {
+export async function downloadCsv(
+  type: string,
+  format: ExportFormat = 'xls',
+  /*
+   * محدوده‌ی تاریخ (اختیاری). باگ: خروجی از «راپور تفصیلی» همه‌ی سال‌ها را
+   * می‌داد، نه بازه‌ای که روی صفحه انتخاب شده بود — جمع ستون‌ها با جدول
+   * نمی‌خواند.
+   */
+  range?: { from?: string; to?: string },
+): Promise<void> {
   const ext = format === 'xls' ? 'xls' : 'csv';
-  await downloadFile(
-    `${API_BASE}/export?type=${encodeURIComponent(type)}&format=${format}`,
-    `${type}-${new Date().toISOString().slice(0, 10)}.${ext}`,
-  );
+  const qs = new URLSearchParams({ type, format });
+  if (range?.from) qs.set('from', range.from);
+  if (range?.to) qs.set('to', range.to);
+  await downloadFile(`${API_BASE}/export?${qs.toString()}`, `${type}-${new Date().toISOString().slice(0, 10)}.${ext}`);
 }
 
 /** دانلود «فایل نمونه» برای ورود از اکسل */

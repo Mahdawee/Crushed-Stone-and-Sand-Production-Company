@@ -1,5 +1,5 @@
 import { IconPrint } from '../components/icons';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useToast, Table, Spinner, Stat, ExportButton,
@@ -32,7 +32,19 @@ export default function CashbookPage() {
     try { setD(await api.get(`/reports/cashbook?${qs.toString()}`)); }
     catch (e: any) { toast.error('حرکت دخل بارگذاری نشد', e.message); }
   };
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  /*
+   * باگ کاربر: کلیدهای «امروز / ۷ روز / این ماه / این سال» بازه را عوض
+   * می‌کردند ولی راپور **بارگذاری نمی‌شد**؛ کاربر باید بعدش «نمایش» را
+   * می‌زد و تا آن موقع اعداد بازه‌ی قبلی روی صفحه می‌ماند (گمراه‌کننده).
+   * حالا تغییر بازه خودش بارگذاری می‌کند و «نمایش» برای بازخوانی دستی است.
+   */
+  const loadedRef = useRef('');
+  useEffect(() => {
+    const key = `${range.from}|${range.to}`;
+    if (loadedRef.current === key) return;
+    loadedRef.current = key;
+    load();
+  }, [range.from, range.to]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   const isQuick = (() => {
@@ -78,7 +90,7 @@ export default function CashbookPage() {
           <div style={{ flex: 1 }} />
           <div className="list-actions">
             <button className="btn" onClick={() => window.print()}><IconPrint size={15} /> چاپ</button>
-            <ExportButton type="receipts" label="خروجی" />
+            <ExportButton type="receipts" label="خروجی" range={range} />
           </div>
         </div>
       </div>

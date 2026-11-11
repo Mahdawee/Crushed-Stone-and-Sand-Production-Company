@@ -12,6 +12,7 @@ import {
 import { IconPlus } from '../components/icons';
 import { DatePicker } from '../components/DatePicker';
 import { money, todayISO, formatDate } from '../lib/calendar';
+import { pageAfterRemove } from '../lib/paging';
 
 type Filters = { q: string; from: string; to: string; source: string };
 
@@ -76,7 +77,15 @@ export default function ReceiptsPage() {
 
   const remove = (r: any) => toast.confirm({
     title: 'حذف رسید؟', body: `رسید ${r.no} به مبلغ ${money(r.amount)} از فهرست کنار می‌رود.\nداده پاک نمی‌شود — از «سطل بازیافت» قابل بازگرداندن است.`, confirmText: 'حذف کن',
-    onConfirm: async () => { try { await api.del(`/receipts/${r.id}`); await load(); toast.success('حذف شد'); } catch (e: any) { toast.error('حذف نشد', e.message); } },
+    onConfirm: async () => {
+      try {
+        await api.del(`/receipts/${r.id}`);
+        /* صفحه‌ی خالی بعد از حذف → یک صفحه عقب */
+        const p = pageAfterRemove(page, data?.pageSize || 25, data?.total || 0);
+        if (p !== page) setPage(p); else await load();
+        toast.success('حذف شد');
+      } catch (e: any) { toast.error('حذف نشد', e.message); }
+    },
   });
 
   const custOf = (id: any) => customers.find((c) => String(c.id) === String(id));

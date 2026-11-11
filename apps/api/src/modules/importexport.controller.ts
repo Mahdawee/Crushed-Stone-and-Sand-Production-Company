@@ -34,8 +34,43 @@ type ExportDef = {
   headers: string[];
   /** ستون‌هایی که عددند (برای فایل اکسل تا به‌صورت عدد ذخیره شوند) */
   numeric?: number[];
+  /** ستون تاریخ — برای خروجی «محدوده‌ی تاریخ» (راپور تفصیلی) */
+  dateCol?: string;
   map: (r: any, mode: CalendarMode) => any[];
 };
+
+/**
+ * فیلتر بازه‌ی تاریخ روی کوئری خروجی.
+ *
+ * باگ کاربر: در «راپور تفصیلی» دکمه‌ی «خروجی» فایل **همه‌ی سال‌ها** را
+ * می‌داد، نه بازه‌ای که روی صفحه انتخاب شده بود؛ جمع ستون‌ها با جدول
+ * نمی‌خواند. حالا اگر بازه داده شود، همان بازه اعمال می‌شود.
+ *
+ * ستون تاریخ هر نوع فرق دارد (`date` / `payDate`)، پس صریح اعلام می‌شود؛
+ * نوعی که تاریخ ندارد (ماشینری) بازه را نادیده می‌گیرد و همان قبلی می‌ماند.
+ */
+function withDateRange(sql: string, dateCol: string | undefined, from?: string, to?: string): { sql: string; args: any[] } {
+  if (!dateCol || (!from && !to)) return { sql, args: [] };
+  /*
+   * `dateCol` می‌تواند `a."date"` باشد (کوئری JOIN‌دار)، پس فقط ستون‌های
+   * ساده را خودمان نقل‌قول می‌گذاریم. نام ستون از کد می‌آید، نه از ورودی
+   * کاربر — پس تزریق ممکن نیست.
+   */
+  const col = /[."]/.test(dateCol) ? dateCol : `"${dateCol}"`;
+  const cond: string[] = [];
+  const args: any[] = [];
+  if (from) { cond.push(`${col} >= ?`); args.push(from); }
+  if (to) { cond.push(`${col} <= ?`); args.push(to); }
+  /*
+   * شرط را «داخل» کوئری می‌گذاریم، نه دور آن: `ORDER BY` باید بیرون بماند
+   * وگرنه ترتیب فهرست به‌هم می‌ریزد.
+   */
+  const idx = sql.lastIndexOf(' ORDER BY ');
+  const head = idx === -1 ? sql : sql.slice(0, idx);
+  const tail = idx === -1 ? '' : sql.slice(idx);
+  const glue = /\bWHERE\b/i.test(head) ? ' AND ' : ' WHERE ';
+  return { sql: `${head}${glue}${cond.join(' AND ')}${tail}`, args };
+}
 
 const EXPORTS: Record<string, ExportDef> = {
   employees: {
@@ -68,6 +103,7 @@ const EXPORTS: Record<string, ExportDef> = {
     sql: `SELECT * FROM "Sale" WHERE COALESCE("deletedAt",'')='' ORDER BY "date", "id"`,
     headers: ['شماره بل', 'تاریخ', 'نام مشتری', 'نام دریور', 'پلیت موتر', 'مقصد', 'نوع مواد', 'متراژ', 'قیمت فی متر', 'کرایه فی متر', 'مجموع کرایه', 'مجموع قیمت و کرایه', 'مربوط (شاخه مصرف)', 'نوع پرداخت', 'توضیحات'],
     numeric: [7, 8, 9, 10, 11],
+    dateCol: 'date',
     map: (r, mode) => [
       r.no, formatDate(r.date, mode), r.customerName, r.driverName, r.truckPlate, r.destination,
       r.materialName, r.volume, r.unitPrice, r.freightPerUnit, r.freightTotal, r.total,
@@ -80,6 +116,7 @@ const EXPORTS: Record<string, ExportDef> = {
     sql: `SELECT * FROM "Receipt" WHERE COALESCE("deletedAt",'')='' ORDER BY "date", "id"`,
     headers: ['شماره رسید', 'تاریخ', 'نام مشتری', 'مبلغ رسید', 'شماره بل مربوط', 'از درک', 'توسط', 'توضیحات'],
     numeric: [3],
+    dateCol: 'date',
     map: (r, mode) => [r.no, formatDate(r.date, mode), r.customerName, r.amount, r.relatedBillNo,
       canonicalReceiptSource(r.sourceName), r.receivedBy, r.note],
   },
@@ -89,6 +126,7 @@ const EXPORTS: Record<string, ExportDef> = {
     sql: `SELECT * FROM "Expense" WHERE COALESCE("deletedAt",'')='' ORDER BY "date", "id"`,
     headers: ['شماره', 'تاریخ', 'شرح', 'نوع مصرف', 'مربوط (شاخه مصرف)', 'نمبر بل خرید', 'نام فروشگاه', 'مبلغ افغانی', 'مبلغ دالری', 'پرداخت کننده', 'روش پرداخت', 'توضیحات'],
     numeric: [7, 8],
+    dateCol: 'date',
     map: (r, mode) => [
       r.no, formatDate(r.date, mode), r.description, r.categoryName, r.contractorName,
       r.purchaseBillNo, r.shopName, r.amountAfn, r.amountUsd, r.payerName,
@@ -101,6 +139,7 @@ const EXPORTS: Record<string, ExportDef> = {
     sql: `SELECT * FROM "Salary" WHERE COALESCE("deletedAt",'')='' ORDER BY "periodStart" DESC, "employeeName"`,
     headers: ['شماره', 'ماه/سال', 'نام کارمند', 'معاش ثابت', 'پاداش', 'جریمه', 'اضافه کاری', 'مجموع پرداخت', 'پرداخت کننده', 'نوع پرداخت', 'تاریخ پرداخت'],
     numeric: [3, 4, 5, 6, 7],
+    dateCol: 'payDate',
     map: (r, mode) => [
       r.no, r.periodLabel, r.employeeName, r.baseSalary, r.bonus, r.penalty, r.overtimeAmount,
       r.total, r.payerName, r.paymentType === 'cash' ? 'نقد' : 'حواله', formatDate(r.payDate, mode),
@@ -112,6 +151,8 @@ const EXPORTS: Record<string, ExportDef> = {
     sql: `SELECT a.*, e."name" as empName, e."code" as empCode FROM "Attendance" a JOIN "Employee" e ON e."id"=a."employeeId" WHERE COALESCE(a."deletedAt",'')='' ORDER BY a."date" DESC`,
     headers: ['تاریخ', 'کد کارمند', 'نام', 'وضعیت', 'ساعت ورود', 'ساعت خروج', 'اضافه کاری', 'توضیحات'],
     numeric: [6],
+    /* حضور و غیاب جدول JOIN دارد؛ نام ستون باید صریح باشد (a."date") */
+    dateCol: 'a."date"',
     map: (r, mode) => [
       formatDate(r.date, mode), r.empCode, r.empName,
       { present: 'حاضر', absent: 'غایب', leave: 'رخصت', sick: 'مریض', official_holiday: 'رخصتی', friday: 'جمعه' }[r.status] || r.status,
@@ -227,12 +268,23 @@ export class ExportController {
    * هرگز اجرا نشود، یا `types` به‌عنوان نوع خروجی تفسیر شود.
    */
   @Get()
-  async download(@Query('type') type: string, @Query('format') format: string, @Query('delimiter') delimiter: string, @Res() res: Response) {
+  async download(
+    @Query('type') type: string, @Query('format') format: string, @Query('delimiter') delimiter: string,
+    /*
+     * محدوده‌ی تاریخ — باگ کاربر: در «راپور تفصیلی» دکمه‌ی «خروجی» فایل
+     * **همه‌ی سال‌ها** را می‌داد، نه بازه‌ای که روی صفحه انتخاب شده بود؛
+     * جمع ستون‌ها با جدول نمی‌خواند و کاربر فکر می‌کرد راپور غلط است.
+     * وقتی بازه داده شود، فقط اسناد همان بازه می‌آیند.
+     */
+    @Query('from') from: string, @Query('to') to: string,
+    @Res() res: Response,
+  ) {
     await ensureSchemaAsync();
     const cfg = EXPORTS[type];
     if (!cfg) throw new HttpException('نوع خروجی ناشناخته است.', 400);
     const mode = await settingsService.calendar();
-    const rows: any[] = await db().$queryRawUnsafe(cfg.sql);
+    const ranged = withDateRange(cfg.sql, cfg.dateCol, from, to);
+    const rows: any[] = (await db().$queryRawUnsafe(ranged.sql, ...ranged.args)) as any[];
     const data = rows.map((r) => cfg.map(r, mode));
     const stamp = new Date().toISOString().slice(0, 10);
 

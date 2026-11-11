@@ -566,11 +566,13 @@ export function Stat({ label, value, foot, kind = '', icon }: { label: string; v
  *   • خطا به‌صورت toast نشان داده می‌شود، نه سکوت
  *   • هنگام دانلود، دکمه «…» می‌شود (کاربر دوباره نمی‌زند)
  */
-export function ExportButton({ type, label = 'خروجی', compact }: {
+export function ExportButton({ type, label = 'خروجی', compact, range }: {
   type: string;
   label?: string;
   /** فقط آیکن (برای نوارهای شلوغ) */
   compact?: boolean;
+  /** محدوده‌ی تاریخ — تا خروجی با جدول همان بازه بخواند */
+  range?: { from?: string; to?: string };
 }) {
   const toast = useToast();
   const [open, setOpen] = React.useState(false);
@@ -590,7 +592,7 @@ export function ExportButton({ type, label = 'خروجی', compact }: {
     setOpen(false);
     setBusy(true);
     try {
-      await downloadCsv(type, format);
+      await downloadCsv(type, format, range);
       toast.success('فایل آماده شد', format === 'xls' ? 'با اکسل باز کنید.' : 'فایل CSV با اکسل/برنامه‌های دیگر باز می‌شود.');
     } catch (e: any) {
       toast.error('خروجی گرفته نشد', e?.message || 'دوباره تلاش کنید.');

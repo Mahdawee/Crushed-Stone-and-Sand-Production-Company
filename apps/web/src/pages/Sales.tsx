@@ -12,6 +12,7 @@ import {
 import { IconPlus } from '../components/icons';
 import { DatePicker } from '../components/DatePicker';
 import { money, num, todayISO, formatDate, addDaysISO } from '../lib/calendar';
+import { pageAfterRemove } from '../lib/paging';
 
 type Filters = { q: string; from: string; to: string; paymentType: string; material: string };
 
@@ -124,7 +125,16 @@ export default function SalesPage() {
     title: 'حذف بل فروش؟', body: `بل ${r.no} برای «${r.customerName}» به مبلغ ${money(r.total)} افغانی از فهرست کنار می‌رود.\nداده پاک نمی‌شود — از «سطل بازیافت» قابل بازگرداندن است.`,
     confirmText: 'حذف کن',
     onConfirm: async () => {
-      try { await api.del(`/sales/${r.id}`); await load(); toast.success('حذف شد'); }
+      try {
+        await api.del(`/sales/${r.id}`);
+        /*
+         * اگر صفحه‌ی جاری با همین حذف خالی شد، یک صفحه عقب بیا — وگرنه
+         * کاربر جدول خالی می‌بیند و فکر می‌کند داده‌ها پاک شده‌اند.
+         */
+        const p = pageAfterRemove(page, data?.pageSize || 25, data?.total || 0);
+        if (p !== page) setPage(p); else await load();
+        toast.success('حذف شد');
+      }
       catch (e: any) { toast.error('حذف نشد', e.message); }
     },
   });
