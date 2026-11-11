@@ -28,7 +28,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
-import { db, dataDir, databaseFile, BACKUP_DIR } from '../db';
+import { db, resetDb, dataDir, databaseFile, BACKUP_DIR } from '../db';
 import { TABLE_LIST } from '../schema';
 import { settingsService } from './settings';
 import { ensureWalkInCustomer } from '../schema';
@@ -94,6 +94,8 @@ export type ResetResult = {
   removedLicense?: boolean;
   removedBackups?: number;
   note?: string;
+  /** در صورت خطا وسط کار: آیا دیتابیس از پشتیبان برگردانده شد؟ */
+  rolledBack?: boolean;
 };
 
 /** آیا این نصب قبلاً صفر شده است؟ (برای نمایش در ابزار) */
@@ -190,6 +192,29 @@ function backupNow(): string {
    */
   if (fs.statSync(dst).size === 0) throw new Error('پشتیبان خالی ساخته شد؛ صفر کردن متوقف شد.');
   return dst;
+}
+
+/**
+ * بازگرداندن دیتابیس از پشتیبان «همین عملیات» (فقط مسیر خطا).
+ *
+ * ⚠ ترتیب مهم است: اول اتصال بسته می‌شود، بعد فایل عوض می‌شود. با اتصال
+ * باز، libSQL صفحه‌های قدیمی را در حافظه دارد و WAL خودش را روی فایل تازه
+ * دوباره می‌نویسد — یعنی بازگردانی بی‌اثر می‌شود (همان تله‌ای که در ابزار
+ * آفلاین هم ثبت شده).
+ */
+async function restoreBackup(backupFile: string): Promise<boolean> {
+  try {
+    if (!backupFile || !fs.existsSync(backupFile)) return false;
+    const target = databaseFile();
+    await resetDb();
+    fs.copyFileSync(backupFile, target);
+    /* WAL پشتیبان اگر هست همراه می‌آید؛ وگرنه WAL فعلی پاک می‌شود */
+    const walBak = backupFile + '-wal';
+    if (fs.existsSync(walBak)) fs.copyFileSync(walBak, target + '-wal');
+    else fs.rmSync(target + '-wal', { force: true });
+    fs.rmSync(target + '-shm', { force: true });
+    return true;
+  } catch { return false; }
 }
 
 /** پاک‌کردن فایل‌های پشتیبان قبلی — ردّ مشتری قبلی */
@@ -297,7 +322,18 @@ export async function resetSystem(opts: ResetOptions): Promise<ResetResult> {
   const p = db();
   const have = await existingTables(p);
   const counts: Record<string, number> = {};
+  /* کاربر مدیرِ بازسازی‌شده — بیرون از بلوک محافظ، چون در گزارش نهایی لازم است */
+  let admin: { username: string; password: string } | null = null;
 
+  /*
+   * ── برگشتِ خودکار (شکار باگ دور ۳۰) ────────────────────────────────────
+   * ابزار آفلاین از دور ۲۸ این محافظ را دارد، ولی همین مسیر **آنلاین**
+   * (`POST /system/reset`، وقتی برنامه باز است) نداشت: اگر وسط خالی کردن
+   * جدول‌ها خطایی رخ می‌داد، دیتابیس نیمه‌کاره می‌ماند — نه داده‌ی مشتری،
+   * نه کاربر مدیر — و پیام خطا هم فقط می‌گفت «انجام نشد». حالا هر خطایی
+   * در این بلوک، دیتابیس را از پشتیبانِ همین چند لحظه پیش برمی‌گرداند.
+   */
+  try {
   /* ۱) خالی کردن جدول‌های کاری — پایین به بالا */
   for (const table of RESET_ORDER) {
     if (!have.has(table)) continue;
@@ -331,7 +367,6 @@ export async function resetSystem(opts: ResetOptions): Promise<ResetResult> {
 
   /* ۴) «مشتری گذری» و کاربر مدیر — سیستم آک ولی قابل استفاده */
   await ensureWalkInCustomer();
-  let admin: { username: string; password: string } | null = null;
   if (opts.keepAdmin !== false) {
     /*
      * رمز پیش‌فرض `admin123` است — همان چیزی که نصب تازه هم می‌دهد.
@@ -348,6 +383,19 @@ export async function resetSystem(opts: ResetOptions): Promise<ResetResult> {
     } else {
       await ensureDefaultAdmin();
     }
+  }
+  } catch (e: any) {
+    const rolled = await restoreBackup(backupFile);
+    return {
+      ok: false,
+      rolledBack: rolled,
+      backupFile: backupFile ? path.basename(backupFile) : '',
+      message: `صفر کردن نیمه‌کاره ماند: ${e?.message || e}\n` +
+        (rolled
+          ? 'دیتابیس به حالت قبل برگردانده شد — هیچ داده‌ای از دست نرفت.'
+          : 'برگرداندن خودکار ناموفق بود؛ از «پشتیبان‌گیری» فایل پشتیبان را بازگردانید.') +
+        '\nهیچ تغییری لازم نیست؛ صفحه را دوباره باز کنید.',
+    } as ResetResult;
   }
 
   /* ۵) لایسنس و پشتیبان‌های قبلی — ردّ مشتری قبلی */

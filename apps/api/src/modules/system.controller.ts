@@ -285,7 +285,12 @@ export class SystemController {
       confirm: String(body?.confirm ?? ''),
       operator: body?.operator || who,
     });
-    if (!r.ok) throw new HttpException(r.message, 400);
+    /*
+     * باگ (شکار باگ دور ۳۰): در خطا فقط `message` به کاربر می‌رسید و
+     * `rolledBack` گم می‌شد — پس ابزار و کاربر نمی‌فهمیدند داده سالم
+     * برگشته یا نه. حالا کل نتیجه در بدنه‌ی خطا هم می‌آید.
+     */
+    if (!r.ok) throw new HttpException({ ...r, statusCode: 400, message: r.message }, 400);
     /* پیام در سابقه: بعد از پاک شدن ActivityLog، این تنها جای «چه شد»ست */
     return r;
   }

@@ -169,6 +169,45 @@ const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDa
   check('فقط پشتیبان همین عملیات مانده', backups.length >= 1 && backups.every((f) => f.startsWith('pre-reset-') || f.startsWith('.')),
     backups.join(','));
 
+  /* ================================================================ */
+  console.log('\n— برگشت خودکار وقتی وسط صفر کردن خطا می‌دهد —');
+  /*
+   * باگ (شکار باگ دور ۳۰): ابزار آفلاین از دور ۲۸ برگشت خودکار داشت، ولی
+   * مسیر آنلاین (`POST /system/reset`) نداشت. با یک تریگر که حذف را
+   * می‌شکند، همین حالت را واقعاً می‌سازیم: صفر کردن باید شکست بخورد و
+   * دیتابیس **دست‌نخورده** برگردد (بل قبلی سر جایش باشد).
+   */
+  const fresh2 = await api('POST', '/sales', {
+    materialName: 'ریگ', volume: 3, unitPrice: 70, freightPerUnit: 0, paymentType: 'cash', date: todayISO(),
+  }, token);
+  check('بل دوم برای آزمون برگشت ثبت شد', [200, 201].includes(fresh2.status), String(fresh2.status));
+  const beforeFail = await api('GET', '/sales', undefined, token);
+  const saleCountBefore = Number(beforeFail.body?.total || 0);
+  check('شمارش فروش قبل از شکست', saleCountBefore >= 1, String(saleCountBefore));
+
+  /* تریگر مستقیم روی فایل دیتابیس (سرور باز است، ولی SQLite این را اجازه می‌دهد) */
+  const { DatabaseSync } = require('node:sqlite');
+  {
+    const dbf = path.join(dataDir, 'farday.db');
+    const con = new DatabaseSync(dbf);
+    con.exec('CREATE TRIGGER IF NOT EXISTS reset_block BEFORE DELETE ON "Sale" BEGIN SELECT RAISE(ABORT, \'blocked for test\'); END');
+    con.close();
+  }
+
+  const failedReset = await api('POST', '/system/reset', { confirm: 'صفر کردن', reason: 'آزمون برگشت' }, token);
+  check('صفر کردن شکست خورد (نه ۲۰۰ بی‌اثر)', failedReset.status === 400, String(failedReset.status));
+  check('پیام می‌گوید برگردانده شد', /برگردانده شد|بازگردانید/.test(String(failedReset.body?.message || '')),
+    String(failedReset.body?.message));
+  check('پرچم rolledBack در پاسخ هست', failedReset.body?.rolledBack === true, JSON.stringify(failedReset.body?.rolledBack));
+
+  const afterFail = await api('GET', '/sales', undefined, token);
+  check('داده‌ها بعد از شکست سر جایشان‌اند',
+    Number(afterFail.body?.total || 0) === saleCountBefore,
+    `${afterFail.body?.total} vs ${saleCountBefore}`);
+  const loginAfterFail = await api('POST', '/auth/login', { username: 'admin', password: 'admin123' });
+  check('برنامه بعد از برگشت هنوز کار می‌کند (ورود)', Boolean(loginAfterFail.body?.token),
+    String(loginAfterFail.status));
+
   try { child.kill(); } catch { /* */ }
   finish();
 })().catch((e) => { console.error('\n⛔ خطای غیرمنتظره:', e); finish(1); });
