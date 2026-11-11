@@ -30,6 +30,9 @@ export default function ReceiptsPage() {
   const [dateISO, setDateISO] = useState('');
   const [busy, setBusy] = useState(false);
   const [fOpen, setFOpen] = useState(false);
+  /* ردیف‌های فروش و رسیدهای مشتری انتخاب‌شده — برای راهنمای «شماره بل» */
+  const [salesOfCustomer, setSalesOfCustomer] = useState<any[] | null>(null);
+  const [receiptsOfBill, setReceiptsOfBill] = useState<any[]>([]);
 
   const latest = useLatestRequest();
   const load = async (p = page) => {
@@ -49,6 +52,41 @@ export default function ReceiptsPage() {
     api.get('/lookups').then((r) => setSources(r.items.receipt_source || [])).catch(() => {});
   }, []);
   useEffect(() => { if (sp.get('new') === '1') { setSp({}, { replace: true }); openNew(); } }, [sp]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /*
+   * فهرست فروش و رسیدهای مشتری انتخاب‌شده — فقط برای راهنمای «مانده بل».
+   * اگر بارگذاری نشد، فورم باید **کار کند** (فقط راهنما نمی‌آید)؛ پس خطا
+   * بلعیده می‌شود و مقدار قبلی پاک می‌شود.
+   */
+  useEffect(() => {
+    const cid = form?.customerId;
+    if (!cid) { setSalesOfCustomer(null); setReceiptsOfBill([]); return; }
+    let alive = true;
+    (async () => {
+      try {
+        const [sales, receipts] = await Promise.all([
+          api.get(`/sales?customerId=${encodeURIComponent(cid)}&pageSize=100`),
+          api.get(`/receipts?customerId=${encodeURIComponent(cid)}&pageSize=100`),
+        ]);
+        if (!alive) return;
+        setSalesOfCustomer(sales?.rows || []);
+        setReceiptsOfBill(receipts?.rows || []);
+      } catch {
+        if (alive) { setSalesOfCustomer(null); setReceiptsOfBill([]); }
+      }
+    })();
+    return () => { alive = false; };
+  }, [form?.customerId]);
+
+  const fillBillRemainder = () => {
+    const billNo = String(form?.relatedBillNo || '').trim();
+    const sale = (salesOfCustomer || []).find((x: any) => String(x.no) === billNo);
+    if (!sale) { toast.warn('شماره بل را در فهرست همان مشتری پیدا کنید (یا بل را بررسی کنید).'); return; }
+    const paid = (receiptsOfBill || []).reduce((a: number, r: any) => a + Math.max(0, Number(r.amount) || 0), 0);
+    const left = Math.max(0, (Number(sale.total) || 0) - paid);
+    if (left <= 0) { toast.warn('این بل از قبل تسویه شده است.'); return; }
+    setForm({ ...form, amount: left });
+  };
 
   const patch = (p: Partial<Filters>) => { setPage(1); setFilters((f) => ({ ...f, ...p })); };
   const hasFilter = Boolean(filters.q || filters.from || filters.to || filters.source);
@@ -202,7 +240,34 @@ export default function ReceiptsPage() {
                 ]} />
             </Field>
             <Field label="مبلغ رسید (افغانی)" required><Num value={form.amount} onChange={(v) => setForm({ ...form, amount: v })} /></Field>
-            <Field label="شماره بل مربوط"><Text value={form.relatedBillNo} onChange={(v) => setForm({ ...form, relatedBillNo: v })} /></Field>
+            {/*
+              * باگ (شکار باگ دور ۳۲): «شماره بل مربوط» یک کادر آزاد بود.
+              * کاربر شماره‌ی یک بل کاملاً تسویه‌شده را می‌زد، یا بل مشتری
+              * دیگری را، یا بل را اشتباه تایپ می‌کرد و رسید به حساب دیگری
+              * می‌رفت — بدون هیچ هشداری. حالا هنگام تایپ، مانده‌ی همان بل
+              * نشان داده می‌شود و با یک کلیک «مانده‌ی این بل» در مبلغ
+              * می‌نشیند (جلوگیری از پرداخت اضافیِ ناخواسته).
+              */}
+            <Field
+              label="شماره بل مربوط"
+              hint={(() => {
+                const billNo = String(form.relatedBillNo || '').trim();
+                if (!billNo) return 'اختیاری — اگر می‌خواهید این رسید به یک بل مشخص نسبت داده شود';
+                const sale = (salesOfCustomer || []).find((x: any) => String(x.no) === billNo);
+                if (!sale) return 'این شماره در فروشات پیدا نشد — مطمئن شوید درست تایپ شده (رسید ثبت می‌شود، ولی به بل ناموجود نسبت داده می‌شود)';
+                const paid = (receiptsOfBill || []).reduce((a: number, r: any) => a + Math.max(0, Number(r.amount) || 0), 0);
+                const left = Math.max(0, (Number(sale.total) || 0) - paid);
+                return left > 0
+                  ? `مانده این بل: ${money(left)} ؋ — برای تسویه کامل همین را در «مبلغ رسید» بزنید`
+                  : 'این بل قبلاً تسویه شده — مبلغ اضافی به‌عنوان بستانکاری (مانده‌ی منفی) ثبت می‌شود';
+              })()}
+            >
+              <div style={{ display: 'flex', gap: 6 }}>
+                <Text value={form.relatedBillNo} dir="ltr" onChange={(v) => setForm({ ...form, relatedBillNo: v })} />
+                <button type="button" className="btn sm" onClick={fillBillRemainder}
+                  title="مبلغ مانده‌ی همین بل در کادر مبلغ گذاشته می‌شود">مانده بل</button>
+              </div>
+            </Field>
             <Field
               label="از درک"
               hint={

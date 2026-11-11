@@ -261,5 +261,15 @@ const setPage = read('apps/web/src/pages/Settings.tsx');
 ok('کادر نرخ دالر در تنظیمات هست', /نرخ دالر \(افغانی\)/.test(setPage));
 ok('کلید روشن/خاموش دالری در تنظیمات هست', /دالری در سود و زیان/.test(setPage));
 
+console.log('\n— رسید: «شماره بل مربوط» دیگر کادر آزاد نیست —');
+
+/* باگ دور ۳۲: شماره بلِ اشتباه/تسویه‌شده/بل مشتری دیگر بی‌صدا پذیرفته می‌شد. */
+const rcptPage = read('apps/web/src/pages/Receipts.tsx');
+ok('هنگام تایپ، مانده‌ی بل نشان داده می‌شود', /مانده این بل: /.test(rcptPage));
+ok('بل تسویه‌شده هشدار می‌دهد (بستانکاری)', /قبلاً تسویه شده/.test(rcptPage) && /بستانکاری/.test(rcptPage));
+ok('بل ناموجود هشدار می‌دهد', /در فروشات پیدا نشد/.test(rcptPage));
+ok('دکمه‌ی «مانده بل» مبلغ را پر می‌کند', /const fillBillRemainder/.test(rcptPage) && /مانده بل<\/button>/.test(rcptPage));
+ok('راهنما فقط برای فروش/رسید همان مشتری خوانده می‌شود', /sales\?customerId=\$\{encodeURIComponent\(cid\)\}/.test(rcptPage));
+
 console.log(`\n${fail === 0 ? '✅' : '⛔'} ${pass} موفق، ${fail} ناکام\n`);
 process.exit(fail === 0 ? 0 : 1);
