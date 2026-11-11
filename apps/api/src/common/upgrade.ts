@@ -51,13 +51,33 @@ export const SHAPE_VERSION = 7;
  * منبع حقیقت باشد؛ در بسته‌بندی، همان نسخه در `tauri.conf.json` هم می‌آید.
  */
 export function appVersion(): string {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const pkg = require(path.join(__dirname, '..', '..', '..', 'package.json'));
-    return String(pkg?.version || '0.0.0');
-  } catch {
-    return String(process.env.npm_package_version || '0.0.0');
+  /*
+   * ── باگ (شکار باگ دور ۳۲): نسخه همیشه 0.0.0 بود ────────────────────────
+   * مسیر قبلی سه پله بالا می‌رفت (`__dirname/../../../package.json`)، یعنی
+   * از `apps/api/dist/common` به `apps/` می‌رسید — نه به ریشه‌ی پروژه. پس
+   * `require` شکست می‌خورد و `upgrade-history.log` (همان فایلی که برای
+   * پشتیبانی مشتری می‌خوانیم) همیشه «نسخه‌ی برنامه 0.0.0» می‌نوشت و
+   * نمی‌شد فهمید کدام نسخه مهاجرت کرده. حالا هر سه جای ممکن بررسی می‌شود:
+   *   ۱) بسته‌ی نصب‌شده: `<resources>/api/package.json` (والای dist/common)
+   *   ۲) ریشه‌ی پروژه در حالت توسعه
+   *   ۳) متغیر محیطی (لانچر Tauri می‌فرستد).
+   */
+  const candidates = [
+    path.join(__dirname, '..', 'package.json'),        /* <api>/dist/../package.json */
+    path.join(__dirname, '..', '..', 'package.json'),
+    path.join(__dirname, '..', '..', '..', 'package.json'),
+    path.join(__dirname, '..', '..', '..', '..', 'package.json'),
+  ];
+  for (const file of candidates) {
+    try {
+      if (!fs.existsSync(file)) continue;
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const pkg = require(file);
+      const v = String(pkg?.version || '');
+      if (v && v !== '0.0.0') return v;
+    } catch { /* مسیر بعدی */ }
   }
+  return String(process.env.FARDAY_APP_VERSION || process.env.npm_package_version || '0.0.0');
 }
 
 export type UpgradeRecord = {

@@ -271,5 +271,17 @@ ok('بل ناموجود هشدار می‌دهد', /در فروشات پیدا �
 ok('دکمه‌ی «مانده بل» مبلغ را پر می‌کند', /const fillBillRemainder/.test(rcptPage) && /مانده بل<\/button>/.test(rcptPage));
 ok('راهنما فقط برای فروش/رسید همان مشتری خوانده می‌شود', /sales\?customerId=\$\{encodeURIComponent\(cid\)\}/.test(rcptPage));
 
+console.log('\n— بروزرسانی برای مشتری‌های قبلی —');
+
+const upg = read('apps/api/src/common/upgrade.ts');
+/* باگ دور ۳۲: مسیر require یک پله خطا بود و نسخه همیشه 0.0.0 در تاریخچه می‌نشست */
+ok('نسخه‌ی برنامه از چند مسیر ممکن خوانده می‌شود (نصب‌شده + توسعه)',
+  /const candidates = \[/.test(upg) && /FARDAY_APP_VERSION/.test(upg));
+ok('مهر ساختار داخل خود دیتابیس است', /user_version/.test(upg));
+ok('دیتابیس جدیدتر از برنامه فقط هشدار می‌دهد', /isNewerDatabase/.test(upg));
+ok('هر مهاجرت در تاریخچه ثبت می‌شود', /logUpgrade/.test(upg) && /upgrade-history\.log/.test(upg));
+ok('فقط «اضافه» کردن مجاز است (سند قاعده)', /مهاجرت فقط «اضافه» می‌کند/.test(read('docs/UPGRADE.md')));
+ok('ابزار بررسی آمادگی انتشار هست', /آمادگی انتشار/.test(read('scripts/release-check.mjs')));
+
 console.log(`\n${fail === 0 ? '✅' : '⛔'} ${pass} موفق، ${fail} ناکام\n`);
 process.exit(fail === 0 ? 0 : 1);

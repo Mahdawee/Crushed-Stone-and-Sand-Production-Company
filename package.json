@@ -29,6 +29,7 @@
     "test:api": "npm run test -w @farday/api",
     "desktop:setup": "npm i -D @tauri-apps/cli@2",
     "doctor": "node scripts/doctor.mjs",
+    "release:check": "node scripts/release-check.mjs",
     "find:msvc": "node scripts/find-msvc.mjs",
     "desktop:env": "node scripts/show-msvc-env.mjs",
     "find:builder": "node scripts/find-msvc.mjs",
