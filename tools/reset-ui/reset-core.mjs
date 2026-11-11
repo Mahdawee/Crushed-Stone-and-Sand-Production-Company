@@ -36,8 +36,22 @@ export const RESET_ORDER = [
 export const RESET_PHRASE = 'صفر کردن';
 
 /** همان الگوریتم هش رمز برنامه (`sha256(pw + 'farday::salt')`) */
+/**
+ * هش رمز — **باید** با `apps/api/src/common/auth.ts` یکی باشد.
+ *
+ * باگ (شکار باگ دور ۲۷): این‌جا نسخه‌ی قدیمیِ SHA-256 با نمک ثابت بود. اگر
+ * روزی سرور فرمت هش را عوض کند (که کرد: `scrypt`)، کاربرِ بازسازی‌شده با
+ * ابزار صفر کردن می‌توانست وارد نشود. حالا همان الگوریتم و همان فرمت:
+ *
+ *     scrypt$<N>$<r>$<p>$<salt-hex>$<key-hex>
+ *
+ * تست `apps/api/test/auth.test.js` هر دو پیاده‌سازی را با هم می‌سنجد.
+ */
 export function hashPassword(pw) {
-  return crypto.createHash('sha256').update(String(pw) + 'farday::salt').digest('hex');
+  const N = 16384, r = 8, p = 1, keylen = 32;
+  const salt = crypto.randomBytes(16);
+  const key = crypto.scryptSync(String(pw ?? ''), salt, keylen, { N, r, p });
+  return `scrypt$${N}$${r}$${p}$${salt.toString('hex')}$${key.toString('hex')}`;
 }
 
 export const RESET_MARK_FILE = 'system-reset.json';

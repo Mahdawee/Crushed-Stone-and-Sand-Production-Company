@@ -204,7 +204,16 @@ export class SalesController {
         body.paymentType === 'credit' ? 'credit' : 'cash', body.note || '',
       );
     } catch (e: any) {
-      throw new HttpException('ثبت فروش انجام نشد — شماره بل تکراری است یا معلومات ناقص است.', 400);
+      /*
+       * فقط تکراری‌بودن شماره بل پیام «تکراری» می‌گیرد؛ هر خطای دیگری
+       * (دیسک پر، قید کلید خارجی، خطای داخلی) با متن واقعی برمی‌گردد —
+       * پیش‌تر همه‌ی خطاها «شماره تکراری» گزارش می‌شد و کاربر بی‌دلیل
+       * شماره را عوض می‌کرد (شکار باگ دور ۲۸).
+       */
+      if (/UNIQUE|constraint failed/i.test(String(e?.message || ''))) {
+        throw new HttpException('این شماره بل قبلاً ثبت شده است.', 400);
+      }
+      throw new HttpException(`ثبت فروش انجام نشد: ${e?.message || e}`, 500);
     }
     await logActivity({
       action: 'create', entity: 'Sale',
@@ -274,8 +283,13 @@ export class SalesController {
         branch.contractorId, branch.contractorName,
         body.paymentType === 'credit' ? 'credit' : 'cash', body.note || '', sid,
       );
-    } catch {
-      throw new HttpException('ویرایش انجام نشد.', 400);
+    } catch (e: any) {
+      if (/UNIQUE|constraint failed/i.test(String(e?.message || ''))) {
+        throw new HttpException('این شماره بل برای سند دیگری ثبت شده است.', 400);
+      }
+      /* پیام «ویرایش انجام نشد» بی‌علت بود: کاربر نمی‌دانست چه چیزی را
+         درست کند (شکار باگ دور ۲۸). */
+      throw new HttpException(`ویرایش بل انجام نشد: ${e?.message || e}`, 500);
     }
     await logActivity({ action: 'update', entity: 'Sale', entityId: sid, detail: finalNo });
     return { ok: true, total, no: finalNo };

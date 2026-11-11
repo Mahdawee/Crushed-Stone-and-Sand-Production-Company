@@ -62,9 +62,16 @@ fn cli_mode() -> bool {
 
 /// دستور `recovery` — از دکمه‌های صفحه‌ی خطا صدا زده می‌شود.
 ///
-/// `arg` خالی = پوشه داده باز شود؛ `--reset-admin` / `--list-backups` =
-/// ابزار نجات در یک پنجره‌ی کنسول اجرا شود. هیچ ورودی دلخواهی از صفحه به
-/// خط فرمان داده نمی‌شود (فقط سه مقدار مجاز) تا سطح حمله باز نشود.
+/// `arg` خالی = پوشه داده باز شود؛ `--reset-admin` / `--list-backups` /
+/// `--repair-db` = ابزار نجات در یک پنجره‌ی کنسول اجرا شود. هیچ ورودی
+/// دلخواهی از صفحه به خط فرمان داده نمی‌شود (فقط مقدارهای مجاز) تا سطح
+/// حمله باز نشود.
+///
+/// `--repair-db` (شکار باگ دور ۲۸): وقتی دیتابیس خراب شده باشد، برنامه با
+/// «Internal server error» بالا می‌آید و حتی صفحه‌ی بازیابی هم کار نمی‌کند
+/// (چون خودش به دیتابیس نیاز دارد). این گزینه فایل خراب را **کنار
+/// می‌گذارد** (حذف نمی‌کند) و یک دیتابیس تازه می‌سازد تا بشود از داخل
+/// برنامه پشتیبان را برگرداند.
 #[tauri::command]
 fn recovery(app: tauri::AppHandle, arg: String) {
     use tauri::Manager;
@@ -91,6 +98,7 @@ fn recovery(app: tauri::AppHandle, arg: String) {
     let extra: &[&str] = match arg.as_str() {
         "--reset-admin" => &["--reset-admin"],
         "--list-backups" => &["--list-backups"],
+        "--repair-db" => &["--repair-db"],
         /* فقط چاپ کلید صفر کردن — هیچ داده‌ای تغییر نمی‌کند */
         "--print-reset-key" => &["--print-reset-key"],
         _ => {
@@ -466,11 +474,14 @@ const ERROR_PAGE: &str = r#"<html dir="rtl" lang="fa"><head><meta charset="utf-8
 <div class="btns">
   <button class="btn" onclick="__fd('--reset-admin')">بازنشانی رمز مدیر (admin / admin123)</button>
   <button class="btn" onclick="__fd('--list-backups')">دیدن پشتیبان‌های موجود</button>
+  <button class="btn ghost" onclick="__fd('--repair-db')">ترمیم دیتابیس خراب (فایل خراب کنار گذاشته می‌شود)</button>
   <button class="btn ghost" onclick="__fd('')">باز کردن پوشه داده و لاگ‌ها</button>
 </div>
 <p class="hint">اگر دکمه‌ها کار نکردند، همین کارها را از خط فرمان بزنید (بدون انترنت):<br>
 <code>%LOCALAPPDATA%\Programs\Farday Roshan\Farday Roshan.exe --cli --reset-admin</code><br>
 <code>%LOCALAPPDATA%\Programs\Farday Roshan\Farday Roshan.exe --cli --list-backups</code><br>
+<code>%LOCALAPPDATA%\Programs\Farday Roshan\Farday Roshan.exe --cli --repair-db</code><br>
+<code>%LOCALAPPDATA%\Programs\Farday Roshan\Farday Roshan.exe --cli --recovery --restore-backup &lt;نام فایل&gt;</code><br>
 <code>%LOCALAPPDATA%\Programs\Farday Roshan\Farday Roshan.exe --cli</code></p>
 <script>
   /* این صفحه داخل پنجره‌ی Tauri است؛ invoke به پوسته می‌رسد (بدون اینترنت) */

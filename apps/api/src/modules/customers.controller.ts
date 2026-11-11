@@ -1,6 +1,7 @@
 import { Body, Controller, Req, Get, Post, Put, Delete, Param, Query, UseGuards, HttpException } from '@nestjs/common';
 import { db } from '../db';
 import { ensureSchemaAsync } from '../schema';
+import { nextCustomerCode, RESERVED_CUSTOMER_CODE } from '../common/codes';
 import { AuthGuard, ManagerOnly, userOf } from '../common/auth';
 import { logActivity } from '../common/activity';
 import { softDelete } from '../common/soft-delete';
@@ -86,9 +87,7 @@ export class CustomersController {
 
   @Get('next-code')
   async nextCode() {
-    const rows: any[] = await db().$queryRawUnsafe(`SELECT "code" FROM "Customer"`);
-    const nums = rows.map((r) => Number(String(r.code).replace(/\D/g, '')) || 0);
-    return { code: String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, '0') };
+    return { code: await nextCustomerCode() };
   }
 
   /** Customer statement (کارت حساب) with running balance. */
@@ -163,11 +162,9 @@ export class CustomersController {
     const name = String(body?.name ?? '').trim();
     if (!name) throw new HttpException('نام مشتری لازم است.', 400);
     if (name.length > 120) throw new HttpException('نام مشتری حداکثر ۱۲۰ حرف باشد.', 400);
-    const rows: any[] = await db().$queryRawUnsafe(`SELECT "code" FROM "Customer"`);
-    const nums = rows.map((r) => Number(String(r.code).replace(/\D/g, '')) || 0);
-    const code = String(body.code || '').trim() || String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, '0');
+    const code = String(body.code || '').trim() || await nextCustomerCode();
     /* کد ۰۰۰ مالِ «مشتری گذری» است — دو حساب نباید همان کد را بگیرند */
-    if (code === '000') throw new HttpException('کد «۰۰۰» برای «مشتری گذری» رزرو است؛ کد دیگری بدهید.', 400);
+    if (code === RESERVED_CUSTOMER_CODE) throw new HttpException('کد «۰۰۰» برای «مشتری گذری» رزرو است؛ کد دیگری بدهید.', 400);
     try {
       await db().$executeRawUnsafe(
         `INSERT INTO "Customer" ("code","name","contactPerson","phone","truckPlate","openingBalance","note") VALUES (?,?,?,?,?,?,?)`,
@@ -175,8 +172,18 @@ export class CustomersController {
         String(body.truckPlate ?? '').slice(0, 40),
         numOrZero(body.openingBalance), String(body.note ?? '').slice(0, 300),
       );
-    } catch {
-      throw new HttpException('این کد مشتری قبلاً ثبت شده است.', 400);
+    } catch (e: any) {
+      /*
+       * ── باگ (شکار باگ دور ۲۸) ────────────────────────────────────────────
+       * این `catch` **هر** خطایی را «کد تکراری» گزارش می‌کرد — از جمله خطای
+       * نوشتن روی دیسک پر، یا خطای داخلی. نتیجه: کاربر کد را عوض می‌کرد و
+       * باز همان پیام را می‌دید. حالا فقط تکراری‌بودن کد این پیام را می‌گیرد
+       * و بقیه با متن واقعی برمی‌گردند.
+       */
+      if (/UNIQUE|constraint failed/i.test(String(e?.message || ''))) {
+        throw new HttpException('این کد مشتری قبلاً ثبت شده است.', 400);
+      }
+      throw new HttpException(`ثبت مشتری انجام نشد: ${e?.message || e}`, 500);
     }
     await logActivity({ action: 'create', entity: 'Customer', detail: `${code} — ${name}` });
     return { ok: true, code };
@@ -204,7 +211,7 @@ export class CustomersController {
     const curRow: any[] = await db().$queryRawUnsafe(`SELECT "code" FROM "Customer" WHERE "id"=?`, cid);
     const code = wantedCode || String(curRow?.[0]?.code ?? '');
     if (!code) throw new HttpException('کد مشتری لازم است.', 400);
-    if (code === '000') throw new HttpException('کد «۰۰۰» برای «مشتری گذری» رزرو است؛ کد دیگری بدهید.', 400);
+    if (code === RESERVED_CUSTOMER_CODE) throw new HttpException('کد «۰۰۰» برای «مشتری گذری» رزرو است؛ کد دیگری بدهید.', 400);
     try {
       await db().$executeRawUnsafe(
         `UPDATE "Customer" SET "code"=?, "name"=?, "contactPerson"=?, "phone"=?, "truckPlate"=?, "openingBalance"=?, "note"=? WHERE "id"=?`,
@@ -212,8 +219,12 @@ export class CustomersController {
         String(body.truckPlate ?? '').slice(0, 40), numOrZero(body.openingBalance),
         String(body.note ?? '').slice(0, 300), cid,
       );
-    } catch {
-      throw new HttpException('کد مشتری تکراری است یا معلومات ناقص است.', 400);
+    } catch (e: any) {
+      /* همان درس: فقط تکراری‌بودن کد، پیام «کد تکراری» می‌گیرد. */
+      if (/UNIQUE|constraint failed/i.test(String(e?.message || ''))) {
+        throw new HttpException('این کد برای مشتری دیگری ثبت شده است.', 400);
+      }
+      throw new HttpException(`ذخیره‌ی مشتری انجام نشد: ${e?.message || e}`, 500);
     }
     await logActivity({ action: 'update', entity: 'Customer', entityId: cid, detail: name });
     return { ok: true };

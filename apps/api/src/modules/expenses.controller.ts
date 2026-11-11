@@ -113,8 +113,11 @@ export class ExpensesController {
         body.payerId ? Number(body.payerId) : null, body.payerName || '',
         body.paymentType === 'credit' ? 'credit' : 'cash', body.note || '',
       );
-    } catch {
-      throw new HttpException('ثبت مصرف انجام نشد — شماره سند تکراری است.', 400);
+    } catch (e: any) {
+      if (/UNIQUE|constraint failed/i.test(String(e?.message || ''))) {
+        throw new HttpException('این شماره سند قبلاً ثبت شده است.', 400);
+      }
+      throw new HttpException(`ثبت مصرف انجام نشد: ${e?.message || e}`, 500);
     }
     await logActivity({ action: 'create', entity: 'Expense', detail: `${no} — ${amountAfn} افغانی` });
     return { ok: true, no };

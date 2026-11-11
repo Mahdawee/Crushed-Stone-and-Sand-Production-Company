@@ -172,8 +172,11 @@ export class ReceiptsController {
         body.sourceId ? Number(body.sourceId) : null, sourceName,
         body.receivedBy || '', body.note || '',
       );
-    } catch {
-      throw new HttpException('ثبت رسید انجام نشد — شماره رسید تکراری است.', 400);
+    } catch (e: any) {
+      if (/UNIQUE|constraint failed/i.test(String(e?.message || ''))) {
+        throw new HttpException('این شماره رسید قبلاً ثبت شده است.', 400);
+      }
+      throw new HttpException(`ثبت رسید انجام نشد: ${e?.message || e}`, 500);
     }
     await logActivity({
       action: 'create', entity: 'Receipt',

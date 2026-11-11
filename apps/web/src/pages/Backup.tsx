@@ -34,7 +34,20 @@ export default function BackupPage() {
     } catch (e: any) { toast.error('دانلود نشد', e.message); }
   };
 
-  const restore = (r: any) => toast.confirm({
+  /*
+   * ── باگ (شکار باگ دور ۲۸) ──────────────────────────────────────────────
+   * فهرست، فایل‌های خراب را «سالم» نشان می‌داد و دکمه‌ی «بازگردانی» برایشان
+   * فعال بود. یک کلیک روی فایل خراب، دیتابیس سالم را نابود می‌کرد و از آن
+   * لحظه هیچ صفحه‌ای باز نمی‌شد (تجربه‌ی `SQLITE_NOTADB`). حالا فایل خراب
+   * با برچسب قرمز نشان داده می‌شود و دکمه‌اش غیرفعال است؛ سرور هم مستقل
+   * از این صفحه فایل را بررسی می‌کند (دفاع دو‌لایه).
+   */
+  const restore = (r: any) => {
+    if (r.healthy === false) {
+      toast.error('این فایل سالم نیست', 'بازگردانی انجام نشد. فایل خراب است یا دیتابیس این برنامه نیست.');
+      return;
+    }
+    return toast.confirm({
     title: 'بازگردانی دیتابیس؟', confirmText: 'بازگردان',
     /*
      * پیام قبلی می‌گفت «برنامه را ببندید و دوباره باز کنید» — از وقتی اتصال
@@ -53,9 +66,17 @@ export default function BackupPage() {
       } catch (e: any) { toast.error('بازگردانی نشد', e.message); }
     },
   });
+  };
 
   if (!d) return <Spinner />;
-  const last = d.rows[0];
+  /*
+   * «آخرین پشتیبان» باید آخرین پشتیبانِ **سالم** باشد. قبلاً هر فایلی — حتی
+   * یک کاپی خراب — این شمارنده را تازه می‌کرد و کاربر فکر می‌کرد پشتیبان
+   * سالم دارد، در حالی که فایل قابل بازگردانی نبود (شکار باگ دور ۲۸).
+   */
+  const healthyRows = d.rows.filter((r: any) => r.healthy !== false);
+  const brokenCount = d.rows.length - healthyRows.length;
+  const last = healthyRows[0];
   const days = last ? Math.floor((Date.now() - new Date(last.createdAt).getTime()) / 86400000) : null;
 
   return (
@@ -64,7 +85,8 @@ export default function BackupPage() {
         <div className="list-head">
           <h3 style={{ margin: 0, fontSize: '.92rem' }}>پشتیبان‌گیری</h3>
           <div className="list-summary">
-            <InlineStat label="تعداد فایل" value={d.rows.length} />
+            <InlineStat label="تعداد فایل" value={d.rows.length}
+              tone={brokenCount ? 'warn' : 'ok'} />
             <span className="sep" />
             <InlineStat label="آخرین پشتیبان" value={last ? new Date(last.createdAt).toLocaleDateString('fa-IR') : '—'}
               tone={days !== null && days > 7 ? 'warn' : 'ok'} />
@@ -72,7 +94,13 @@ export default function BackupPage() {
             <InlineStat label="پوشه" value={<span className="mono small">{d.dir}</span>} />
           </div>
           <div style={{ flex: 1 }} />
-          <span className="small muted hide-sm">{days === null ? 'هنوز پشتیبان ساخته نشده' : `${days} روز پیش`} — ۳۰ فایل آخر نگه داشته می‌شود</span>
+          <span className="small muted hide-sm">
+            {brokenCount
+              ? <b style={{ color: 'var(--danger)' }}>{brokenCount} فایل خراب — قابل بازگردانی نیست</b>
+              : null}
+            {brokenCount ? ' — ' : ''}
+            {days === null ? 'هنوز پشتیبان سالمی ساخته نشده' : `${days} روز پیش`} — ۳۰ فایل آخر نگه داشته می‌شود
+          </span>
           <div className="list-actions">
             <button className="btn primary" onClick={make} disabled={busy}><IconDatabase size={15} /> {busy ? 'در حال ساخت…' : 'ساخت پشتیبان تازه'}</button>
           </div>
@@ -81,16 +109,22 @@ export default function BackupPage() {
 
       <div className="card">
         <div className="card-b tight">
-          <Table head={['فایل', 'تاریخ', 'حجم', '']} empty="هنوز پشتیبانی ساخته نشده است.">
+          <Table head={['فایل', 'تاریخ', 'حجم', 'وضعیت', '']} empty="هنوز پشتیبانی ساخته نشده است.">
             {d.rows.map((r: any) => (
               <tr key={r.file}>
                 <td className="mono small">{r.file}</td>
                 <td className="mono">{new Date(r.createdAt).toLocaleString('fa-IR')}</td>
                 <td className="num">{(r.size / 1024).toFixed(0)} KB</td>
+                <td>
+                  {r.healthy === false
+                    ? <span className="badge bad" title="این فایل قابل بازگردانی نیست؛ فایل خراب است یا دیتابیس این برنامه نیست.">خراب</span>
+                    : <span className="badge ok">سالم</span>}
+                </td>
                 <td><div className="actions">
                   <a className="btn sm" href={`${API_BASE}/system/backup/download?file=${encodeURIComponent(r.file)}`}
                     onClick={(e) => { e.preventDefault(); download(r.file); }}><IconDownload size={15} /> دانلود</a>
-                  <button className="btn sm" onClick={() => restore(r)}>بازگردانی</button>
+                  <button className="btn sm" onClick={() => restore(r)} disabled={r.healthy === false}
+                    title={r.healthy === false ? 'فایل خراب است — بازگردانی مسدود شد' : 'بازگردانی از این پشتیبان'}>بازگردانی</button>
                 </div></td>
               </tr>
             ))}

@@ -1,6 +1,7 @@
 import { Body, Controller, Req, Get, Post, Put, Delete, Param, Query, UseGuards, HttpException } from '@nestjs/common';
 import { db } from '../db';
 import { ensureSchemaAsync } from '../schema';
+import { nextEmployeeCode } from '../common/codes';
 import { AuthGuard, ManagerOnly, userOf } from '../common/auth';
 import { logActivity } from '../common/activity';
 import { softDelete } from '../common/soft-delete';
@@ -33,6 +34,9 @@ function numOrZero(v: unknown): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 }
+
+/** وضعیت‌های مجاز یک روز حضور — یک منبع واحد برای ذخیره و گزارش. */
+const ROW_STATUS = ['present', 'absent', 'leave', 'sick', 'official_holiday', 'friday'];
 
 @UseGuards(AuthGuard)
 @Controller()
@@ -175,13 +179,26 @@ export class EmployeesController {
         saved++;
         continue;
       }
+      /*
+       * ── باگ (شکار باگ دور ۲۸) ────────────────────────────────────────────
+       * وضعیت حضور در ذخیره‌ی گروهی **هیچ بررسی‌ای** نداشت: هر رشته‌ای
+       * (تایپی/از فایل/درخواست دستی) ذخیره می‌شد. در گزارش ماهانه هم هر
+       * وضعیت ناشناخته در سبد «تعطیل» شمرده می‌شد — یعنی یک غلط تایپی،
+       * غیبت کارمند را «تعطیل رسمی» نشان می‌داد. حالا همان فهرست مجاز
+       * مسیر `mark-day` این‌جا هم اعمال می‌شود و در گزارش، ناشناخته‌ها
+       * جدا شمرده می‌شوند تا پنهان نشوند.
+       */
+      const st = String(it.status || 'present');
+      if (!ROW_STATUS.includes(st)) {
+        throw new HttpException(`وضعیت حضور «${st}» معتبر نیست (کارمند ${it.employeeId}، تاریخ ${it.date}).`, 400);
+      }
       await p.$executeRawUnsafe(
         `INSERT INTO "Attendance" ("employeeId","date","status","checkIn","checkOut","overtime","note")
          VALUES (?,?,?,?,?,?,?)
          ON CONFLICT("employeeId","date") DO UPDATE SET "status"=excluded."status","checkIn"=excluded."checkIn",
          "checkOut"=excluded."checkOut","overtime"=excluded."overtime","note"=excluded."note",
          "deletedAt"=NULL, "deletedBy"=NULL`,
-        Number(it.employeeId), iso, it.status || 'present', it.checkIn || '', it.checkOut || '',
+        Number(it.employeeId), iso, st, it.checkIn || '', it.checkOut || '',
         Number(it.overtime) || 0, it.note || '',
       );
       saved++;
@@ -208,7 +225,7 @@ export class EmployeesController {
     await ensureSchemaAsync();
     const ids = (body.employeeIds || []).map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0);
     if (!ids.length) throw new HttpException('هیچ کارمندی انتخاب نشده است.', 400);
-    const VALID = ['present', 'absent', 'leave', 'sick', 'official_holiday', 'friday'];
+    const VALID = ROW_STATUS;
     const status = String(body.status || 'present');
     if (!VALID.includes(status)) throw new HttpException('وضعیت حضور معتبر نیست.', 400);
     const known: any[] = await p.$queryRawUnsafe(
@@ -240,7 +257,7 @@ export class EmployeesController {
    * عملاً بسته بود.
    */
   @Get('employees/next-code')
-  async nextEmployeeCode() {
+  async nextCodeEndpoint() {
     return this.nextCodeValue();
   }
 
@@ -274,10 +291,7 @@ export class EmployeesController {
 
   /** کد بعدی کارمند — منطق در یک جا (هم مسیر ثابت و هم مسیر قدیمی) */
   async nextCodeValue() {
-    const rows: any[] = await db().$queryRawUnsafe(`SELECT "code" FROM "Employee"`);
-    const nums = rows.map((r) => Number(String(r.code).replace(/\D/g, '')) || 0);
-    const next = (nums.length ? Math.max(...nums) : 0) + 1;
-    return { code: String(next).padStart(3, '0') };
+    return { code: await nextEmployeeCode() };
   }
 
   @Post('employees')
@@ -310,8 +324,13 @@ export class EmployeesController {
         String(body.address ?? '').slice(0, 200), String(body.contractPeriod ?? '').slice(0, 60),
         body.status === 'inactive' ? 'inactive' : 'active', String(body.note ?? '').slice(0, 300),
       );
-    } catch {
-      throw new HttpException('این کد کارمند قبلاً ثبت شده است.', 400);
+    } catch (e: any) {
+      /* فقط تکراری‌بودن کد این پیام را می‌گیرد — نه هر خطای دیگری
+         (شکار باگ دور ۲۸؛ پیش‌تر هر خطایی «کد تکراری» گزارش می‌شد). */
+      if (/UNIQUE|constraint failed/i.test(String(e?.message || ''))) {
+        throw new HttpException('این کد کارمند قبلاً ثبت شده است.', 400);
+      }
+      throw new HttpException(`ثبت کارمند انجام نشد: ${e?.message || e}`, 500);
     }
     await logActivity({ action: 'create', entity: 'Employee', detail: `${code} — ${name}` });
     return { ok: true, code };
@@ -353,8 +372,11 @@ export class EmployeesController {
         String(body.address ?? '').slice(0, 200), String(body.contractPeriod ?? '').slice(0, 60),
         body.status === 'inactive' ? 'inactive' : 'active', String(body.note ?? '').slice(0, 300), eid,
       );
-    } catch {
-      throw new HttpException('کد کارمند تکراری است یا معلومات ناقص است.', 400);
+    } catch (e: any) {
+      if (/UNIQUE|constraint failed/i.test(String(e?.message || ''))) {
+        throw new HttpException('این کد برای کارمند دیگری ثبت شده است.', 400);
+      }
+      throw new HttpException(`ذخیره‌ی کارمند انجام نشد: ${e?.message || e}`, 500);
     }
     await logActivity({ action: 'update', entity: 'Employee', entityId: eid, detail: name });
     return { ok: true };
@@ -399,9 +421,7 @@ export class EmployeesController {
   }
 
   private async autoCode(): Promise<string> {
-    const rows: any[] = await db().$queryRawUnsafe(`SELECT "code" FROM "Employee"`);
-    const nums = rows.map((r) => Number(String(r.code).replace(/\D/g, '')) || 0);
-    return String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, '0');
+    return nextEmployeeCode();
   }
 
   // ------------------------------ attendance -------------------------------
@@ -424,12 +444,14 @@ export class EmployeesController {
     const byEmp: Record<number, any> = {};
     for (const r of rows) {
       const k = r.employeeId;
-      byEmp[k] = byEmp[k] || { employeeId: k, name: r.name, code: r.code, present: 0, absent: 0, leave: 0, sick: 0, holiday: 0, overtime: 0 };
+      byEmp[k] = byEmp[k] || { employeeId: k, name: r.name, code: r.code, present: 0, absent: 0, leave: 0, sick: 0, holiday: 0, unknown: 0, overtime: 0 };
+      /* «تعطیل» فقط برای وضعیت‌های تعطیلیِ شناخته‌شده — نه هر مقدار ناشناخته */
       if (r.status === 'present') byEmp[k].present++;
       else if (r.status === 'absent') byEmp[k].absent++;
       else if (r.status === 'leave') byEmp[k].leave++;
       else if (r.status === 'sick') byEmp[k].sick++;
-      else byEmp[k].holiday++;
+      else if (r.status === 'official_holiday' || r.status === 'friday') byEmp[k].holiday++;
+      else byEmp[k].unknown++;
       byEmp[k].overtime += Number(r.overtime) || 0;
     }
     return { label: bucket.label, start: bucket.start, end: bucket.end, rows: Object.values(byEmp) };

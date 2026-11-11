@@ -8,6 +8,8 @@ import { settingsService } from '../common/settings';
 import { formatDate, CalendarMode } from '../common/calendar';
 import { toCsv, parseCsv, normalizeNumber } from '../common/csv';
 import { canonicalReceiptSource, receiptDebtSql } from '../common/domain';
+import { parseUserDate } from '../common/calendar';
+import { nextCustomerCode, nextEmployeeCode } from '../common/codes';
 
 /**
  * خروجی و **ورودی** اکسل (CSV).
@@ -442,7 +444,20 @@ export class ImportController {
         const balRaw = cell(4);
         const opening = balRaw ? normalizeNumber(balRaw) : 0;
         if (opening === null) { errors.push(`سطر ${line}: «باقی اولیه» عدد نیست («${balRaw}»).`); continue; }
-        prepared.push({ name, contactPerson: cell(1), phone: cell(2), truckPlate: cell(3), openingBalance: opening, note: cell(5) });
+        /*
+         * ── باگ (شکار باگ دور ۲۸) ────────────────────────────────────────
+         * «باقی اولیه» منفی در ورود از اکسل پذیرفته می‌شد. نتیجه: مشتریانی
+         * با مانده‌ی **بستانکار در فهرست**، و در صورتحساب چاپی جمع بدهی
+         * منفی. در فرم دستی سرور فیلدی برای منفی‌شدن ندارد، پس این‌جا هم
+         * باید رد شود — یک قاعده، دو مسیر.
+         */
+        if (opening < 0) {
+          warnings.push(`سطر ${line}: «باقی اولیه» منفی بود («${opening}») و صفر ثبت شد. اگر مشتری بستانکار است، آن را در «رسیدات» ثبت کنید.`);
+        }
+        prepared.push({
+          name, contactPerson: cell(1), phone: cell(2), truckPlate: cell(3),
+          openingBalance: opening < 0 ? 0 : opening, note: cell(5),
+        });
       } else if (type === 'employees') {
         const name = cell(0);
         if (!name) { errors.push(`سطر ${line}: نام کارمند خالی است.`); continue; }
@@ -450,8 +465,22 @@ export class ImportController {
         const baseSalary = salRaw ? normalizeNumber(salRaw) : 0;
         if (baseSalary === null) { errors.push(`سطر ${line}: «معاش ثابت» عدد نیست («${salRaw}»).`); continue; }
         if (baseSalary < 0) { errors.push(`سطر ${line}: معاش نمی‌تواند منفی باشد.`); continue; }
+        /*
+         * ── باگ (شکار باگ دور ۲۸) ──────────────────────────────────────────
+         * «تاریخ استخدام» از فایل اکسل **بی‌تبدیل** ذخیره می‌شد. فرم دستی
+         * تاریخ شمسی را به ISO تبدیل می‌کند، ولی این‌جا رشته‌ی خام
+         * (`۱۴۰۴/۰۱/۱۵`) در ستون ISO می‌نشست — نتیجه: کارمندی با تاریخ
+         * استخدامِ نامعتبر که در هیچ مرتب‌سازی/گزارشی درست جا نمی‌گرفت.
+         */
+        const hireRaw = cell(3);
+        let hireISO = '';
+        if (hireRaw) {
+          const mode = await settingsService.calendar();
+          try { hireISO = parseUserDate(hireRaw, mode); }
+          catch { errors.push(`سطر ${line}: تاریخ استخدام درست نیست («${hireRaw}») — نمونه‌ی درست: ۱۴۰۴/۰۱/۱۵.`); continue; }
+        }
         prepared.push({
-          name, fatherName: cell(1), position: cell(2), hireDate: cell(3),
+          name, fatherName: cell(1), position: cell(2), hireDate: hireISO,
           baseSalary, phone: cell(5), nationalId: cell(6), address: cell(7),
           contractPeriod: cell(8), note: cell(9),
         });
@@ -508,11 +537,15 @@ export class ImportController {
     const skipped: string[] = [];
     if (type === 'customers') {
       const existing: any[] = await db().$queryRawUnsafe(`SELECT "name","code" FROM "Customer" WHERE COALESCE("isWalkIn",0)=0`);
+      /* کدها با یک منبع واحد ساخته می‌شوند (`common/codes`) تا با کد رزرو ۰۰۰
+         یا کد دستیِ غیرعددی تصادم نکنند — `Math.max` قبلی هر دو را می‌شکست. */
       const names = new Set(existing.map((e) => String(e.name).trim()));
-      let nextNum = Math.max(0, ...existing.map((e) => Number(String(e.code).replace(/\D/g, '')) || 0)) + 1;
       for (const p of unique) {
         if (names.has(String(p.name).trim())) { skipped.push(p.name); continue; }
-        const code = String(nextNum++).padStart(3, '0');
+        /* کد از یک منبع واحد (`common/codes`) — نه `Math.max` که با کد رزرو
+           ۰۰۰ و کدهای دستیِ غیرعددی تصادم می‌کرد و با فهرست بزرگ هم
+           `RangeError` می‌داد. */
+        const code = await nextCustomerCode();
         await db().$executeRawUnsafe(
           `INSERT INTO "Customer" ("code","name","contactPerson","phone","truckPlate","openingBalance","note","createdAt") VALUES (?,?,?,?,?,?,?,datetime('now'))`,
           code, p.name, p.contactPerson, p.phone, p.truckPlate, p.openingBalance, p.note,
@@ -523,10 +556,9 @@ export class ImportController {
     } else if (type === 'employees') {
       const existing: any[] = await db().$queryRawUnsafe(`SELECT "name","code" FROM "Employee"`);
       const names = new Set(existing.map((e) => String(e.name).trim()));
-      let nextNum = Math.max(0, ...existing.map((e) => Number(String(e.code).replace(/\D/g, '')) || 0)) + 1;
       for (const p of unique) {
         if (names.has(String(p.name).trim())) { skipped.push(p.name); continue; }
-        const code = String(nextNum++).padStart(3, '0');
+        const code = await nextEmployeeCode();
         await db().$executeRawUnsafe(
           `INSERT INTO "Employee" ("code","name","fatherName","position","hireDate","baseSalary","phone","nationalId","address","contractPeriod","note","status","createdAt") VALUES (?,?,?,?,?,?,?,?,?,?,?,'active',datetime('now'))`,
           code, p.name, p.fatherName, p.position, p.hireDate, p.baseSalary, p.phone, p.nationalId, p.address, p.contractPeriod, p.note,

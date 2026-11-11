@@ -14,8 +14,71 @@ export type Session = { token: string; userId: number; username: string; role: s
 const sessions = new Map<string, Session>();
 const SESSION_TTL = 1000 * 60 * 60 * 12; // 12h
 
+/*
+ * ── رمز عبور: از SHA-256 به `scrypt` ────────────────────────────────────
+ *
+ * باگ امنیتی (شکار باگ دور ۲۷): رمزها با یک SHA-256 و نمکِ **ثابت و
+ * هاردکدشده** (`'farday::salt'`) ذخیره می‌شدند. نمک ثابت یعنی:
+ *   • چند کاربر با رمز یکسان، هشِ یکسان دارند (نشانی برای حدس زدن)؛
+ *   • یک جدول رنگین‌کمانی که برای یک نسخه ساخته شود، برای **همه‌ی**
+ *     نصب‌های این برنامه کار می‌کند (چون نمک همه‌جا یکی است)؛
+ *   • SHA-256 عمداً سریع است — دقیقاً برعکس چیزی که برای رمز لازم است.
+ *
+ * حالا: `scrypt` با **نمک تصادفی برای هر کاربر** و الگوریتم نسخه‌دار:
+ *
+ *     scrypt$<N>$<r>$<p>$<salt-hex>$<key-hex>
+ *
+ * سازگاری: هش‌های قدیمی (۶۴ حرف hex) هنوز پذیرفته می‌شوند و **در همان
+ * ورود موفق** بی‌صدا به فرمت تازه ارتقا پیدا می‌کنند — کاربر رمزش را عوض
+ * نمی‌کند و چیزی متوجه نمی‌شود.
+ */
+const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 32 };
+
 export function hashPassword(pw: string): string {
+  const salt = crypto.randomBytes(16);
+  const key = crypto.scryptSync(String(pw ?? ''), salt, SCRYPT.keylen, {
+    N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p,
+  });
+  return `scrypt$${SCRYPT.N}$${SCRYPT.r}$${SCRYPT.p}$${salt.toString('hex')}$${key.toString('hex')}`;
+}
+
+/** هش قدیمی (SHA-256 با نمک ثابت) — فقط برای سازگاری خواندن. */
+function legacyHash(pw: string): string {
   return crypto.createHash('sha256').update(String(pw) + 'farday::salt').digest('hex');
+}
+
+/** آیا این مقدار هشِ فرمت تازه است؟ */
+export function isModernHash(stored: string): boolean {
+  return /^scrypt\$\d+\$\d+\$\d+\$[0-9a-f]+\$[0-9a-f]+$/.test(String(stored || ''));
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const ba = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  if (ba.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ba, bb);
+}
+
+/**
+ * بررسی رمز. برای هش قدیمی هم کار می‌کند.
+ * مقدار `needsUpgrade` می‌گوید ذخیره باید به فرمت تازه ارتقا پیدا کند.
+ */
+export function verifyPassword(pw: string, stored: string): { ok: boolean; needsUpgrade: boolean } {
+  const s = String(stored || '');
+  if (isModernHash(s)) {
+    const [, n, r, p, saltHex, keyHex] = s.split('$');
+    try {
+      const key = crypto.scryptSync(String(pw ?? ''), Buffer.from(saltHex, 'hex'), keyHex.length / 2, {
+        N: Number(n), r: Number(r), p: Number(p),
+      });
+      return { ok: safeEqual(key.toString('hex'), keyHex), needsUpgrade: false };
+    } catch {
+      return { ok: false, needsUpgrade: false };
+    }
+  }
+  /* فرمت قدیمی (۶۴ hex) */
+  const ok = safeEqual(legacyHash(pw), s);
+  return { ok, needsUpgrade: ok };
 }
 
 export function createSession(user: { id: number; username: string; role: string; fullName: string }): Session {
@@ -27,6 +90,20 @@ export function createSession(user: { id: number; username: string; role: string
 
 export function destroySession(token: string) {
   sessions.delete(token);
+}
+
+/**
+ * باطل کردن همه‌ی نشست‌های یک کاربر — باگ (شکار باگ دور ۲۷):
+ *
+ * وقتی مدیر رمز یک کاربر را عوض می‌کرد، رمز کارمند غیرفعال می‌شد ولی
+ * **توکن‌های باز او معتبر می‌ماندند** (تا ۱۲ ساعت). یعنی «تغییر رمز برای
+ * بیرون کردن کسی» کار نمی‌کرد. حالا با تغییر/غیرفعال‌سازی/حذف کاربر،
+ * نشست‌های او همان لحظه باطل می‌شوند.
+ */
+export function destroySessionsOf(userId: number) {
+  for (const [token, s] of sessions) {
+    if (s.userId === Number(userId)) sessions.delete(token);
+  }
 }
 
 export function getSession(token?: string): Session | null {

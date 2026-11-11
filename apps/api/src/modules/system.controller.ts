@@ -8,6 +8,7 @@ import { logActivity } from '../common/activity';
 import { settingsService } from '../common/settings';
 import { dataDir } from '../db';
 import { ensureSqliteEngine, nativePackageName, type EngineStatus } from '../common/sqlite-engine';
+import { checkBackupFile } from '../common/backup-check';
 import { demoCounts, hasRealData, installDemo, removeDemo } from '../common/demo';
 import {
   RESET_PHRASE, dataInventory, resetMark, resetPlan, resetSystem, workingRowCount, type ResetOptions,
@@ -295,9 +296,17 @@ export class SystemController {
   async listBackups() {
     const dir = BACKUP_DIR();
     const files = fs.readdirSync(dir).filter((f) => f.endsWith('.db') || f.endsWith('.bak'));
+    /*
+     * باگ (شکار باگ دور ۲۸): فهرست، فایل‌های خراب را هم نشان می‌داد و کاربر
+     * رویشان «بازگردانی» می‌زد → دیتابیس زنده با یک فایل غیر-SQLite
+     * بازنویسی می‌شد و برنامه بی‌بازگشت خراب می‌شد. حالا هر فایل در فهرست
+     * برچسب «سالم/خراب» دارد و دکمه‌ی بازگردانی برای فایل خراب غیرفعال است.
+     */
     const rows = files.map((f) => {
-      const st = fs.statSync(path.join(dir, f));
-      return { file: f, size: st.size, createdAt: st.mtime.toISOString() };
+      const full = path.join(dir, f);
+      const st = fs.statSync(full);
+      const healthy = checkBackupFile(full, st.size).ok;
+      return { file: f, size: st.size, createdAt: st.mtime.toISOString(), healthy };
     });
     rows.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
     return { dir, rows };
@@ -341,6 +350,22 @@ export class SystemController {
     const name = path.basename(String(body?.file || ''));
     const full = path.join(BACKUP_DIR(), name);
     if (!fs.existsSync(full)) throw new HttpException('فایل پشتیبان پیدا نشد.', 404);
+
+    /*
+     * ── حفاظ حیاتی (شکار باگ دور ۲۸) ────────────────────────────────────
+     * فایل **قبل** از هر تغییری بررسی می‌شود. اگر خراب باشد، هیچ کاری
+     * انجام نمی‌شود و دیتابیس زنده دست‌نخورده می‌ماند. بدون این، یک فایل
+     * خراب روی دیتابیس سالم کپی می‌شد و از آن لحظه هر درخواستی ۵۰۰ می‌داد
+     * (تجربه‌ی واقعی: `SQLITE_NOTADB: file is not a database`).
+     */
+    const check = checkBackupFile(full, fs.statSync(full).size);
+    if (!check.ok) {
+      throw new HttpException(
+        `بازگردانی انجام نشد: ${check.message}\nدیتابیس فعلی دست‌نخورده است. پشتیبان دیگری انتخاب کنید.`,
+        400,
+      );
+    }
+
     const target = databaseFile();
     // safety copy of the current database before overwriting
     const safety = path.join(BACKUP_DIR(), `before-restore-${Date.now()}.db`);
@@ -352,7 +377,26 @@ export class SystemController {
      * می‌آمد. حالا اتصال بسته و دوباره باز می‌شود.
      */
     await resetDb();
-    fs.copyFileSync(full, target);
+    try {
+      fs.copyFileSync(full, target);
+    } catch (e: any) {
+      /*
+       * حتی اگر کاپی نصفه شکست بخورد، دیتابیس نباید خراب بماند: از نسخه‌ی
+       * ایمنی که چند خط بالاتر گرفتیم برمی‌گردانیم. (اگر خودِ کاپی ایمنی
+       * نبود، خطا را واضح می‌دهیم و به کاربر می‌گوییم فایل در کجاست.)
+       */
+      try { fs.copyFileSync(safety, target); } catch { /* ignore */ }
+      await ensureSchemaAsync(true);
+      settingsService.clearCache();
+      throw new HttpException(
+        `کاپی فایل پشتیبان انجام نشد (${e?.message || e}). دیتابیس قبلی برگردانده شد.`,
+        500,
+      );
+    }
+    /* فایل‌های WAL/SHM قدیمی به دیتابیس تازه تعلق ندارند و باید بروند */
+    for (const suffix of ['-wal', '-shm']) {
+      try { fs.rmSync(target + suffix, { force: true }); } catch { /* ignore */ }
+    }
     /*
      * پس از بازگردانی، فایل دیتابیس عوض شده؛ کش «ساختار بررسی شد» هم باید
      * پاک شود وگرنه برنامه به فایل تازه اعتماد می‌کند بدون بررسی ستون‌ها
@@ -362,7 +406,10 @@ export class SystemController {
     /* کش تنظیمات مربوط به فایل قبلی است — پاک شود */
     settingsService.clearCache();
     await logActivity({ action: 'restore', entity: 'System', detail: name });
-    return { ok: true, restored: name, safetyCopy: path.basename(safety), restartRequired: false };
+    return {
+      ok: true, restored: name, safetyCopy: path.basename(safety), restartRequired: false,
+      counts: check.counts,
+    };
   }
 
   // ------------------------------ diagnostics ------------------------------

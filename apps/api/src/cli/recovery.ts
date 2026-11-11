@@ -1,9 +1,11 @@
 /**
  * ابزار نجات (Recovery) برای نسخه‌ی نصب‌شده — بدون نیاز به انترنت یا پشتیبانی.
  *
- *   node app.js --recovery                 وضعیت را نشان بده (پیش‌فرض)
- *   node app.js --recovery --reset-admin   رمز مدیر را به admin123 برگردان
- *   node app.js --recovery --list-backups  فهرست پشتیبان‌ها
+ *   node app.js --recovery                    وضعیت را نشان بده (پیش‌فرض)
+ *   node app.js --recovery --reset-admin      رمز مدیر را به admin123 برگردان
+ *   node app.js --recovery --list-backups     فهرست پشتیبان‌ها
+ *   node app.js --recovery --restore-backup X بازگردانی از پشتیبان X (با بررسی سلامت)
+ *   node app.js --recovery --repair-db        دیتابیس خراب را کنار بگذار و از نو بساز
  *
  * چرا لازم است: اگر مدیر رمز خود را فراموش کند یا همه‌ی کاربران قفل شوند،
  * تا امروز هیچ راهی جز «نصب مجدد و از دست دادن داده» نبود — در حالی که
@@ -19,6 +21,7 @@ import * as path from 'node:path';
 import { db, databaseFile, dataDir, BACKUP_DIR } from '../db';
 import { ensureSchemaAsync } from '../schema';
 import { hashPassword } from '../common/auth';
+import { checkBackupFile } from '../common/backup-check';
 
 const args = process.argv.slice(2);
 const has = (f: string) => args.includes(f);
@@ -80,12 +83,94 @@ async function resetAdmin() {
   console.log('  حالا برنامه را باز کنید، وارد شوید و رمز را از صفحه‌ی تنظیمات عوض کنید.\n');
 }
 
+/**
+ * بازگردانی از خط فرمان — **مسیر نجاتی که تا حالا نبود.**
+ *
+ * باگ (شکار باگ دور ۲۸): اگر دیتابیس خراب می‌شد (کاپی نیمه‌کاره، برق قطع
+ * در حین نوشتن، کپی اشتباه روی فایل)، برنامه با «Internal server error»
+ * بالا می‌آمد و صفحه‌ی «بازیابی» هم کار نمی‌کرد — چون خودش به دیتابیس
+ * نیاز داشت. یعنی کاربر عملاً در بن‌بست بود، در حالی که پشتیبان سالم روی
+ * همان دیسک بود.
+ *
+ * این مسیر فقط به فایل‌ها دست می‌زند و به هیچ جدولی نیاز ندارد.
+ */
+function restoreBackup(file?: string) {
+  const dir = BACKUP_DIR();
+  const name = path.basename(String(file || ''));
+  if (!name) {
+    console.log('\n⛔ نام فایل پشتیبان را بدهید:  --restore-backup <نام فایل>');
+    listBackups();
+    return;
+  }
+  const full = path.join(dir, name);
+  if (!fs.existsSync(full)) {
+    console.log(`\n⛔ فایل پیدا نشد: ${full}`);
+    listBackups();
+    return;
+  }
+  const check = checkBackupFile(full, fs.statSync(full).size);
+  if (!check.ok) {
+    console.log(`\n⛔ این فایل سالم نیست: ${check.message}`);
+    console.log('   دیتابیس فعلی دست‌نخورده ماند. با --list-backups فایل دیگری انتخاب کنید.\n');
+    return;
+  }
+  const target = databaseFile();
+  const safety = path.join(dir, `before-cli-restore-${Date.now()}.db`);
+  try { if (fs.existsSync(target)) fs.copyFileSync(target, safety); } catch { /* ignore */ }
+  fs.copyFileSync(full, target);
+  /* فایل‌های WAL/SHM قدیمی به دیتابیس تازه تعلق ندارند */
+  for (const suffix of ['-wal', '-shm']) {
+    try { fs.rmSync(target + suffix, { force: true }); } catch { /* ignore */ }
+  }
+  console.log(`\n✔ بازگردانی انجام شد از: ${name}`);
+  console.log(`  کاربران در این پشتیبان: ${check.counts.User ?? '؟'} — مشتریان: ${check.counts.Customer ?? '؟'}`);
+  console.log(`  نسخه‌ی ایمنی از دیتابیس قبلی: ${path.basename(safety)}`);
+  console.log('  حالا برنامه را باز کنید.\n');
+}
+
+/**
+ * «دیتابیس خراب است» را قابل‌نجات می‌کند.
+ *
+ * فایل خراب **حذف نمی‌شود** — کنار گذاشته می‌شود (برای بررسی پشتیبانی) و
+ * یک دیتابیس خالی سالم ساخته می‌شود تا برنامه حداقل بالا بیاید و بشود از
+ * داخل خودش پشتیبان را برگرداند.
+ */
+async function repairDb() {
+  const target = databaseFile();
+  if (fs.existsSync(target)) {
+    const st = fs.statSync(target);
+    const check = checkBackupFile(target, st.size);
+    if (check.ok) {
+      console.log('\n✔ فایل دیتابیس خوانا است — کاری لازم نیست.');
+      await ensureSchemaAsync(true);
+      console.log('  ساختار بررسی/ترمیم شد.\n');
+      return;
+    }
+    const aside = path.join(dataDir(), `farday-corrupt-${Date.now()}.db`);
+    fs.renameSync(target, aside);
+    for (const suffix of ['-wal', '-shm']) {
+      try { fs.rmSync(target + suffix, { force: true }); } catch { /* ignore */ }
+    }
+    console.log(`\n⚠ فایل خراب کنار گذاشته شد: ${aside}`);
+    console.log('  (پاک نشد — برای بررسی پشتیبانی نگه داشته شد.)');
+  }
+  await ensureSchemaAsync(true);
+  console.log('✔ یک دیتابیس تازه ساخته شد. برنامه را باز کنید، وارد شوید (admin / admin123)');
+  console.log('  و از «تنظیمات ← پشتیبان‌گیری» پشتیبان سالم را بازگردانید.\n');
+}
+
 async function main() {
   console.log('ابزار نجات فردای روشن');
   if (has('--list-backups')) listBackups();
+  if (has('--repair-db')) await repairDb();
+  if (has('--restore-backup')) {
+    const idx = args.indexOf('--restore-backup');
+    restoreBackup(args[idx + 1]);
+    return;
+  }
   if (has('--reset-admin')) await resetAdmin();
   if (!has('--list-backups') || has('--recovery')) await status();
-  console.log('\nگزینه‌ها:  --reset-admin   --list-backups\n');
+  console.log('\nگزینه‌ها:  --reset-admin   --list-backups   --restore-backup <فایل>   --repair-db\n');
 }
 
 /**
