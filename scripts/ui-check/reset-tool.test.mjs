@@ -264,8 +264,16 @@ for (const f of ['tools/license/start.cmd', 'tools/license/start.sh', 'tools/res
     a.length > 5 && JSON.stringify(a) === JSON.stringify(b), `${a.length} vs ${b.length}`);
   check('عبارت تأیید در هر دو یکی است',
     /صفر کردن/.test(apiReset) && /RESET_PHRASE = 'صفر کردن'/.test(coreReset));
-  check('هش رمز مدیر همان الگوریتم برنامه است',
-    /farday::salt/.test(coreReset) && /farday::salt/.test(fs.readFileSync(path.join(root, 'apps', 'api', 'src', 'common', 'auth.ts'), 'utf8')));
+  /*
+   * هش رمز مدیر باید **همان** الگوریتم فعلی برنامه باشد. پیش‌تر این تست فقط
+   * رشته‌ی `farday::salt` را می‌جست؛ بعد از رفتن به scrypt هم آن رشته در
+   * مسیر سازگاری با هش‌های قدیمی مانده بود و تست سبز می‌ماند در حالی که
+   * دو پیاده‌سازی می‌توانستند فرق کنند. حالا فرمت واقعی سنجیده می‌شود.
+   */
+  check('هش رمز ابزار همان فرمت scrypt برنامه است',
+    /scrypt\$/.test(coreReset)
+    && /return `scrypt\$\$\{SCRYPT\.N\}\$\$\{SCRYPT\.r\}\$\$\{SCRYPT\.p\}\$/.test(
+      fs.readFileSync(path.join(root, 'apps', 'api', 'src', 'common', 'auth.ts'), 'utf8')));
 }
 
 /* CLI: بدون تأیید نباید کاری کند */
@@ -350,6 +358,94 @@ console.log('\n— هشدار لایسنس در برنامه (alert) —');
 }
 
 try { child.kill(); } catch { /* */ }
+
+/* ================================================================ */
+/*
+ * ── رگرسیون باگ گزارش‌شده‌ی کاربر ────────────────────────────────────────
+ *   «صفر کردن سیستم درست کار نمی‌کند: table Customer has no column named
+ *    isWalkIn.»
+ *
+ * سناریو: دیتابیس یک **نصب قدیمی** که مهاجرت ستون‌های `isWalkIn`/`isDemo`
+ * را ندیده است (یا برنامه هرگز باز نشده). ابزار صفر کردن باید آن را
+ * بسازد، نه این‌که وسط کار بشکند.
+ */
+console.log('\n— رگرسیون: صفر کردن روی دیتابیس نصب قدیمی (isWalkIn) —');
+{
+  const core = await import(path.join(root, 'tools', 'reset-ui', 'reset-core.mjs'));
+  const oldDir = fs.mkdtempSync(path.join(os.tmpdir(), 'farday-reset-old-'));
+  const oldDb = path.join(oldDir, 'farday.db');
+  const odb = new DatabaseSync(oldDb);
+  /* ساختار نسخه‌ی قدیمی: بدون isWalkIn/isDemo */
+  odb.exec(`CREATE TABLE "Customer" ("id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "code" TEXT NOT NULL,
+    "name" TEXT NOT NULL, "contactPerson" TEXT NOT NULL DEFAULT '', "phone" TEXT NOT NULL DEFAULT '',
+    "truckPlate" TEXT NOT NULL DEFAULT '', "openingBalance" REAL NOT NULL DEFAULT 0,
+    "note" TEXT NOT NULL DEFAULT '', "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
+  odb.exec(`CREATE TABLE "User" ("id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "username" TEXT NOT NULL,
+    "fullName" TEXT NOT NULL DEFAULT '', "passwordHash" TEXT NOT NULL,
+    "role" TEXT NOT NULL DEFAULT 'employee', "active" INTEGER NOT NULL DEFAULT 1,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
+  odb.exec(`CREATE TABLE "Sale" ("id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "no" TEXT NOT NULL,
+    "date" TEXT NOT NULL, "customerId" INTEGER, "total" REAL NOT NULL DEFAULT 0)`);
+  odb.prepare(`INSERT INTO "Customer" ("code","name") VALUES (?,?)`).run('001', 'مشتری قدیمی');
+  odb.close();
+
+  const pre = await core.preflight({ dbFile: oldDb });
+  check('پیش‌بررسی دیتابیس قدیمی را «آماده» می‌داند', pre.ok === true, JSON.stringify(pre.problems));
+
+  const r = await core.resetOffline({ dbFile: oldDb, dataDir: oldDir }, { confirm: 'صفر کردن' });
+  check('صفر کردن روی دیتابیس قدیمی موفق است (باگ isWalkIn رفع شد)', r.ok === true,
+    JSON.stringify(r.message || r).slice(0, 200));
+  const after = new DatabaseSync(oldDb, { readOnly: true });
+  const cols = after.prepare('PRAGMA table_info("Customer")').all().map((c) => c.name);
+  check('ستون isWalkIn در دیتابیس قدیمی ساخته شد', cols.includes('isWalkIn'), cols.join(','));
+  const walk = after.prepare(`SELECT "code","isWalkIn" FROM "Customer"`).all();
+  check('«مشتری گذری» ساخته شد و پرچم گذری دارد',
+    walk.some((w) => w.code === '000' && Number(w.isWalkIn) === 1), JSON.stringify(walk));
+  const users = after.prepare(`SELECT "username","role" FROM "User"`).all();
+  check('کاربر مدیر بعد از صفر کردن وجود دارد (برنامه قابل ورود است)',
+    users.some((u) => u.username === 'admin' && u.role === 'manager'), JSON.stringify(users));
+  const hash = String(after.prepare(`SELECT "passwordHash" FROM "User" WHERE "username"='admin'`).get()?.passwordHash || '');
+  check('رمز مدیر با فرمت scrypt ذخیره شده', /^scrypt\$/.test(hash), hash.slice(0, 16));
+  after.close();
+
+  /* ── برگشت خودکار وقتی وسط کار چیزی می‌شکند ── */
+  const rbDir = fs.mkdtempSync(path.join(os.tmpdir(), 'farday-reset-rb-'));
+  const rbDb = path.join(rbDir, 'farday.db');
+  const rdb = new DatabaseSync(rbDb);
+  rdb.exec(`CREATE TABLE "Customer" ("id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "code" TEXT NOT NULL,
+    "name" TEXT NOT NULL, "contactPerson" TEXT NOT NULL DEFAULT '', "phone" TEXT NOT NULL DEFAULT '',
+    "truckPlate" TEXT NOT NULL DEFAULT '', "openingBalance" REAL NOT NULL DEFAULT 0,
+    "note" TEXT NOT NULL DEFAULT '', "isWalkIn" INTEGER NOT NULL DEFAULT 0)`);
+  rdb.exec(`CREATE TABLE "User" ("id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "username" TEXT NOT NULL,
+    "fullName" TEXT NOT NULL DEFAULT '', "passwordHash" TEXT NOT NULL,
+    "role" TEXT NOT NULL DEFAULT 'employee', "active" INTEGER NOT NULL DEFAULT 1)`);
+  rdb.exec(`CREATE TABLE "LookupItem" ("id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "name" TEXT)`);
+  rdb.prepare(`INSERT INTO "Customer" ("code","name") VALUES (?,?)`).run('777', 'مشتری حیاتی');
+  rdb.prepare(`INSERT INTO "LookupItem" ("name") VALUES (?)`).run('قلم');
+  /* تریگری که پاک کردن LookupItem را می‌شکند — شبیه‌سازی خطای وسط کار */
+  rdb.exec(`CREATE TRIGGER "t_no_delete" BEFORE DELETE ON "LookupItem" BEGIN SELECT RAISE(ABORT,'blocked by test'); END`);
+  rdb.close();
+  const rr = await core.resetOffline({ dbFile: rbDb, dataDir: rbDir }, { confirm: 'صفر کردن' });
+  check('خطای وسط کار، «موفق» گزارش نمی‌شود', rr.ok === false, JSON.stringify(rr).slice(0, 160));
+  check('خطا می‌گوید دیتابیس برگردانده شد', rr.rolledBack === true && /برگردانده شد/.test(String(rr.message || '')),
+    String(rr.message || '').slice(0, 160));
+  const rbAfter = new DatabaseSync(rbDb, { readOnly: true });
+  const kept = rbAfter.prepare(`SELECT "code" FROM "Customer"`).all().map((x) => x.code);
+  check('داده‌ی مشتری بعد از برگشت خودکار سالم است', kept.includes('777'), JSON.stringify(kept));
+  rbAfter.close();
+
+  /* ── فایل غیر-SQLite نباید هیچ تغییری بدهد ── */
+  const badDir = fs.mkdtempSync(path.join(os.tmpdir(), 'farday-reset-bad-'));
+  const badDb = path.join(badDir, 'farday.db');
+  fs.writeFileSync(badDb, 'این یک دیتابیس نیست');
+  const bad = await core.resetOffline({ dbFile: badDb, dataDir: badDir }, { confirm: 'صفر کردن' });
+  check('فایل خراب، صفر کردن را رد می‌کند (نه نیمه‌کاره)', bad.ok === false && Array.isArray(bad.problems),
+    JSON.stringify(bad).slice(0, 160));
+  check('فایل خراب دست‌نخورده ماند', fs.readFileSync(badDb, 'utf8') === 'این یک دیتابیس نیست');
+
+  for (const d of [oldDir, rbDir, badDir]) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* */ } }
+}
+
 try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* */ }
 finish();
 

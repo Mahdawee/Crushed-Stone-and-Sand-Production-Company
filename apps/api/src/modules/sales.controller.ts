@@ -8,7 +8,7 @@ import { resolveRelatedBranch } from '../common/related';
 import { settingsService } from '../common/settings';
 import { nextDocNo } from '../common/sequence';
 import { parseUserDate, formatDate, CalendarMode } from '../common/calendar';
-import { idParam, MAX_MONEY, MAX_QUANTITY } from '../common/params';
+import { idParam, optionalIdQuery, MAX_MONEY, MAX_QUANTITY } from '../common/params';
 import { ensureWalkInCustomer } from '../schema';
 import { WALK_IN_SHORT } from '../common/domain';
 
@@ -138,7 +138,13 @@ export class SalesController {
       if (from) { where.push(`"date" >= ?`); args.push(parseUserDate(from, mode)); }
       if (to) { where.push(`"date" <= ?`); args.push(parseUserDate(to, mode)); }
     } catch (e: any) { throw new HttpException(e.message, 400); }
-    if (customerId) { where.push(`"customerId" = ?`); args.push(Number(customerId)); }
+    /*
+     * باگ (شکار باگ دور ۲۹): `Number('abc')` = NaN ⇒ `WHERE customerId = NaN`
+     * ⇒ فهرست **خالی** بدون هیچ خطایی، در حالی که سندها وجود داشتند. حالا
+     * مقدار نامعتبر ۴۰۰ می‌دهد.
+     */
+    const custFilter = optionalIdQuery(customerId, 'شناسه‌ی مشتری');
+    if (custFilter !== undefined) { where.push(`"customerId" = ?`); args.push(custFilter); }
     if (material) { where.push(`"materialName" = ?`); args.push(material); }
     if (paymentType) { where.push(`"paymentType" = ?`); args.push(paymentType); }
     const w = where.length ? 'WHERE ' + where.join(' AND ') : '';

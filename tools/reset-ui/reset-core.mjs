@@ -35,7 +35,6 @@ export const RESET_ORDER = [
 /** همان عبارت تأییدِ برنامه */
 export const RESET_PHRASE = 'صفر کردن';
 
-/** همان الگوریتم هش رمز برنامه (`sha256(pw + 'farday::salt')`) */
 /**
  * هش رمز — **باید** با `apps/api/src/common/auth.ts` یکی باشد.
  *
@@ -92,6 +91,62 @@ function tablesIn(db) {
   return db.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_prisma%'",
   ).all().map((r) => String(r.name));
+}
+
+/** ستون‌های یک جدول (برای تشخیص دیتابیسِ نصب‌های قدیمی). */
+function columnsOf(db, table) {
+  try {
+    return new Set(db.prepare(`PRAGMA table_info("${table}")`).all().map((r) => String(r.name)));
+  } catch { return new Set(); }
+}
+
+/**
+ * ── باگ جدی (گزارش کاربر) ────────────────────────────────────────────────
+ * «صفر کردن سیستم درست کار نمی‌کند: table Customer has no column named
+ *  isWalkIn».
+ *
+ * ریشه: این ابزار موقع ساختن «مشتری گذری» ستون `isWalkIn` را **بدون بررسی**
+ * در `INSERT` می‌نوشت. `isWalkIn` (و `isDemo`) ستون‌هایی هستند که برنامه با
+ * مهاجرت (`ALTER TABLE … ADD COLUMN` در `schema.ts`) اضافه می‌کند؛ در
+ * دیتابیسی که این ابزار برای اولین بار می‌بیند — یا در نسخه‌ای که هنوز
+ * مهاجرت را اجرا نکرده — وجود ندارند.
+ *
+ * بدتر از خود خطا: خطا **بعد از** خالی کردن جدول‌ها رخ می‌داد. یعنی کاربر
+ * با دیتابیسِ پاک‌شده و **بدون هیچ کاربری** می‌ماند و برنامه دیگر قابل ورود
+ * نبود — در حالی که فکر می‌کرد عملیات شکست خورده و داده‌اش سر جایش است.
+ *
+ * دو اصلاح:
+ *   ۱) این‌جا هم مثل خود برنامه، ستون‌های لازم با `ALTER TABLE` اضافه می‌شوند
+ *      (همان DDL، همان پیش‌فرض) — صفر کردن روی هر نصب قدیمی کار می‌کند و
+ *      برنامه بعد از باز شدن حتی یک مهاجرت هم لازم ندارد.
+ *   ۲) نوشتن‌ها ستون‌های اختیاری را فقط اگر **واقعاً وجود دارند** می‌نویسند
+ *      (دفاع دوم، برای هر ستونی که در آینده اضافه شود).
+ */
+const OPTIONAL_COLUMNS = [
+  { table: 'Customer', column: 'isWalkIn', ddl: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'Customer', column: 'isDemo', ddl: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'Sale', column: 'isDemo', ddl: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'Receipt', column: 'isDemo', ddl: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'Expense', column: 'isDemo', ddl: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'Salary', column: 'isDemo', ddl: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'Attendance', column: 'isDemo', ddl: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'Employee', column: 'isDemo', ddl: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'Machinery', column: 'isDemo', ddl: 'INTEGER NOT NULL DEFAULT 0' },
+];
+
+/** ستون‌های کمکیِ گم‌شده را اضافه می‌کند؛ خروجی: فهرست تغییرها. */
+function ensureOptionalColumns(db, have) {
+  const added = [];
+  for (const u of OPTIONAL_COLUMNS) {
+    if (!have.has(u.table)) continue;
+    const cols = columnsOf(db, u.table);
+    if (cols.has(u.column)) continue;
+    try {
+      db.exec(`ALTER TABLE "${u.table}" ADD COLUMN "${u.column}" ${u.ddl}`);
+      added.push(`${u.table}.${u.column}`);
+    } catch { /* اگر نشد، مسیر نوشتن ستون اختیاری را نادیده می‌گیرد */ }
+  }
+  return added;
 }
 
 const INTEREST = [
@@ -168,6 +223,81 @@ function wipeBackups({ dataDir }, keep) {
 }
 
 /**
+ * پیش‌بررسی: آیا دیتابیس سالم است و آیا بعد از خالی‌شدن، کاربرِ ورودپذیر
+ * باقی می‌ماند؟ اگر نه، **قبل از هر تغییری** خطا می‌دهد.
+ *
+ * چرا لازم است: عملیات «صفر کردن» برگشت‌ناپذیر است؛ اگر نیمه‌کاره بشکند،
+ * کاربر با دیتابیس پاک‌شده و بی‌کاربر می‌ماند (همان اتفاقی که با
+ * `isWalkIn` افتاد). حالا همه‌ی پیش‌نیازها قبل از اولین `DELETE` سنجیده
+ * می‌شوند و اگر چیزی نبود، هیچ داده‌ای لمس نمی‌شود.
+ */
+/** ⚠ async است چون ماژول `node:sqlite` را (اگر هنوز بارگذاری نشده) خودش می‌آورد. */
+export async function preflight({ dbFile }) {
+  await databaseClass();
+  const problems = [];
+  let db;
+  try {
+    /*
+     * خواندن-نوشتن باز می‌شود (نه فقط خواندن): بخشی از پیش‌بررسی باید یک
+     * نوشتن آزمایشی انجام دهد و `ROLLBACK` کند. اگر فایل قفل باشد (برنامه
+     * باز است)، همین‌جا پیام روشن می‌دهیم، نه وسط کار.
+     */
+    db = openDbSync(dbFile, false);
+  } catch (e) {
+    return { ok: false, problems: [`فایل دیتابیس باز نشد: ${e?.message || e}`] };
+  }
+  try {
+    const check = db.prepare('PRAGMA quick_check').all() || [];
+    const verdict = String(check?.[0]?.quick_check ?? check?.[0]?.['quick_check(1)'] ?? 'ok');
+    if (verdict && verdict !== 'ok') problems.push(`دیتابیس آسیب‌دیده است (${verdict}).`);
+    const have = new Set(tablesIn(db));
+    if (!have.has('Customer') || !have.has('User')) {
+      problems.push('این فایل دیتابیس خودِ برنامه (فردای روشن) نیست — جدول Customer/User ندارد.');
+    }
+    if (have.has('User')) {
+      const cols = columnsOf(db, 'User');
+      for (const need of ['username', 'passwordHash', 'role', 'active']) {
+        if (!cols.has(need)) problems.push(`جدول User ستون «${need}» را ندارد — ساختار دیتابیس ناشناخته است.`);
+      }
+      /*
+       * ساختار مورد انتظار «صفر کردن»: باید بتوانیم مدیر را دوباره بسازیم.
+       * اگر جدول User ستون‌های لازم را داشته باشد، نوشتن مدیر با اطمینان
+       * انجام می‌شود — همان چیزی که خطای گزارش‌شده را از ریشه می‌بندد.
+       */
+      if (!problems.length) {
+        /*
+         * آزمایشِ نوشتن با `BEGIN … ROLLBACK`: مطمئن می‌شویم ساخت کاربر
+         * مدیر **واقعاً** کار می‌کند، بدون این‌که چیزی در دیتابیس بماند.
+         * (چرا لازم است: خطای گزارش‌شده بعد از خالی شدن جدول‌ها رخ می‌داد؛
+         * پیش‌بررسی باید همان نوشتن را قبل از پاک کردن بیازماید.)
+         */
+        try {
+          db.exec('BEGIN');
+          db.prepare(
+            `INSERT INTO "User" ("username","fullName","passwordHash","role","active") VALUES (?,?,?,?,1)`,
+          ).run('__preflight__', '', hashPassword('x'), 'manager');
+          db.exec('ROLLBACK');
+        } catch (e) {
+          try { db.exec('ROLLBACK'); } catch { /* ignore */ }
+          problems.push(`ساخت کاربر مدیر ممکن نیست: ${e?.message || e}`);
+        }
+      }
+    }
+    if (have.has('Customer')) {
+      const cols = columnsOf(db, 'Customer');
+      for (const need of ['code', 'name']) {
+        if (!cols.has(need)) problems.push(`جدول Customer ستون «${need}» را ندارد — ساختار دیتابیس ناشناخته است.`);
+      }
+    }
+    return { ok: problems.length === 0, problems };
+  } catch (e) {
+    return { ok: false, problems: [`بررسی دیتابیس ناموفق بود: ${e?.message || e}`] };
+  } finally {
+    try { db?.close(); } catch { /* ignore */ }
+  }
+}
+
+/**
  * صفر کردن کامل در حالت آفلاین.
  *
  * @param {{dbFile: string, dataDir: string}} paths
@@ -181,13 +311,24 @@ export async function resetOffline(paths, opts) {
     return { ok: false, message: 'فایل دیتابیس پیدا نشد — این کمپیوتر داده‌ای برای صفر کردن ندارد.' };
   }
 
+  /* ۰) پیش‌بررسی — قبل از پشتیبان و قبل از هر تغییری (کلاس sqlite را خودش می‌آورد) */
+  const pre = await preflight(paths);
+  if (!pre.ok) {
+    return {
+      ok: false,
+      problems: pre.problems,
+      message: `صفر کردن انجام نشد — دیتابیس آماده نیست:\n• ${pre.problems.join('\n• ')}`,
+    };
+  }
+
   let backupFile = '';
   try { backupFile = backupNow(paths); }
   catch (e) { return { ok: false, message: `پشتیبان‌گیری ناموفق بود، صفر کردن انجام نشد: ${e.message || e}` }; }
 
-  await databaseClass();
   const db = openDbSync(paths.dbFile);
   const counts = {};
+  let wiped = false;
+  let closed = false;
   try {
     const have = new Set(tablesIn(db));
     /* بدون بررسی کلید خارجی — همه‌ی جدول‌ها یک‌جا خالی می‌شوند */
@@ -197,12 +338,19 @@ export async function resetOffline(paths, opts) {
       let n = 0;
       try { n = Number(db.prepare(`SELECT COUNT(*) c FROM "${t}"`).get()?.c || 0); } catch { /* ignore */ }
       try { db.exec(`DELETE FROM "${t}"`); } catch (e) {
-        throw new Error(`پاک کردن «${t}» ناموفق بود (${e.message || e}) — صفر کردن نیمه‌کاره ماند. پشتیبان: ${path.basename(backupFile)}`);
+        /* پیام کوتاه — توضیح «نیمه‌کاره/برگشت» را لایه‌ی بالاتر می‌دهد */
+        throw new Error(`پاک کردن «${t}» ناموفق بود (${e.message || e})`);
       }
       if (n > 0) counts[t] = n;
     }
     try { db.exec('DELETE FROM sqlite_sequence'); } catch { /* ignore */ }
     try { db.exec('PRAGMA foreign_keys=ON'); } catch { /* ignore */ }
+    wiped = true;
+
+    /* ۲.۵) ستون‌های کمکی — دیتابیس نصب‌های قدیمی ممکن است نداشته باشند
+       (`isWalkIn`/`isDemo`). پیش از این، نبودشان همین‌جا وسط کار می‌شکست
+       (گزارش کاربر: «table Customer has no column named isWalkIn»). */
+    const addedColumns = ensureOptionalColumns(db, have);
 
     /* کاربر مدیر — وگرنه بعد از صفر کردن هیچ‌کس نمی‌تواند وارد شود */
     let admin = null;
@@ -216,14 +364,27 @@ export async function resetOffline(paths, opts) {
       }
     }
 
-    /* «مشتری گذری» — بل فروش بدون مشتری باید همان لحظه قابل ثبت باشد */
+    /*
+     * «مشتری گذری» — بل فروش بدون مشتری باید همان لحظه قابل ثبت باشد.
+     *
+     * ستون `isWalkIn` اختیاری نوشته می‌شود: اگر دیتابیس قدیمی باشد و
+     * `ensureOptionalColumns` هم نتوانسته اضافه‌اش کند، ردیف بدون آن ساخته
+     * می‌شود — نبودِ یک پرچم نباید کل صفر کردن را بشکند.
+     */
     if (have.has('Customer')) {
       const row = db.prepare('SELECT "id" FROM "Customer" WHERE "code"=?').get('000');
       if (!row) {
-        db.prepare(
-          `INSERT INTO "Customer" ("code","name","contactPerson","phone","truckPlate","openingBalance","note","isWalkIn")
-           VALUES (?,'مشتری گذری (بدون حساب)','','','',0,'',1)`,
-        ).run('000');
+        /*
+         * فقط `code` و `name` نوشته می‌شوند (هر دو NOT NULL و بی‌پیش‌فرض)،
+         * بقیه‌ی ستون‌ها پیش‌فرض خودشان را می‌گیرند و `isWalkIn` تنها اگر
+         * وجود داشته باشد. این شکل روی هر نسخه‌ای از جدول Customer کار
+         * می‌کند — همان درسی که خطای «no column named isWalkIn» داد.
+         */
+        const custCols = columnsOf(db, 'Customer');
+        const cols = ['"code"', '"name"'];
+        const vals = ["'000'", "'مشتری گذری (بدون حساب)'"];
+        if (custCols.has('isWalkIn')) { cols.push('"isWalkIn"'); vals.push('1'); }
+        db.prepare(`INSERT INTO "Customer" (${cols.join(',')}) VALUES (${vals.join(',')})`).run();
       }
     }
 
@@ -262,10 +423,56 @@ export async function resetOffline(paths, opts) {
       counts, total, backupFile: report.backupFile, admin, at,
       operator: report.operator, removedBackups: report.removedBackups, mode: 'offline',
     };
-  } finally {
-    try { db.exec('PRAGMA foreign_keys=ON'); } catch { /* ignore */ }
+  } catch (e) {
+    /*
+     * اتصال **اول** بسته می‌شود، بعد فایل برگردانده می‌شود: اگر با اتصال
+     * باز فایل را عوض کنیم، SQLite در بستن، WAL خودش (حاوی DELETEها) را
+     * دوباره روی فایل تازه می‌نویسد و بازگردانی بی‌اثر می‌شود.
+     */
     try { db.close(); } catch { /* ignore */ }
+    closed = true;
+    /*
+     * ── برگشتِ خودکار (باگ گزارش‌شده) ────────────────────────────────────
+     * پیش‌تر اگر بعد از خالی کردن جدول‌ها خطایی رخ می‌داد (مثل نبود ستون
+     * `isWalkIn`)، دیتابیس **نیمه‌کاره** رها می‌شد: داده رفته بود و کاربر
+     * مدیر هم ساخته نشده بود، ولی پیام خطا می‌گفت «صفر کردن انجام نشد».
+     * حالا در هر خطایی پشتیبانِ همین چند لحظه پیش برگردانده می‌شود و
+     * دیتابیس دقیقاً به حالت قبل برمی‌گردد.
+     */
+    const rolled = rolledBack(backupFile, paths);
+    return {
+      ok: false,
+      rolledBack: rolled,
+      backupFile: path.basename(backupFile),
+      message: `صفر کردن نیمه‌کاره ماند: ${e?.message || e}\n` +
+        (rolled
+          ? 'دیتابیس به حالت قبلِ صفر کردن برگردانده شد — هیچ داده‌ای از دست نرفت.'
+          : `برگرداندن خودکار ناموفق بود؛ فایل پشتیبان را دستی بازگردانید: ${path.basename(backupFile)}`),
+    };
+  } finally {
+    if (!closed) {
+      try { db.exec('PRAGMA foreign_keys=ON'); } catch { /* ignore */ }
+      try { db.close(); } catch { /* ignore */ }
+    }
   }
+}
+
+/**
+ * بازگرداندن دیتابیس از پشتیبانِ همین عملیات.
+ *
+ * ⚠ اتصال باید **بسته** باشد، وگرنه ویندوز اجازه‌ی بازنویسی فایل را نمی‌دهد
+ * (EBUSY) — به همین دلیل بعد از `db.close()` در `finally` صدا زده نمی‌شود،
+ * بلکه پیش از آن مسیر خطا.
+ */
+function rolledBack(backupFile, paths) {
+  try {
+    if (!backupFile || !fs.existsSync(backupFile)) return false;
+    fs.copyFileSync(backupFile, paths.dbFile);
+    for (const suffix of ['-wal', '-shm']) {
+      try { fs.rmSync(paths.dbFile + suffix, { force: true }); } catch { /* ignore */ }
+    }
+    return true;
+  } catch { return false; }
 }
 
 function safeReaddir(dir) {

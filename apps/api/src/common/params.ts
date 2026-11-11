@@ -59,3 +59,24 @@ export function moneyOrZero(raw: unknown, label: string, max = MAX_MONEY): numbe
   if (Math.abs(n) > max) throw new HttpException(`${label} از حد مجاز بزرگ‌تر است.`, 400);
   return n;
 }
+
+/**
+ * شناسه‌ی **اختیاری** از رشته‌ی کوئری (فیلتر فهرست).
+ *
+ * ## باگ (شکار باگ دور ۲۹)
+ * `GET /sales?customerId=abc` مقدار را با `Number()` به `NaN` تبدیل می‌کرد و
+ * در SQL `WHERE "customerId" = NaN` **همیشه تهی** بود. نتیجه: فهرست بل‌های
+ * فروش خالی نشان داده می‌شد (بدون هیچ خطایی) در حالی که سندها وجود داشتند
+ * — یعنی داده «پنهان» می‌شد، نه «فیلتر». همین کلاس در رسیدات هم بود.
+ *
+ * حالا مقدار نامعتبر **۴۰۰ با پیام فارسی** می‌دهد و مرز «فیلتر غلط» از
+ * «نتیجه‌ی خالی» جدا می‌شود.
+ */
+export function optionalIdQuery(raw: unknown, label = 'شناسه'): number | undefined {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0 || !Number.isInteger(n)) {
+    throw new HttpException(`${label} در آدرس معتبر نیست.`, 400);
+  }
+  return n;
+}

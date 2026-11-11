@@ -211,6 +211,52 @@ function wipeBackups(keepFile?: string): number {
 }
 
 /**
+ * پیش‌بررسی «صفر کردن» — بدون هیچ تغییری.
+ *
+ * چرا لازم است: عملیات برگشت‌ناپذیر است و اگر نیمه‌کاره بشکند، کاربر با
+ * دیتابیسی بدون داده و بدون کاربر می‌ماند. هر شرطی که می‌تواند وسط کار
+ * بشکند، این‌جا **قبل** از پاک شدن سنجیده می‌شود:
+ *   • فایل دیتابیس خوانا باشد (`PRAGMA quick_check`)؛
+ *   • جدول `User` بتواند مدیر تازه را بپذیرد (ستون‌های لازم موجود باشند)؛
+ *   • «مشتری گذری» قابل ساخت باشد (`Customer` ستون‌های `code`/`name`).
+ */
+export async function resetPreflight(): Promise<{ ok: boolean; problems: string[] }> {
+  const problems: string[] = [];
+  const p = db();
+  try {
+    const check: any[] = await p.$queryRawUnsafe('PRAGMA quick_check');
+    const verdict = String(check?.[0]?.quick_check ?? check?.[0]?.['quick_check(1)'] ?? 'ok');
+    if (verdict && verdict !== 'ok') problems.push(`دیتابیس آسیب‌دیده است (${verdict}).`);
+  } catch (e: any) {
+    problems.push(`خواندن دیتابیس ناموفق بود: ${e?.message || e}`);
+  }
+  try {
+    const cols: any[] = await p.$queryRawUnsafe('PRAGMA table_info("User")');
+    const names = new Set(cols.map((c) => String(c.name)));
+    for (const need of ['username', 'passwordHash', 'role', 'active']) {
+      if (!names.has(need)) problems.push(`جدول User ستون «${need}» را ندارد.`);
+    }
+  } catch {
+    problems.push('جدول User خوانده نشد — این فایل دیتابیس این برنامه نیست.');
+  }
+  try {
+    const cols: any[] = await p.$queryRawUnsafe('PRAGMA table_info("Customer")');
+    const names = new Set(cols.map((c) => String(c.name)));
+    for (const need of ['code', 'name']) {
+      if (!names.has(need)) problems.push(`جدول Customer ستون «${need}» را ندارد.`);
+    }
+    /*
+     * ستون `isWalkIn` لازم نیست وجود داشته باشد — `ensureWalkInCustomer`
+     * فقط اگر باشد می‌نویسدش. ولی اگر نبود، یادآوری می‌کنیم که مهاجرت
+     * انجام نشده (اطلاعاتی، نه خطا).
+     */
+  } catch {
+    problems.push('جدول Customer خوانده نشد — این فایل دیتابیس این برنامه نیست.');
+  }
+  return { ok: problems.length === 0, problems };
+}
+
+/**
  * صفر کردن کامل.
  *
  * ⚠ برگشت‌ناپذیر. همه‌ی بررسی‌ها **قبل** از اولین تغییر انجام می‌شوند؛ اگر
@@ -223,6 +269,21 @@ export async function resetSystem(opts: ResetOptions): Promise<ResetResult> {
       message: `برای تأیید، عبارت «${RESET_PHRASE}» را دقیقاً بنویسید. هیچ داده‌ای تغییر نکرد.`,
     };
   }
+  /*
+   * ── پیش‌بررسی (شکار باگ دور ۲۸) ──────────────────────────────────────────
+   * خطای گزارش‌شده‌ی کاربر (`table Customer has no column named isWalkIn`)
+   * نشان داد که «صفر کردن» می‌تواند **بعد از** خالی شدن جدول‌ها بشکند و
+   * دیتابیس را بی‌کاربر رها کند. حالا همه‌ی پیش‌نیازها قبل از اولین تغییر
+   * سنجیده می‌شوند و اگر چیزی نبود، هیچ ردیفی پاک نمی‌شود.
+   */
+  const pre = await resetPreflight();
+  if (!pre.ok) {
+    return {
+      ok: false,
+      message: `صفر کردن انجام نشد — دیتابیس آماده نیست:\n• ${pre.problems.join('\n• ')}\nهیچ داده‌ای تغییر نکرد.`,
+    } as ResetResult;
+  }
+
   const backupWanted = opts.backup !== false;
   let backupFile = '';
   if (backupWanted) {

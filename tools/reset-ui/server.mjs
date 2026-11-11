@@ -38,7 +38,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { inventory, resetOffline as resetCore } from './reset-core.mjs';
+import { inventory, preflight as preflightCore, resetOffline as resetCore } from './reset-core.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
@@ -153,8 +153,17 @@ async function appStatus() {
 /** آمار داده — از هسته‌ی مشترک (`reset-core.mjs`) خوانده می‌شود */
 async function offlineState() {
   const inv = await inventory({ dbFile, dataDir });
+  /* بررسی آمادگی دیتابیس **قبل** از نمایش دکمه‌ی «صفر کردن». اگر ابزار
+     بگذارد کاربر تأیید کند و بعد وسط کار بشکند، داده پاک شده و کاربر مانده
+     (همان باگ `isWalkIn`). حالا از اول معلوم است. */
+  let pre = { ok: true, problems: [] };
+  if (inv.exists) {
+    try { pre = await preflightCore({ dbFile }); }
+    catch (e) { pre = { ok: false, problems: [String(e?.message || e)] }; }
+  }
   return {
     ...inv,
+    preflight: pre,
     available: inv.exists,
     /* دیگر کلیدی در کار نیست — برای سازگاری با UI قدیمی همیشه true */
     resetKeyPresent: true,
@@ -269,7 +278,25 @@ const server = http.createServer(async (req, res) => {
         wipeBackups: body.wipeBackups !== false,
       };
 
+      /*
+       * ── حفاظ ۳: آمادگی دیتابیس، قبل از هر تغییری ────────────────────────
+       * دقیقاً همان باگی که کاربر گزارش داد (`table Customer has no column
+       * named isWalkIn`) بعد از **خالی شدن** جدول‌ها رخ می‌داد و دیتابیس را
+       * نیمه‌کاره رها می‌کرد. حالا در حالت آفلاین، پیش‌بررسی پیش از `reset`
+       * اجرا می‌شود؛ اگر دیتابیس آماده نباشد، هیچ ردیفی پاک نمی‌شود.
+       */
       let result;
+      if (!app.open && fs.existsSync(dbFile)) {
+        const pre = await preflightCore({ dbFile });
+        if (!pre.ok) {
+          json(res, 409, {
+            ok: false,
+            problems: pre.problems,
+            message: `صفر کردن انجام نشد — دیتابیس آماده نیست:\n• ${pre.problems.join('\n• ')}\nهیچ داده‌ای تغییر نکرد.`,
+          });
+          return;
+        }
+      }
       if (app.open) {
         result = await resetThroughApi({ ...opts, password: body.password, username: body.username }, app.port);
       } else {

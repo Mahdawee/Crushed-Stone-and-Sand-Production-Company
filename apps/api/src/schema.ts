@@ -412,20 +412,33 @@ async function dedupeReceiptSources() {
  */
 export async function ensureWalkInCustomer(): Promise<number> {
   const p = db();
+  /*
+   * ── باگ (گزارش کاربر: «table Customer has no column named isWalkIn») ──
+   * این تابع ستون `isWalkIn` را **بی‌قید** می‌نوشت. اگر مهاجرت اضافه‌کردن
+   * ستون اجرا نشده بود (نسخه‌ی قدیمی، دیتابیس برگردانده‌شده، یا فراخوانی
+   * قبل از `ensureSchemaAsync`)، کل بالا آمدن/صفر کردن با همین پیام
+   * می‌شکست. حالا ستون فقط اگر وجود داشته باشد نوشته می‌شود.
+   */
+  const cols: any[] = await p.$queryRawUnsafe('PRAGMA table_info("Customer")');
+  const has = (c: string) => cols.some((x) => String(x.name) === c);
   const rows: any[] = await p.$queryRawUnsafe(
     `SELECT "id" FROM "Customer" WHERE "code"=? LIMIT 1`, WALK_IN_CODE,
   );
   if (rows?.length) {
     const id = Number(rows[0].id);
-    await p.$executeRawUnsafe(
-      `UPDATE "Customer" SET "isWalkIn"=1, "deletedAt"=NULL, "deletedBy"=NULL WHERE "id"=?`, id,
-    );
+    if (has('isWalkIn')) {
+      await p.$executeRawUnsafe(
+        `UPDATE "Customer" SET "isWalkIn"=1, "deletedAt"=NULL, "deletedBy"=NULL WHERE "id"=?`, id,
+      );
+    }
     return id;
   }
+  const insertCols = ['"code"', '"name"'];
+  const values = [WALK_IN_CODE, WALK_IN_NAME];
+  if (has('isWalkIn')) insertCols.push('"isWalkIn"');
   await p.$executeRawUnsafe(
-    `INSERT INTO "Customer" ("code","name","contactPerson","phone","truckPlate","openingBalance","note","isWalkIn")
-     VALUES (?,?,'','','',0,'',1)`,
-    WALK_IN_CODE, WALK_IN_NAME,
+    `INSERT INTO "Customer" (${insertCols.join(',')}) VALUES (${values.map(() => '?').join(',')}${has('isWalkIn') ? ',1' : ''})`,
+    ...values,
   );
   const again: any[] = await p.$queryRawUnsafe(
     `SELECT "id" FROM "Customer" WHERE "code"=? LIMIT 1`, WALK_IN_CODE,

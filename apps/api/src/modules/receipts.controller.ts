@@ -8,7 +8,7 @@ import { settingsService } from '../common/settings';
 import { nextDocNo } from '../common/sequence';
 import { parseUserDate, formatDate, todayISO } from '../common/calendar';
 import { allocationForSource, canonicalReceiptSource, receiptSourceVariants, reducesCustomerDebt } from '../common/domain';
-import { idParam, MAX_MONEY } from '../common/params';
+import { idParam, optionalIdQuery, MAX_MONEY } from '../common/params';
 import { ensureWalkInCustomer } from '../schema';
 
 /**
@@ -101,7 +101,9 @@ export class ReceiptsController {
       if (from) { where.push(`"date" >= ?`); args.push(parseUserDate(from, mode)); }
       if (to) { where.push(`"date" <= ?`); args.push(parseUserDate(to, mode)); }
     } catch (e: any) { throw new HttpException(e.message, 400); }
-    if (customerId) { where.push(`"customerId"=?`); args.push(Number(customerId)); }
+    /* همان باگ فروش: `Number('xyz')` = NaN ⇒ فهرست خالی بی‌خطا */
+    const custFilter = optionalIdQuery(customerId, 'شناسه‌ی مشتری');
+    if (custFilter !== undefined) { where.push(`"customerId"=?`); args.push(custFilter); }
     /*
      * فیلتر «منبع» باید نام‌های قدیمی را هم بگیرد: اگر همه‌ی رسیدهای
      * «بیانیه» را بخواهیم و کسی سال گذشته با «پیش پرداخت» ثبت کرده باشد،

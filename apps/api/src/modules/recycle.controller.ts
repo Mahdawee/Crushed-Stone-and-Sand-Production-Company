@@ -59,7 +59,13 @@ export class RecycleController {
   @ManagerOnly()
   async list(@Param('table') table: string, @Query('limit') limit?: string) {
     if (!SOFT_TABLES[table]) throw new HttpException('جدول ناشناخته است.', 400);
-    const rows = await listDeleted(table, Number(limit) || 200);
+    /*
+     * سقف تعداد (شکار باگ دور ۲۹): `limit` از آدرس می‌آمد و `Number('999999')`
+     * هم پذیرفته می‌شد — صفحه‌ی سطل بازیافت با یک آدرس دستی می‌توانست هزاران
+     * ردیف را یک‌جا بکشد و مرورگر را قفل کند.
+     */
+    const take = Math.min(1000, Math.max(1, Math.trunc(Number(limit)) || 200));
+    const rows = await listDeleted(table, take);
     return {
       table, label: SOFT_TABLES[table].label,
       titleCol: SOFT_TABLES[table].titleCol,
