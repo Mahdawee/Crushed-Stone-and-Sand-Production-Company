@@ -82,7 +82,8 @@ async function main() {
     check('قلم در کشو دیده می‌شود', !!material);
 
     console.log('\n— کارمندان، مشتریان —');
-    r = await api('GET', '/employees/1/next-code');
+    /* مسیر جدید: بدون شناسه — مسیر قبلی «/employees/1/next-code» با :id قاطی می‌شد */
+    r = await api('GET', '/employees/next-code');
     check('کد کارمند خودکار', typeof r.body.code === 'string');
     r = await api('POST', '/employees', { name: 'احمد کریمی', fatherName: 'گل احمد', baseSalary: 14000, position: 'کارگر' });
     check('ثبت کارمند', (r.status === 201 || r.status === 200) && r.body.ok);

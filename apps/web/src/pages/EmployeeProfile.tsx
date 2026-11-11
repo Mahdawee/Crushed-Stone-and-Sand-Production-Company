@@ -40,6 +40,12 @@ export default function EmployeeProfile() {
   if (d === false) return <Empty icon={<IconAlert size={16} />} title="کارمند پیدا نشد" action={<Link className="btn" to="/employees">بازگشت</Link>} />;
 
   const e = d.employee;
+  /*
+   * کارمندی که در «سطل بازیافت» است: صفحه باید بگوید «حذف شده»، نه اینکه
+   * مثل یک کارمند عادی دکمه‌ی ویرایش نشان دهد (ویرایش روی ردیف حذف‌شده
+   * نتیجه‌ی ظاهری ندارد و کاربر فکر می‌کند ذخیره نشد).
+   */
+  const isDeleted = Boolean(d.deleted);
   const att = d.attendance || [];
   const sum = att.reduce((a: any, r: any) => {
     if (r.status === 'present') a.present++; else if (r.status === 'absent') a.absent++;
@@ -59,7 +65,13 @@ export default function EmployeeProfile() {
           </div>
           <div style={{ flex: 1 }} />
           <div className="list-actions">
-            <button className="btn primary" onClick={openEdit}>ویرایش مشخصات</button>
+            {isDeleted ? (
+              <span className="badge bad" title="این کارمند در سطل بازیافت است">
+                در سطل بازیافت — قابل بازیابی
+              </span>
+            ) : (
+              <button className="btn primary" onClick={openEdit}>ویرایش مشخصات</button>
+            )}
             <Link className="btn" to="/employees"><IconChevron dir="start" size={14} /> بازگشت به فهرست</Link>
           </div>
         </div>

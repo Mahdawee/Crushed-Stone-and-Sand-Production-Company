@@ -28,27 +28,30 @@ export class SalariesController {
     }
     const bucket = monthBucket(ref, mode);
     const employees: any[] = await db().$queryRawUnsafe(
-      `SELECT * FROM "Employee" WHERE "status"='active' ORDER BY "code"`,
+      `SELECT * FROM "Employee" WHERE "status"='active' AND COALESCE("deletedAt",'')='' ORDER BY "code"`,
     );
     const existing: any[] = await db().$queryRawUnsafe(
-      `SELECT * FROM "Salary" WHERE "periodStart"=?`,
+      `SELECT * FROM "Salary" WHERE "periodStart"=? AND COALESCE("deletedAt",'')=''`,
       bucket.start,
     );
     const byEmp: Record<number, any> = {};
     for (const e of existing) byEmp[e.employeeId] = e;
     // overtime hours from the attendance sheet of the same month
     const ot: any[] = await db().$queryRawUnsafe(
-      `SELECT "employeeId", COALESCE(SUM("overtime"),0) as hours FROM "Attendance" WHERE "date">=? AND "date"<=? GROUP BY "employeeId"`,
+      `SELECT "employeeId", COALESCE(SUM("overtime"),0) as hours FROM "Attendance"
+        WHERE "date">=? AND "date"<=? AND COALESCE("deletedAt",'')='' GROUP BY "employeeId"`,
       bucket.start, bucket.end,
     );
     const absences: any[] = await db().$queryRawUnsafe(
-      `SELECT "employeeId", COUNT(*) as c FROM "Attendance" WHERE "date">=? AND "date"<=? AND "status"='absent' GROUP BY "employeeId"`,
+      `SELECT "employeeId", COUNT(*) as c FROM "Attendance"
+        WHERE "date">=? AND "date"<=? AND "status"='absent' AND COALESCE("deletedAt",'')='' GROUP BY "employeeId"`,
       bucket.start, bucket.end,
     );
     /* روزهای غایب بدون «رخصتی رسمی» و «جمعه» */
     const absDayRows = (await db().$queryRawUnsafe(
       `SELECT "employeeId", COUNT(*) as c FROM "Attendance" WHERE "date">=? AND "date"<=?
-        AND "status" NOT IN ('present','official_holiday','friday') GROUP BY "employeeId"`,
+        AND "status" NOT IN ('present','official_holiday','friday')
+        AND COALESCE("deletedAt",'')='' GROUP BY "employeeId"`,
       bucket.start, bucket.end,
     )) as any[];
     const otMap = Object.fromEntries(ot.map((o) => [o.employeeId, Number(o.hours) || 0]));
@@ -160,7 +163,10 @@ export class SalariesController {
     }
     for (const r of body.rows || []) {
       /* کارمند باید وجود داشته باشد — وگرنه سند معاش «یتیم» ساخته می‌شود */
-      const emp: any[] = await p.$queryRawUnsafe(`SELECT "id" FROM "Employee" WHERE "id"=?`, Number(r.employeeId));
+      const emp: any[] = await p.$queryRawUnsafe(
+        `SELECT "id" FROM "Employee" WHERE "id"=? AND COALESCE("deletedAt",'')=''`,
+        Number(r.employeeId),
+      );
       if (!emp?.length) throw new HttpException(`کارمند با شناسه ${r.employeeId} پیدا نشد.`, 400);
       /*
        * باگ: مبلغ‌های نامعتبر (`abc`، `Infinity`) بی‌صدا صفر می‌شدند و
@@ -182,14 +188,20 @@ export class SalariesController {
       /* معاش منفی هیچ معنایی ندارد؛ بهتر است همان‌جا گفته شود تا در راپور گم شود */
       if (total < 0) throw new HttpException('جمع معاش منفی می‌شود — جریمه از مجموع بیشتر است.', 400);
       const ex: any[] = await p.$queryRawUnsafe(
-        `SELECT "id","no" FROM "Salary" WHERE "employeeId"=? AND "periodStart"=?`,
+        /*
+         * سند معاشی که در «سطل بازیافت» است هم باید پیدا شود، وگرنه ثبت
+         * دوباره‌ی همان ماه به ایندکس یگانه (کارمند+دوره) می‌خورد و خطای
+         * مبهم «ثبت نشد» می‌دهد. در آپدیت، ردیف از سطل بازیافت برمی‌گردد.
+         */
+        `SELECT "id","no","deletedAt" FROM "Salary" WHERE "employeeId"=? AND "periodStart"=?`,
         Number(r.employeeId), b.start,
       );
       const no = ex?.[0]?.no || (await nextDocNo(prefix, mode, payDate));
       if (ex?.length) {
         await p.$executeRawUnsafe(
           `UPDATE "Salary" SET "baseSalary"=?, "bonus"=?, "penalty"=?, "overtimeAmount"=?, "total"=?,
-           "payerName"=?, "paymentType"=?, "payDate"=?, "note"=? WHERE "id"=?`,
+           "payerName"=?, "paymentType"=?, "payDate"=?, "note"=?,
+           "deletedAt"=NULL, "deletedBy"=NULL WHERE "id"=?`,
           base, bonus, penalty, overtimeAmount, total, r.payerName || '',
           r.paymentType === 'hawala' ? 'hawala' : 'cash', payDate, r.note || '', ex[0].id,
         );

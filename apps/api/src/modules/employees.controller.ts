@@ -34,7 +34,8 @@ export class EmployeesController {
     const enriched = [];
     for (const r of rows) {
       const s: any[] = await db().$queryRawUnsafe(
-        `SELECT COUNT(*) as c FROM "Salary" WHERE "employeeId"=?`,
+        /* فقط معاش‌های زنده — سند سطل بازیافت نباید شمارش شود */
+        `SELECT COUNT(*) as c FROM "Salary" WHERE "employeeId"=? AND COALESCE("deletedAt",'')=''`,
         r.id,
       );
       enriched.push({ ...r, salaryCount: Number(s?.[0]?.c ?? 0), hireDateDisplay: r.hireDate });
@@ -55,13 +56,14 @@ export class EmployeesController {
     await ensureSchemaAsync();
     const mode = await this.cal();
     const employees: any[] = await db().$queryRawUnsafe(
-      `SELECT * FROM "Employee" WHERE "status"='active' ORDER BY "code"`,
+      `SELECT * FROM "Employee" WHERE "status"='active' AND COALESCE("deletedAt",'')='' ORDER BY "code"`,
     );
     if (date) {
       let iso = '';
       try { iso = parseUserDate(date, mode); }
       catch (e: any) { throw new HttpException(e.message, 400); }
-      const rows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Attendance" WHERE "date"=?`, iso);
+      const rows: any[] = await db().$queryRawUnsafe(
+        `SELECT * FROM "Attendance" WHERE "date"=? AND COALESCE("deletedAt",'')=''`, iso);
       return { mode, date: iso, employees, rows };
     }
     // month = "1404-08" in the active calendar
@@ -79,12 +81,12 @@ export class EmployeesController {
     try { days = daysBetween(bucket.start, bucket.end); }
     catch (e: any) { throw new HttpException(e.message, 400); }
     const rows: any[] = await db().$queryRawUnsafe(
-      `SELECT * FROM "Attendance" WHERE "date" >= ? AND "date" <= ? ORDER BY "date"`,
+      `SELECT * FROM "Attendance" WHERE "date" >= ? AND "date" <= ? AND COALESCE("deletedAt",'')='' ORDER BY "date"`,
       bucket.start,
       bucket.end,
     );
     const salaries: any[] = await db().$queryRawUnsafe(
-      `SELECT * FROM "Salary" WHERE "periodStart" = ?`,
+      `SELECT * FROM "Salary" WHERE "periodStart" = ? AND COALESCE("deletedAt",'')=''`,
       bucket.start,
     );
     return {
@@ -118,12 +120,24 @@ export class EmployeesController {
        */
       /* کارمند باید وجود داشته باشد — وگرنه ردیف حضور «یتیم» ساخته می‌شود
          که در هیچ ورق و گزارشی دیده نمی‌شود ولی در جدول می‌ماند. */
-      const emp: any[] = await p.$queryRawUnsafe(`SELECT "id" FROM "Employee" WHERE "id"=?`, Number(it.employeeId));
+      const emp: any[] = await p.$queryRawUnsafe(
+        `SELECT "id" FROM "Employee" WHERE "id"=? AND COALESCE("deletedAt",'')=''`,
+        Number(it.employeeId),
+      );
       if (!emp?.length) {
         throw new HttpException(`کارمند با شناسه ${it.employeeId} پیدا نشد.`, 400);
       }
       if (it.remove === true || it.status === '' || it.status === null) {
-        await p.$executeRawUnsafe(`DELETE FROM "Attendance" WHERE "employeeId"=? AND "date"=?`, Number(it.employeeId), iso);
+        /*
+         * «پاک کردن یک روز» هم نرم شد: کاربر گفته «حذف‌ها نرم باشند... از
+         * سابقه قابل بازیابی». ردیف می‌ماند و فقط پنهان می‌شود؛ اگر بعداً
+         * همان روز دوباره ثبت شود، `deletedAt` صفر می‌شود و برمی‌گردد
+         * (ایندکس یگانه‌ی employeeId+date اجازه‌ی ردیف دوم را نمی‌دهد).
+         */
+        await p.$executeRawUnsafe(
+          `UPDATE "Attendance" SET "deletedAt"=CURRENT_TIMESTAMP WHERE "employeeId"=? AND "date"=?`,
+          Number(it.employeeId), iso,
+        );
         saved++;
         continue;
       }
@@ -131,7 +145,8 @@ export class EmployeesController {
         `INSERT INTO "Attendance" ("employeeId","date","status","checkIn","checkOut","overtime","note")
          VALUES (?,?,?,?,?,?,?)
          ON CONFLICT("employeeId","date") DO UPDATE SET "status"=excluded."status","checkIn"=excluded."checkIn",
-         "checkOut"=excluded."checkOut","overtime"=excluded."overtime","note"=excluded."note"`,
+         "checkOut"=excluded."checkOut","overtime"=excluded."overtime","note"=excluded."note",
+         "deletedAt"=NULL, "deletedBy"=NULL`,
         Number(it.employeeId), iso, it.status || 'present', it.checkIn || '', it.checkOut || '',
         Number(it.overtime) || 0, it.note || '',
       );
@@ -151,30 +166,57 @@ export class EmployeesController {
     for (const id of body.employeeIds || []) {
       await p.$executeRawUnsafe(
         `INSERT INTO "Attendance" ("employeeId","date","status") VALUES (?,?,?)
-         ON CONFLICT("employeeId","date") DO UPDATE SET "status"=excluded."status"`,
+         ON CONFLICT("employeeId","date") DO UPDATE SET "status"=excluded."status",
+           "deletedAt"=NULL, "deletedBy"=NULL`,
         Number(id), iso, body.status || 'present',
       );
     }
     return { ok: true };
   }
 
+  /**
+   * «کد بعدی» **باید** قبل از `@Get('employees/:id')` بیاید.
+   *
+   * باگ واقعی: در NestJS اولین مسیر منطبق برنده است. `employees/next-code`
+   * با `:id='next-code'` مطابقت می‌کرد و `Number('next-code')` می‌شد `NaN`;
+   * کوئری چیز پیدا نمی‌کرد و ۴۰۴ برمی‌گشت. نتیجه در برنامه: دکمه‌ی
+   * «کارمند» فورم را باز نمی‌کرد (فقط یک توست خطا) — یعنی بخش ثبت کارمندان
+   * عملاً بسته بود.
+   */
+  @Get('employees/next-code')
+  async nextEmployeeCode() {
+    return this.nextCodeValue();
+  }
+
   @Get('employees/:id')
   async one(@Param('id') id: string) {
     const rows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Employee" WHERE "id"=?`, Number(id));
+    /*
+     * ⚠ عمداً حذف‌شده‌ها هم برمی‌گردند: صفحه‌ی «کارمند» با لینک مستقیم
+     * (`/employees/12`) باز می‌شود و اگر ردیف در سطل بازیافت باشد، فقط یک
+     * «کارمند پیدا نشد» خشک نشان می‌داد. حالا خودِ رکورد با پرچم
+     * `deleted: true` برمی‌گردد و UI می‌تواند پیام روشن بدهد (یا مدیر
+     * بازیابی کند). فهرست‌ها و گزارش‌ها همچنان حذف‌شده‌ها را نشان نمی‌دهند.
+     */
     if (!rows?.length) throw new HttpException('کارمند پیدا نشد.', 404);
     const salary: any[] = await db().$queryRawUnsafe(
-      `SELECT * FROM "Salary" WHERE "employeeId"=? ORDER BY "periodStart" DESC`,
+      `SELECT * FROM "Salary" WHERE "employeeId"=? AND COALESCE("deletedAt",'')='' ORDER BY "periodStart" DESC`,
       Number(id),
     );
     const att: any[] = await db().$queryRawUnsafe(
-      `SELECT * FROM "Attendance" WHERE "employeeId"=? ORDER BY "date" DESC LIMIT 60`,
+      `SELECT * FROM "Attendance" WHERE "employeeId"=? AND COALESCE("deletedAt",'')='' ORDER BY "date" DESC LIMIT 60`,
       Number(id),
     );
-    return { employee: rows[0], salaries: salary, attendance: att };
+    return {
+      employee: rows[0],
+      deleted: Boolean(rows[0].deletedAt),
+      salaries: salary,
+      attendance: att,
+    };
   }
 
-  @Get('employees/:id/next-code')
-  async nextCode() {
+  /** کد بعدی کارمند — منطق در یک جا (هم مسیر ثابت و هم مسیر قدیمی) */
+  async nextCodeValue() {
     const rows: any[] = await db().$queryRawUnsafe(`SELECT "code" FROM "Employee"`);
     const nums = rows.map((r) => Number(String(r.code).replace(/\D/g, '')) || 0);
     const next = (nums.length ? Math.max(...nums) : 0) + 1;
@@ -243,11 +285,13 @@ export class EmployeesController {
   @Delete('employees/:id')
   @ManagerOnly()
   async remove(@Param('id') id: string) {
-    const used: any[] = await db().$queryRawUnsafe(`SELECT COUNT(*) as c FROM "Salary" WHERE "employeeId"=?`, Number(id));
+    const used: any[] = await db().$queryRawUnsafe(
+      `SELECT COUNT(*) as c FROM "Salary" WHERE "employeeId"=? AND COALESCE("deletedAt",'')=''`, Number(id));
     if (Number(used?.[0]?.c) > 0) {
       throw new HttpException('این کارمند دارای سابقه معاش است؛ به جای حذف، وضعیت او را «غیر فعال» کنید.', 400);
     }
-    const att: any[] = await db().$queryRawUnsafe(`SELECT COUNT(*) as c FROM "Attendance" WHERE "employeeId"=?`, Number(id));
+    const att: any[] = await db().$queryRawUnsafe(
+      `SELECT COUNT(*) as c FROM "Attendance" WHERE "employeeId"=? AND COALESCE("deletedAt",'')=''`, Number(id));
     if (Number(att?.[0]?.c) > 0) {
       throw new HttpException('این کارمند سابقه حضور و غیاب دارد؛ به جای حذف، وضعیت او را «غیر فعال» کنید.', 400);
     }
@@ -286,7 +330,8 @@ export class EmployeesController {
     const bucket = monthBucket(ref, mode);
     const rows: any[] = await db().$queryRawUnsafe(
       `SELECT a.*, e."name", e."code" FROM "Attendance" a JOIN "Employee" e ON e."id" = a."employeeId"
-       WHERE a."date" >= ? AND a."date" <= ?`,
+       WHERE a."date" >= ? AND a."date" <= ?
+         AND COALESCE(a."deletedAt",'')='' AND COALESCE(e."deletedAt",'')=''`,
       bucket.start, bucket.end,
     );
     const byEmp: Record<number, any> = {};

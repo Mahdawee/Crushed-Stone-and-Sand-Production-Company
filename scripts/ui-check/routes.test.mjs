@@ -71,6 +71,12 @@ for (const f of files) {
       if (o === r || o.method !== r.method || o.line > r.line) return false;
       const os = seg(o.path);
       if (os.length !== rs.length) return false;
+      /*
+       * ⚠ هم‌طول بودن کافی نیست: `employees/:id` و `employees/next-code` هر
+       * دو دو تکه‌اند و دومی را می‌بلعید. مقایسه باید تکه‌به‌تکه باشد
+       * (`:id` فقط جای یک تکه می‌نشیند). این همان باگی بود که دکمه‌ی
+       * «کارمند» را از کار انداخته بود: کد بعدی هرگز نمی‌رسید.
+       */
       return os.every((part, i) => part === rs[i] || part.startsWith(':'));
     });
     if (clash.length) {
@@ -90,6 +96,27 @@ const idx = (needle) => emp.indexOf(needle);
 ok('«attendance» قبل از «employees/:id» ثبت شده (ترتیب ایمن برای ویرایش‌های بعدی)',
   idx("@Get('attendance')") < idx("@Get('employees/:id')"));
 ok('«attendance/summary» ثبت شده است', idx("@Get('attendance/summary')") > 0);
+/*
+ * باگ واقعی کاربر («بخش ثبت کارمندان باز نمی‌شود»): `employees/next-code`
+ * بعد از `employees/:id` ثبت شده بود، پس با `:id='next-code'` مطابقت می‌کرد،
+ * `Number('next-code')` می‌شد NaN و ۴۰۴ برمی‌گشت → فورم باز نمی‌شد.
+ */
+{
+  /*
+   * مقایسه باید روی **تعریف مسیر** باشد، نه اولین جای نام آن در فایل
+   * (توضیح فارسی هم همان رشته را دارد).
+   */
+  /* فقط خطی که خودش تعریف مسیر است (نه توضیحی که همان رشته را نقل می‌کند) */
+  const def = (p) => {
+    const line = emp.split('\n').find((l) => l.trim() === `@Get('${p}')`);
+    return line ? emp.indexOf(line) : -1;
+  };
+  ok('«employees/next-code» قبل از «employees/:id» ثبت شده (فورم کارمند باز می‌شود)',
+    def('employees/next-code') > 0 && def('employees/next-code') < def('employees/:id'),
+    `${def('employees/next-code')} vs ${def('employees/:id')}`);
+}
+ok('مسیر «کد بعدی» کارمند در UI همان چیزی است که سرور می‌دهد',
+  /api\.get\('\/employees\/next-code'\)/.test(fs.readFileSync(path.join(root, 'apps/web/src/pages/Employees.tsx'), 'utf8')));
 
 /* ------------------------------------------------------------------ *
  * مسیرهای دور ۱۶: خروجی/ورودی اکسل، سطل بازیافت، لایسنس

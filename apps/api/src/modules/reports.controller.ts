@@ -509,7 +509,7 @@ export class ReportsController {
       `SELECT c."code", c."name", c."phone", c."openingBalance",
         (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE COALESCE(s."deletedAt",'')='' AND s."customerId"=c."id" AND s."paymentType"='credit') AS credit,
         (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE COALESCE(r."deletedAt",'')='' AND r."customerId"=c."id" AND ${receiptDebtSql('r."sourceName"')}) AS paid
-       FROM "Customer" c ORDER BY c."name"`);
+       FROM "Customer" c WHERE COALESCE(c."deletedAt",'')='' ORDER BY c."name"`);
     const debts = debtors
       .map((d) => ({
         code: d.code, name: d.name, phone: d.phone,
@@ -545,7 +545,7 @@ export class ReportsController {
       `SELECT c."id", c."code", c."name",
         c."openingBalance" + (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE COALESCE(s."deletedAt",'')='' AND s."customerId"=c."id" AND s."paymentType"='credit')
         - (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE COALESCE(r."deletedAt",'')='' AND r."customerId"=c."id" AND ${receiptDebtSql('r."sourceName"')}) AS balance
-       FROM "Customer" c`);
+       FROM "Customer" c WHERE COALESCE(c."deletedAt",'')=''`);
     const debtList = debts.map((d) => ({ ...d, balance: r2(num(d.balance)) })).sort((a, b) => b.balance - a.balance);
     const emp: any[] = await p.$queryRawUnsafe(
       `SELECT COUNT(*) c FROM "Employee" WHERE COALESCE("deletedAt",'')='' AND "status"='active'`);
