@@ -451,6 +451,72 @@ if (restoreBtn) {
 cleanup();
 
 /* ================================================================== */
+console.log('\n— سابقه فعالیت: ادغام سطل بازیافت و داده‌ی نمونه —');
+resetRoutes();
+/*
+ * یک صفحه، سه نما. کاربر گفت «سطل بازیافت را در بخش سابقه فعالیت ادغام کن»
+ * و «گزینه‌ی موقت نصب و حذف داده‌های نمونه» — هر دو باید همین‌جا باشند، نه
+ * در منوی جدا. این تست دقیقاً همان سه تب را کلیک می‌کند.
+ */
+route('GET', /^\/system\/timeline/, () => ([
+  { id: 9, createdAt: '2026-11-09T10:00:00Z', username: 'admin', action: 'soft-delete', entity: 'Sale', entityId: 5, detail: '', entityLabel: 'فروشات', rowTitle: 'S-9', restorable: true },
+  { id: 8, createdAt: '2026-11-09T09:00:00Z', username: 'admin', action: 'create', entity: 'Sale', entityId: 6, detail: 'ثبت بل', entityLabel: 'فروشات', rowTitle: 'S-10', restorable: false },
+]));
+route('GET', /^\/recycle\/bins/, () => ({
+  items: [
+    { table: 'Sale', label: 'بل فروش', count: 1, titleCol: 'no', extraCols: ['customerName'] },
+    { table: 'Customer', label: 'مشتری', count: 0, titleCol: 'name', extraCols: [] },
+  ],
+  total: 1,
+  bins: { Sale: [{ id: 5, no: 'S-9', customerName: 'شرکت آریا', deletedAt: '2026-11-09T10:00:00Z', deletedBy: 'admin' }], Customer: [] },
+}));
+route('GET', /^\/system\/demo$/, () => ({ counts: { Sale: 12, Customer: 8, total: 20 }, real: { sales: 3, employees: 2, customers: 1 }, installed: false }));
+route('POST', /^\/system\/demo\/install$/, () => ({ ok: true, total: 20, message: '۲۰ ردیف نمونه نصب شد.' }));
+route('POST', /^\/system\/demo\/remove$/, () => ({ ok: true, total: 20, message: 'به سطل بازیافت رفت.' }));
+route('POST', /^\/recycle\/\w+\/\d+\/restore$/, () => ({ ok: true }));
+await render(React.createElement(pages.ActivityPage));
+await wait(120);
+ok('ستون زمانی رویدادها را نشان می‌دهد', document.body.textContent.includes('S-9') || document.body.textContent.includes('ثبت بل'),
+  document.body.textContent.slice(0, 160));
+ok('رویداد حذف، دکمه‌ی «بازگرداندن» دارد', Boolean(byText('button', 'بازگرداندن')));
+const binTab = byText('button', 'سطل بازیافت');
+ok('تب «سطل بازیافت» در همان صفحه هست', Boolean(binTab));
+if (binTab) {
+  click(binTab); await wait(150);
+  ok('ردیف حذف‌شده در تب سطل بازیافت دیده می‌شود', document.body.textContent.includes('S-9'));
+  ok('درخواست سطل بازیافت به API رفت', Boolean(lastCall('GET', /^\/recycle\/bins$/)),
+    JSON.stringify(calls.map((c) => c.method + ' ' + c.path)));
+  const back = byText('button', 'بازگرداندن');
+  if (back) {
+    click(back); await wait(120);
+    const yes = qa('.modal-back .modal-f button').find((b) => (b.textContent || '').includes('بازگردان'));
+    ok('تأیید بازگرداندن باز شد', Boolean(yes));
+    if (yes) { click(yes); await wait(180); }
+    ok('بازگرداندن از داخل سابقه فعالیت درخواست فرستاد',
+      Boolean(lastCall('POST', /^\/recycle\/Sale\/5\/restore$/)),
+      JSON.stringify(calls.map((c) => c.method + ' ' + c.path)));
+  }
+}
+const demoTab = byText('button', 'داده‌ی نمونه');
+ok('تب «داده‌ی نمونه» در همان صفحه هست', Boolean(demoTab));
+if (demoTab) {
+  click(demoTab); await wait(180);
+  ok('وضعیت داده‌ی نمونه از API خوانده شد', Boolean(lastCall('GET', /^\/system\/demo$/)));
+  const inst = qa('button').find((b) => (b.textContent || '').includes('نصب داده‌ی نمونه'));
+  ok('دکمه‌ی نصب داده‌ی نمونه هست', Boolean(inst), qa('button').map((b) => b.textContent).join('|').slice(0, 200));
+  if (inst) {
+    click(inst); await wait(120);
+    const yes = qa('.modal-back .modal-f button').find((b) => (b.textContent || '').includes('نصب'));
+    ok('تأیید نصب داده‌ی نمونه باز شد', Boolean(yes));
+    if (yes) { click(yes); await wait(220); }
+    const sent = lastCall('POST', /^\/system\/demo\/install$/);
+    ok('درخواست نصب داده‌ی نمونه رفت', Boolean(sent), JSON.stringify(calls.map((c) => c.method + ' ' + c.path)));
+    ok('تعداد ماه با درخواست فرستاده شد', Boolean(sent && Number(sent.body?.months) >= 1), JSON.stringify(sent?.body));
+  }
+}
+cleanup();
+
+/* ================================================================== */
 console.log('\n— صفحه‌ی پروفایل کارمند —');
 resetRoutes();
 route('GET', /^\/employees\/3$/, () => ({

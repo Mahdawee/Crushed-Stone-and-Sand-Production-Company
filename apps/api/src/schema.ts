@@ -9,7 +9,7 @@
  * "add column if missing" pass upgrades databases created by older versions.
  */
 import { db } from './db';
-import { RECEIPT_SOURCE_ALIASES, RECEIPT_SOURCES } from './common/domain';
+import { RECEIPT_SOURCE_ALIASES, RECEIPT_SOURCES, WALK_IN_CODE, WALK_IN_NAME } from './common/domain';
 
 type Column = { name: string; ddl: string };
 
@@ -304,6 +304,27 @@ const UPGRADES: { table: string; column: string; ddl: string }[] = [
    */
   { table: 'Machinery', column: 'deletedAt', ddl: 'TEXT' },
   { table: 'Machinery', column: 'deletedBy', ddl: 'TEXT' },
+
+  /*
+   * ---- مشتری گذری (بدون حساب) ----
+   *
+   * درخواست کاربر: «اگر مشتری انتخاب نشود، معامله روی مشتری گذری ثبت شود».
+   *
+   * پرچم `isWalkIn` روی خود جدول مشتری است تا:
+   *   • فهرست مشتریان و فهرست‌های کشویی فورم‌ها آن را نشان ندهند،
+   *   • مانده‌ی آن در «مجموع بدهی مشتریان» شمرده نشود،
+   *   • اما بل/رسیدِ گذری سند کامل و قابل گزارش باشد.
+   * `isDemo` برای داده‌ی نمونه است (پاک‌کردن نمونه نباید داده‌ی واقعی را لمس کند).
+   */
+  { table: 'Customer', column: 'isWalkIn', ddl: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'Sale', column: 'isDemo', ddl: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'Receipt', column: 'isDemo', ddl: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'Expense', column: 'isDemo', ddl: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'Salary', column: 'isDemo', ddl: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'Attendance', column: 'isDemo', ddl: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'Employee', column: 'isDemo', ddl: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'Customer', column: 'isDemo', ddl: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'Machinery', column: 'isDemo', ddl: 'INTEGER NOT NULL DEFAULT 0' },
 ];
 
 /**
@@ -382,6 +403,36 @@ async function dedupeReceiptSources() {
   }
 }
 
+/**
+ * مطمئن می‌شود «مشتری گذری (بدون حساب)» موجود است و برمی‌گرداند شناسه‌اش.
+ *
+ * idempotent: اگر ردیف باشد، فقط پرچم و نامش هم‌تراز می‌شود (اگر کاربر نام
+ * را عوض کرده باشد) و از سطل بازیافت برمی‌گردد؛ ردیف تکراری ساخته
+ * نمی‌شود چون `code='000'` است و یکتا.
+ */
+export async function ensureWalkInCustomer(): Promise<number> {
+  const p = db();
+  const rows: any[] = await p.$queryRawUnsafe(
+    `SELECT "id" FROM "Customer" WHERE "code"=? LIMIT 1`, WALK_IN_CODE,
+  );
+  if (rows?.length) {
+    const id = Number(rows[0].id);
+    await p.$executeRawUnsafe(
+      `UPDATE "Customer" SET "isWalkIn"=1, "deletedAt"=NULL, "deletedBy"=NULL WHERE "id"=?`, id,
+    );
+    return id;
+  }
+  await p.$executeRawUnsafe(
+    `INSERT INTO "Customer" ("code","name","contactPerson","phone","truckPlate","openingBalance","note","isWalkIn")
+     VALUES (?,?,'','','',0,'',1)`,
+    WALK_IN_CODE, WALK_IN_NAME,
+  );
+  const again: any[] = await p.$queryRawUnsafe(
+    `SELECT "id" FROM "Customer" WHERE "code"=? LIMIT 1`, WALK_IN_CODE,
+  );
+  return Number(again?.[0]?.id);
+}
+
 let schemaPromise: Promise<void> | null = null;
 
 /**
@@ -397,7 +448,7 @@ let schemaPromise: Promise<void> | null = null;
  * خود دیتابیس است، پس بعد از ری‌استارت هم دوباره کامل بررسی می‌شود اگر
  * نسخه‌ی برنامه تغییر کرده باشد.
  */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 6;
 let schemaReadyFor: string | null = null;
 let schemaReadyVersion = -1;
 
@@ -449,6 +500,16 @@ export async function ensureSchemaAsync(force = false) {
         await p.$executeRawUnsafe(`ALTER TABLE "${u.table}" ADD COLUMN "${u.column}" ${u.ddl}`);
       }
     }
+    /*
+     * مشتری گذری: ردیف ثابت «بدون حساب» باید همیشه موجود باشد، وگرنه
+     * بل فروشی که مشتری انتخاب نکرده جایی برای ثبت ندارد. این کار
+     * idempotent است (اگر هست، فقط به‌روز می‌شود).
+     */
+    try {
+      await ensureWalkInCustomer();
+    } catch (e: any) {
+      console.warn('ساخت مشتری گذری انجام نشد:', e?.message || e);
+    }
     try {
       await migrateReceiptSources();
     } catch (e: any) {
@@ -460,6 +521,24 @@ export async function ensureSchemaAsync(force = false) {
       console.warn('مهاجرت منابع رسید انجام نشد:', e?.message || e);
     }
     await p.$executeRawUnsafe(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  }
+
+  /*
+   * «مشتری گذری» را در **هر** بار بالا آمدن چک کن، نه فقط وقتی نسخه‌ی
+   * ساختار عوض می‌شود.
+   *
+   * ## باگ
+   * اگر ردیف گذری پاک/غیرفعال می‌شد (پاک‌سازی دستی، restore یک پشتیبان
+   * قدیمی، یا دیتابیسی که قبل از نسخه‌ی ۵ ساخته شده ولی مهرش ۵ شده)،
+   * تمام بل‌های بدون مشتری با خطای ۵۰۰ («مشتری پیدا نشد») رد می‌شدند و
+   * راه برگشتی از داخل برنامه نبود، چون کد `000` برای کاربران رزرو است.
+   *
+   * تابع idempotent است: اگر ردیف سالم باشد فقط یک SELECT اضافه است.
+   */
+  try {
+    await ensureWalkInCustomer();
+  } catch (e: any) {
+    console.warn('اطمینان از مشتری گذری انجام نشد:', e?.message || e);
   }
 
   schemaReadyFor = file;

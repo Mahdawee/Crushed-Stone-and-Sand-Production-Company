@@ -1,7 +1,7 @@
-import { Body, Controller, Get, Post, Put, Delete, Param, Query, UseGuards, HttpException } from '@nestjs/common';
+import { Body, Controller, Req, Get, Post, Put, Delete, Param, Query, UseGuards, HttpException } from '@nestjs/common';
 import { db } from '../db';
 import { ensureSchemaAsync } from '../schema';
-import { AuthGuard, ManagerOnly } from '../common/auth';
+import { AuthGuard, ManagerOnly, userOf } from '../common/auth';
 import { logActivity } from '../common/activity';
 import { softDelete } from '../common/soft-delete';
 import { resolveRelatedBranch } from '../common/related';
@@ -9,6 +9,8 @@ import { settingsService } from '../common/settings';
 import { nextDocNo } from '../common/sequence';
 import { parseUserDate, formatDate, CalendarMode } from '../common/calendar';
 import { idParam } from '../common/params';
+import { ensureWalkInCustomer } from '../schema';
+import { WALK_IN_SHORT } from '../common/domain';
 
 /**
  * مقادیر عددی بل فروش.
@@ -64,6 +66,40 @@ async function assertLiveRow(table: string, id: number, label: string) {
       `این ${label} در «سطل بازیافت» است؛ اول آن را بازگردانید، بعد ویرایش کنید.`, 409,
     );
   }
+}
+
+/**
+ * مشتری سند را پیدا می‌کند و اگر انتخاب نشده باشد، «مشتری گذری» را می‌گذارد.
+ *
+ * درخواست کاربر: «اگر مشتری انتخاب نشود، معامله به مشتری بدون حساب (گذری)
+ * صورت بگیرد». قبلاً سرور با «مشتری را انتخاب کنید» رد می‌کرد و فروشِ
+ * مشتریِ ناشناس (کسی که فقط بار می‌گیرد و می‌رود) اصلاً ثبت نمی‌شد.
+ *
+ * ## محدودیت مهم
+ * فروش «قرضه» (credit) بدون مشتری معنا ندارد: بدهی به کسی تعلق می‌گیرد که
+ * بعداً پیدا شود. پس گذری فقط با پرداخت **نقده** ثبت می‌شود و اگر کاربر
+ * قرضه را انتخاب کند، پیام روشن می‌گیرد — نه سندِ بدهیِ بی‌صاحب.
+ */
+async function resolveSaleCustomer(body: any): Promise<{ id: number; name: string; walkIn: boolean }> {
+  const id = body?.customerId === '' || body?.customerId === null || body?.customerId === undefined
+    ? null
+    : Number(body.customerId);
+  if (id !== null && (!Number.isFinite(id) || id <= 0)) {
+    throw new HttpException('مشتری انتخاب‌شده معتبر نیست.', 400);
+  }
+  if (id) {
+    const rows: any[] = await db().$queryRawUnsafe(
+      `SELECT "id","name","deletedAt","isWalkIn" FROM "Customer" WHERE "id"=?`, id,
+    );
+    if (!rows?.length) throw new HttpException('مشتری پیدا نشد.', 400);
+    if (rows[0].deletedAt) {
+      throw new HttpException('این مشتری در «سطل بازیافت» است؛ اول آن را بازگردانید.', 409);
+    }
+    return { id: Number(rows[0].id), name: String(rows[0].name), walkIn: Number(rows[0].isWalkIn) === 1 };
+  }
+  const walkId = await ensureWalkInCustomer();
+  const rows: any[] = await db().$queryRawUnsafe(`SELECT "name" FROM "Customer" WHERE "id"=?`, walkId);
+  return { id: walkId, name: String(rows?.[0]?.name ?? ''), walkIn: true };
 }
 
 @UseGuards(AuthGuard)
@@ -139,15 +175,19 @@ export class SalesController {
   async create(@Body() body: any) {
     await ensureSchemaAsync();
     const mode = await settingsService.calendar();
-    if (!body?.customerId) throw new HttpException('مشتری را انتخاب کنید.', 400);
     let date = '';
     try { date = body.date ? parseUserDate(body.date, mode) : (await import('../common/calendar')).todayISO(); }
     catch (e: any) { throw new HttpException(e.message, 400); }
     const { volume, unitPrice, freightPerUnit, freightTotal, total } = readNumbers(body);
     const prefix = await settingsService.get('docPrefixSale');
     const no = String(body.no || '').trim() || (await nextDocNo(prefix, mode, date));
-    const cust: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Customer" WHERE "id"=?`, Number(body.customerId));
-    if (!cust?.length) throw new HttpException('مشتری پیدا نشد.', 400);
+    const cust = await resolveSaleCustomer(body);
+    /* فروش گذری فقط نقده: بدهی بدون صاحب معنا ندارد */
+    if (cust.walkIn && body.paymentType === 'credit') {
+      throw new HttpException(
+        'فروش «قرضه» به مشتری گذری ثبت نمی‌شود — برای قرضه، مشتری را انتخاب کنید. یا پرداخت را «نقده» بگذارید.', 400,
+      );
+    }
     /* «مربوط» (شاخه‌ی مصرف): نام از شناسه خوانده می‌شود، نه از کلاینت */
     const branch = await resolveRelatedBranch(body.contractorId, body.contractorName);
     try {
@@ -156,7 +196,7 @@ export class SalesController {
           "materialId","materialName","volume","unitPrice","freightPerUnit","freightTotal","total",
           "contractorId","contractorName","paymentType","note")
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        no, date, Number(body.customerId), cust[0].name,
+        no, date, cust.id, cust.name,
         body.driverName || '', body.truckPlate || '', body.destination || '',
         body.materialId ? Number(body.materialId) : null, body.materialName || '',
         volume, unitPrice, freightPerUnit, freightTotal, total,
@@ -166,8 +206,11 @@ export class SalesController {
     } catch (e: any) {
       throw new HttpException('ثبت فروش انجام نشد — شماره بل تکراری است یا معلومات ناقص است.', 400);
     }
-    await logActivity({ action: 'create', entity: 'Sale', detail: `${no} — ${cust[0].name} — ${total} افغانی` });
-    return { ok: true, no, total, freightTotal };
+    await logActivity({
+      action: 'create', entity: 'Sale',
+      detail: `${no} — ${cust.walkIn ? WALK_IN_SHORT : cust.name} — ${total} افغانی`,
+    });
+    return { ok: true, no, total, freightTotal, walkIn: cust.walkIn, customerName: cust.name };
   }
 
   @Put(':id')
@@ -180,14 +223,18 @@ export class SalesController {
     catch (e: any) { throw new HttpException(e.message, 400); }
     if (!date) throw new HttpException('تاریخ بل را وارد کنید.', 400);
     const { volume, unitPrice, freightPerUnit, freightTotal, total } = readNumbers(body);
-    if (!body?.customerId) throw new HttpException('مشتری را انتخاب کنید.', 400);
     /*
      * باگ: در ویرایش، مشتری ناموجود فقط باعث می‌شد نام قدیمی حفظ شود و
      * `customerId` به عددی اشاره کند که چنین مشتری‌ای وجود ندارد (بل یتیم،
-     * بدهی گم‌شده). همان بررسی «ثبت» اینجا هم لازم است.
+     * بدهی گم‌شده). همان بررسیِ «ثبت» اینجا هم لازم است (و گذری هم پشتیبانی
+     * می‌شود).
      */
-    const cust: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Customer" WHERE "id"=?`, Number(body.customerId));
-    if (!cust?.length) throw new HttpException('مشتری پیدا نشد.', 400);
+    const cust = await resolveSaleCustomer(body);
+    if (cust.walkIn && body.paymentType === 'credit') {
+      throw new HttpException(
+        'فروش «قرضه» به مشتری گذری ثبت نمی‌شود — برای قرضه، مشتری را انتخاب کنید. یا پرداخت را «نقده» بگذارید.', 400,
+      );
+    }
     /* «مربوط» (شاخه‌ی مصرف): نام از شناسه خوانده می‌شود، نه از کلاینت */
     const branch = await resolveRelatedBranch(body.contractorId, body.contractorName);
     try {
@@ -195,7 +242,7 @@ export class SalesController {
         `UPDATE "Sale" SET "date"=?, "customerId"=?, "customerName"=?, "driverName"=?, "truckPlate"=?, "destination"=?,
           "materialId"=?, "materialName"=?, "volume"=?, "unitPrice"=?, "freightPerUnit"=?, "freightTotal"=?, "total"=?,
           "contractorId"=?, "contractorName"=?, "paymentType"=?, "note"=? WHERE "id"=?`,
-        date, Number(body.customerId), cust?.[0]?.name || body.customerName || '', body.driverName || '',
+        date, cust.id, cust.name || body.customerName || '', body.driverName || '',
         body.truckPlate || '', body.destination || '', body.materialId ? Number(body.materialId) : null,
         body.materialName || '', volume, unitPrice, freightPerUnit, freightTotal, total,
         branch.contractorId, branch.contractorName,
@@ -210,7 +257,7 @@ export class SalesController {
 
   @Delete(':id')
   @ManagerOnly()
-  async remove(@Param('id') id: string) {
+  async remove(@Req() req: any, @Param('id') id: string) {
     const sid = idParam(id, 'شناسه‌ی بل');
     /*
      * باگ (که تست دور ۱۶ گرفت): اینجا ردیف با `deletedAt` هم شمرده می‌شد، پس
@@ -225,7 +272,7 @@ export class SalesController {
      * قابل بازیابی بدون آسیب». ردیف می‌ماند، فقط از همه‌ی فهرست‌ها و
      * گزارش‌ها پنهان می‌شود و از «سطل بازیافت» برمی‌گردد.
      */
-    const del = await softDelete("Sale", sid);
+    const del = await softDelete("Sale", sid, { username: userOf(req) });
     if (!del.ok) throw new HttpException('ردیف پیدا نشد.', 404);
     return {
       ok: true,

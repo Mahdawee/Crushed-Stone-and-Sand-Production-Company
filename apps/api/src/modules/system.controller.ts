@@ -1,12 +1,13 @@
-import { Body, Controller, Get, Post, Query, UseGuards, HttpException, Res } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Req, UseGuards, HttpException, Res } from '@nestjs/common';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { db, databaseFile, BACKUP_DIR, resetDb } from '../db';
 import { ensureSchemaAsync, TABLE_LIST } from '../schema';
-import { AuthGuard, ManagerOnly } from '../common/auth';
+import { AuthGuard, ManagerOnly, userOf } from '../common/auth';
 import { logActivity } from '../common/activity';
 import { settingsService } from '../common/settings';
 import { dataDir } from '../db';
+import { demoCounts, hasRealData, installDemo, removeDemo } from '../common/demo';
 
 /**
  * خودآزمایی «بدون نصب چیز اضافه» — همان چیزی که روی کمپیوتر کاربر مهم است.
@@ -90,6 +91,144 @@ export class SystemController {
       ...args, Math.min(2000, Number(limit) || 200),
     );
     return rows;
+  }
+
+  /**
+   * سابقه‌ی فعالیت ادغام‌شده با سطل بازیافت.
+   *
+   * درخواست کاربر: «سطل بازیافت را در بخش سابقه فعالیت ادغام کن».
+   *
+   * نسخه‌ی قبلی فقط `ActivityLog` را می‌داد. مشکل: برای دیدن «چه چیزی حذف
+   * شد و کجاست» باید صفحه‌ی دیگری باز می‌شد، و از طرفی همه‌ی حذف‌ها در سابقه
+   * با جزئیات کامل نبودند (مثلاً بل فروش فقط با شماره ثبت می‌شد).
+   *
+   * حالا هر حذف که ردیفش هنوز در سطل بازیافت است، با **عنوان و جزئیات
+   * واقعی همان ردیف** و پرچم `restorable: true` برمی‌گردد؛ یعنی در یک
+   * ستون زمانی می‌شود دید: چه ثبت شد، چه ویرایش شد، چه حذف شد و کدام‌ها
+   * قابل بازگرداندن‌اند.
+   */
+  @Get('timeline')
+  async timeline(@Query('limit') limit = '300', @Query('entity') entity?: string) {
+    await ensureSchemaAsync();
+    const p = db();
+    const n = Math.min(1000, Math.max(20, Number(limit) || 300));
+    const args: any[] = [];
+    let where = '';
+    if (entity) { where = `WHERE "entity"=?`; args.push(entity); }
+    const logs: any[] = await p.$queryRawUnsafe(
+      `SELECT * FROM "ActivityLog" ${where} ORDER BY "id" DESC LIMIT ?`, ...args, n,
+    );
+
+    /* ردیف‌هایی که واقعاً در سطل بازیافت‌اند — برای پرچم «قابل بازگرداندن» */
+    const labels = ['Sale', 'Receipt', 'Expense', 'Customer', 'Employee', 'Salary', 'Attendance', 'Machinery'];
+    const trashed = new Set<string>();
+    const titles = new Map<string, { label: string; title: string }>();
+    for (const table of labels) {
+      try {
+        const rows: any[] = await p.$queryRawUnsafe(
+          `SELECT "id", COALESCE("deletedAt",'') d FROM "${table}" WHERE COALESCE("deletedAt",'')<>'' LIMIT 500`,
+        );
+        for (const r of rows) trashed.add(`${table}:${r.id}`);
+      } catch { /* جدول ممکن است ستون حذف نرم نداشته باشد */ }
+    }
+    /*
+     * عنوان خوانا برای حذف‌هایی که جزئیاتشان در سابقه ناقص است
+     * (مثلاً «بل فروش #۱۲» به‌جای فقط «حذف»). یک کوئری به‌ازای هر جدول،
+     * فقط برای شناسه‌هایی که در سابقه آمده‌اند.
+     */
+    const SOFT: Record<string, { label: string; titleCol: string }> = {
+      Sale: { label: 'بل فروش', titleCol: 'no' },
+      Receipt: { label: 'رسید', titleCol: 'no' },
+      Expense: { label: 'مصرف', titleCol: 'no' },
+      Customer: { label: 'مشتری', titleCol: 'name' },
+      Employee: { label: 'کارمند', titleCol: 'name' },
+      Salary: { label: 'سند معاش', titleCol: 'no' },
+      Attendance: { label: 'حضور و غیاب', titleCol: 'date' },
+      Machinery: { label: 'ماشین', titleCol: 'name' },
+    };
+    const idsByTable = new Map<string, number[]>();
+    for (const l of logs) {
+      if (!SOFT[l.entity]) continue;
+      const id = Number(l.entityId);
+      if (!Number.isFinite(id) || id <= 0) continue;
+      const arr = idsByTable.get(l.entity) || [];
+      arr.push(id);
+      idsByTable.set(l.entity, arr);
+    }
+    for (const [table, ids] of idsByTable) {
+      const uniq = [...new Set(ids)].slice(0, 300);
+      if (!uniq.length) continue;
+      try {
+        const rows: any[] = await p.$queryRawUnsafe(
+          `SELECT "id", "${SOFT[table].titleCol}" AS t FROM "${table}" WHERE "id" IN (${uniq.map(() => '?').join(',')})`,
+          ...uniq,
+        );
+        for (const r of rows) titles.set(`${table}:${r.id}`, { label: SOFT[table].label, title: String(r.t ?? '') });
+      } catch { /* ignore */ }
+    }
+
+    return logs.map((l) => {
+      const key = `${l.entity}:${Number(l.entityId)}`;
+      const t = titles.get(key);
+      const restorable = trashed.has(key) && ['soft-delete', 'delete'].includes(String(l.action));
+      return {
+        ...l,
+        entityLabel: SOFT[l.entity]?.label || l.entity,
+        rowTitle: t?.title || '',
+        restorable,
+        softDeleted: restorable,
+      };
+    });
+  }
+
+  // ------------------------------- demo data -------------------------------
+  /**
+   * داده‌ی نمونه — نصب و حذف موقت.
+   *
+   * درخواست کاربر: «یک گزینه‌ی موقتِ نصب و حذف داده‌های نمونه».
+   * فقط مدیر: داده‌ی نمونه همه‌ی گزارش‌ها را تغییر می‌دهد.
+   */
+  @Get('demo')
+  @ManagerOnly()
+  async demoStatus() {
+    const counts = await demoCounts();
+    const real = await hasRealData();
+    return { counts, real, installed: counts.total > 0 };
+  }
+
+  @Post('demo/install')
+  @ManagerOnly()
+  async demoInstall(@Req() req: any, @Body() body: { months?: number; force?: boolean }) {
+    const real = await hasRealData();
+    const existing = await demoCounts();
+    if (existing.total > 0) {
+      throw new HttpException('داده‌ی نمونه از قبل نصب است. اول آن را حذف کنید.', 400);
+    }
+    /*
+     * اگر داده‌ی واقعی وجود دارد، نصب نمونه گزارش‌های واقعی را با عددهای
+     * ساختگی قاطی می‌کند. این کار ممنوع نیست (برای آموزش لازم است) ولی
+     * باید صریح تأیید شود — نه با یک کلیک اتفاقی.
+     */
+    if ((real.sales + real.employees + real.customers) > 0 && !body?.force) {
+      throw new HttpException(
+        'در این دیتابیس داده‌ی واقعی وجود دارد. اگر داده‌ی نمونه اضافه شود، در گزارش‌ها با هم دیده می‌شوند. برای ادامه «تأیید» را بزنید.', 409,
+      );
+    }
+    const r = await installDemo({ months: body?.months, username: userOf(req) });
+    if (!r.ok) throw new HttpException('داده‌ی نمونه نصب نشد.', 400);
+    return { ok: true, ...r, message: `${r.total} ردیف نمونه نصب شد.` };
+  }
+
+  @Post('demo/remove')
+  @ManagerOnly()
+  async demoRemove(@Req() req: any) {
+    const r = await removeDemo({ username: userOf(req) });
+    return {
+      ok: true, ...r,
+      message: r.total
+        ? `${r.total} ردیف نمونه به «سطل بازیافت» رفت (قابل بازگرداندن).`
+        : 'داده‌ی نمونه‌ای برای حذف نبود.',
+    };
   }
 
   // -------------------------------- backup ---------------------------------

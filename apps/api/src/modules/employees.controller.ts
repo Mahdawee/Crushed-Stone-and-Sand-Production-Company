@@ -1,7 +1,7 @@
-import { Body, Controller, Get, Post, Put, Delete, Param, Query, UseGuards, HttpException } from '@nestjs/common';
+import { Body, Controller, Req, Get, Post, Put, Delete, Param, Query, UseGuards, HttpException } from '@nestjs/common';
 import { db } from '../db';
 import { ensureSchemaAsync } from '../schema';
-import { AuthGuard, ManagerOnly } from '../common/auth';
+import { AuthGuard, ManagerOnly, userOf } from '../common/auth';
 import { logActivity } from '../common/activity';
 import { softDelete } from '../common/soft-delete';
 import { settingsService } from '../common/settings';
@@ -308,7 +308,7 @@ export class EmployeesController {
    */
   @Delete('employees/:id')
   @ManagerOnly()
-  async remove(@Param('id') id: string) {
+  async remove(@Req() req: any, @Param('id') id: string) {
     const eid = idParam(id, 'شناسه‌ی کارمند');
     const used: any[] = await db().$queryRawUnsafe(
       `SELECT COUNT(*) as c FROM "Salary" WHERE "employeeId"=? AND COALESCE("deletedAt",'')=''`, eid);
@@ -325,7 +325,7 @@ export class EmployeesController {
      * قابل بازیابی بدون آسیب». ردیف می‌ماند، فقط از همه‌ی فهرست‌ها و
      * گزارش‌ها پنهان می‌شود و از «سطل بازیافت» برمی‌گردد.
      */
-    const del = await softDelete("Employee", eid);
+    const del = await softDelete("Employee", eid, { username: userOf(req) });
     if (!del.ok) throw new HttpException('ردیف پیدا نشد.', 404);
     /*
      * باگ: این ثبت سابقه **بعد از return** بود و هرگز اجرا نمی‌شد؛ یعنی

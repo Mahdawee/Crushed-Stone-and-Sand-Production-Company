@@ -7,7 +7,7 @@ import {
   IconBuilding, IconCalendar, IconCash, IconChart, IconChevron, IconClose, IconCoins,
   IconContact, IconContrast, IconDashboard, IconDatabase, IconHelp, IconHistory, IconLock, IconLogout,
   IconMenu, IconMoon, IconPanel, IconPlus, IconReceipt, IconSearchDoc, IconSettings, IconSun,
-  IconTrend, IconTruck, IconTrash, IconUsers, IconWallet,
+  IconTrend, IconTruck, IconUsers, IconWallet,
 } from './icons';
 
 type NavItem = { to: string; label: string; icon: React.FC<{ size?: number }>; managerOnly?: boolean };
@@ -67,8 +67,8 @@ const NAV: NavGroup[] = [
       { to: '/license', label: 'لایسنس', icon: IconLock, managerOnly: true },
       { to: '/users', label: 'کاربران', icon: IconLock, managerOnly: true },
       { to: '/backup', label: 'پشتیبان‌گیری', icon: IconDatabase, managerOnly: true },
+      /* سطل بازیافت داخل «سابقه فعالیت» ادغام شد — یک صفحه، سه نما */
       { to: '/activity', label: 'سابقه فعالیت', icon: IconHistory },
-      { to: '/recycle', label: 'سطل بازیافت', icon: IconTrash, managerOnly: true },
       { to: '/help', label: 'راهنما', icon: IconHelp },
     ],
   },
@@ -93,8 +93,9 @@ const PAGE_TITLES: Record<string, { t: string; s: string }> = {
   '/license': { t: 'لایسنس', s: 'وضعیت، کلید دستگاه و فعال‌سازی' },
   '/users': { t: 'کاربران سیستم', s: 'سطح دسترسی مدیر و کارمند' },
   '/backup': { t: 'پشتیبان‌گیری', s: 'کاپی، دانلود و بازگردانی' },
-  '/activity': { t: 'سابقه فعالیت', s: 'چه کسی، چه وقت، چه کرد' },
-  '/recycle': { t: 'سطل بازیافت', s: 'بازگرداندن ردیف‌های حذف‌شده' },
+  '/activity': { t: 'سابقه فعالیت', s: 'چه کسی، چه وقت، چه کرد — و بازگرداندن حذف‌ها' },
+  /* مسیر قدیمی هنوز کار می‌کند (لینک‌های قبلی و راهنما) ولی منو یک صفحه دارد */
+  '/recycle': { t: 'سابقه فعالیت', s: 'سطل بازیافت' },
   '/help': { t: 'راهنمای سیستم', s: 'کار با هر شیت و فرمول‌ها' },
 };
 

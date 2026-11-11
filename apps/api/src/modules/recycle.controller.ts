@@ -11,6 +11,35 @@ import { SOFT_TABLES, deletedCounts, listDeleted, restore } from '../common/soft
 @UseGuards(AuthGuard)
 @Controller('recycle')
 export class RecycleController {
+  /**
+   * سطل بازیافت برای «سابقه فعالیت» — همه‌ی بخش‌ها با هم.
+   *
+   * درخواست کاربر: «سطل بازیافت را در بخش سابقه فعالیت ادغام کن».
+   *
+   * ## چرا تفکیک‌شدن این صفحه یک ایراد بود
+   * کاربر برای فهمیدن «چه چیزی حذف شد و چه کسی حذف کرد» باید دو صفحه را
+   * می‌دید: «سابقه فعالیت» (که می‌گفت حذف شد، بدون جزئیات) و «سطل بازیافت»
+   * (که خود ردیف‌ها را داشت). حالا هر دو در یک صفحه‌اند.
+   *
+   * ⚠ این مسیر باید **قبل از** `:table` بیاید، وگرنه `:table='bins'` می‌شود
+   * و «جدول ناشناخته» برمی‌گردد (همان باگی که تست مسیرها گرفت).
+   */
+  @Get('bins')
+  @ManagerOnly()
+  async bins() {
+    const counts = await deletedCounts();
+    const items = Object.entries(SOFT_TABLES).map(([table, meta]) => ({
+      table, label: meta.label, count: counts[table] || 0,
+      titleCol: meta.titleCol, extraCols: meta.extraCols || [],
+    }));
+    const bins: Record<string, any[]> = {};
+    for (const table of Object.keys(SOFT_TABLES)) {
+      if (!counts[table]) { bins[table] = []; continue; }
+      bins[table] = (await listDeleted(table, 50)).map((r) => ({ ...r, deletedAt: r.deletedAt || '' }));
+    }
+    return { items, total: Object.values(counts).reduce((a, b) => a + b, 0), bins };
+  }
+
   /** فهرست جدول‌ها + تعداد حذف‌شده در هر کدام */
   @Get()
   @ManagerOnly()

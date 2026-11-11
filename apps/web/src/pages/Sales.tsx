@@ -87,8 +87,13 @@ export default function SalesPage() {
    *
    * «مقصد»، «دریور»، «پلیت» اختیاری می‌مانند: روی هیچ محاسبه‌ای اثر ندارند.
    */
+  /*
+   * «مشتری» عمداً اجباری نیست: درخواست کاربر — «اگر مشتری انتخاب نشود،
+   * معامله به مشتری گذری (بدون حساب) ثبت شود». بلِ گذری فقط نقده است، و
+   * همین را در `save` بررسی می‌کنیم (سرور هم مستقلاً بررسی می‌کند).
+   */
+  const walkIn = Boolean(form) && !form.customerId;
   const REQUIRED = [
-    { label: 'مشتری', filled: Boolean(form?.customerId) },
     { label: 'تاریخ', filled: Boolean(dateISO) },
     { label: 'متراژ', filled: String(form?.volume ?? '').trim() !== '', valid: num(form?.volume) > 0,
       invalidMessage: '«متراژ» باید بزرگ‌تر از صفر باشد.' },
@@ -101,7 +106,9 @@ export default function SalesPage() {
   const save = async () => {
     const err = validateRequired(REQUIRED as any);
     if (err) { toast.warn('فیلد اجباری', err); return; }
-    if (!form.customerId) { toast.warn('مشتری را انتخاب کنید.'); return; }
+    if (walkIn && form.paymentType === 'credit') {
+      toast.warn('فروش قرضه بدون مشتری ثبت نمی‌شود', 'یا مشتری را انتخاب کنید یا پرداخت را «نقده» بگذارید.'); return;
+    }
     if (!dateISO) { toast.error('تاریخ بل', 'تاریخ را انتخاب یا وارد کنید.'); return; }
     if (!(num(form.volume) > 0)) { toast.warn('متراژ باید بزرگ‌تر از صفر باشد.'); return; }
     if (num(form.unitPrice) < 0 || num(form.freightPerUnit) < 0) { toast.warn('قیمت نمی‌تواند منفی باشد.'); return; }
@@ -242,11 +249,19 @@ export default function SalesPage() {
             <Field label="تاریخ" required hint={calendar === 'jalali' ? 'شمسی' : 'میلادی'}>
               <DatePicker value={dateISO} onChange={setDateISO} calendar={calendar} />
             </Field>
-            <Field label="مشتری" required>
-              <Select value={form.customerId} placeholder="انتخاب مشتری…" onChange={(v) => {
+            <Field label="مشتری"
+              hint={walkIn ? 'کسی که حساب ندارد — بل «گذری» ثبت می‌شود (فقط نقده)' : undefined}>
+              <Select value={form.customerId} placeholder="مشتری گذری (بدون حساب)" onChange={(v) => {
                 const c = customers.find((x) => String(x.id) === String(v));
                 setForm({ ...form, customerId: v, truckPlate: c?.truckPlate || form.truckPlate });
-              }} options={customers.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} />
+              }} options={[
+                /*
+                 * گزینه‌ی تهی = «مشتری گذری». عمداً اولین گزینه است تا برای
+                 * فروش سریع (موتری که بار می‌گیرد و می‌رود) انتخابِ آسان باشد.
+                 */
+                { value: '', label: '— مشتری گذری (بدون حساب) —' },
+                ...customers.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` })),
+              ]} />
             </Field>
             <Field label="نام دریور"><Text value={form.driverName} onChange={(v) => setForm({ ...form, driverName: v })} /></Field>
             <Field label="پلیت موتر"><Text value={form.truckPlate} onChange={(v) => setForm({ ...form, truckPlate: v })} /></Field>

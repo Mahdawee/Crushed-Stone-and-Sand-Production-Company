@@ -1,7 +1,7 @@
-import { Body, Controller, Get, Post, Put, Delete, Param, Query, UseGuards, HttpException } from '@nestjs/common';
+import { Body, Controller, Req, Get, Post, Put, Delete, Param, Query, UseGuards, HttpException } from '@nestjs/common';
 import { db } from '../db';
 import { ensureSchemaAsync } from '../schema';
-import { AuthGuard, ManagerOnly } from '../common/auth';
+import { AuthGuard, ManagerOnly, userOf } from '../common/auth';
 import { logActivity } from '../common/activity';
 import { softDelete } from '../common/soft-delete';
 import { settingsService } from '../common/settings';
@@ -9,6 +9,7 @@ import { nextDocNo } from '../common/sequence';
 import { parseUserDate, formatDate, todayISO } from '../common/calendar';
 import { allocationForSource, canonicalReceiptSource, receiptSourceVariants, reducesCustomerDebt } from '../common/domain';
 import { idParam } from '../common/params';
+import { ensureWalkInCustomer } from '../schema';
 
 /**
  * نام منبع رسید را از شناسه/نام بگیر و به نام رسمی تبدیل کن.
@@ -47,6 +48,34 @@ async function assertLive(table: string, id: number, label: string) {
   if (rows[0].deletedAt) {
     throw new HttpException(`این ${label} در «سطل بازیافت» است؛ اول آن را بازگردانید، بعد ویرایش کنید.`, 409);
   }
+}
+
+/**
+ * مشتری رسید — و اگر انتخاب نشده باشد، «مشتری گذری (بدون حساب)».
+ *
+ * رسید گذری یعنی پولی که از یک مشتریِ ناشناس/گذری گرفته شده (مثلاً فروش
+ * نقدی همان روز). سند کامل ثبت می‌شود و روی حساب هیچ مشتریِ ثبت‌شده اثر
+ * ندارد، چون به گذری نسبت داده شده است.
+ */
+async function resolveReceiptCustomer(body: any): Promise<{ id: number; name: string; walkIn: boolean }> {
+  const raw = body?.customerId;
+  const id = raw === '' || raw === null || raw === undefined ? null : Number(raw);
+  if (id !== null && (!Number.isFinite(id) || id <= 0)) {
+    throw new HttpException('مشتری انتخاب‌شده معتبر نیست.', 400);
+  }
+  if (id) {
+    const rows: any[] = await db().$queryRawUnsafe(
+      `SELECT "id","name","deletedAt","isWalkIn" FROM "Customer" WHERE "id"=?`, id,
+    );
+    if (!rows?.length) throw new HttpException('مشتری پیدا نشد.', 400);
+    if (rows[0].deletedAt) {
+      throw new HttpException('این مشتری در «سطل بازیافت» است؛ اول آن را بازگردانید.', 409);
+    }
+    return { id: Number(rows[0].id), name: String(rows[0].name), walkIn: Number(rows[0].isWalkIn) === 1 };
+  }
+  const walkId = await ensureWalkInCustomer();
+  const rows: any[] = await db().$queryRawUnsafe(`SELECT "name" FROM "Customer" WHERE "id"=?`, walkId);
+  return { id: walkId, name: String(rows?.[0]?.name ?? ''), walkIn: true };
 }
 
 @UseGuards(AuthGuard)
@@ -121,14 +150,12 @@ export class ReceiptsController {
   async create(@Body() body: any) {
     await ensureSchemaAsync();
     const mode = await settingsService.calendar();
-    if (!body?.customerId) throw new HttpException('مشتری را انتخاب کنید.', 400);
     const amount = Number(body.amount) || 0;
     if (amount <= 0) throw new HttpException('مبلغ رسید باید بزرگتر از صفر باشد.', 400);
     let date = '';
     try { date = body.date ? parseUserDate(body.date, mode) : todayISO(); }
     catch (e: any) { throw new HttpException(e.message, 400); }
-    const cust: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Customer" WHERE "id"=?`, Number(body.customerId));
-    if (!cust?.length) throw new HttpException('مشتری پیدا نشد.', 400);
+    const cust = await resolveReceiptCustomer(body);
     const prefix = await settingsService.get('docPrefixReceipt');
     const no = String(body.no || '').trim() || (await nextDocNo(prefix, mode, date));
     /*
@@ -141,14 +168,17 @@ export class ReceiptsController {
       await db().$executeRawUnsafe(
         `INSERT INTO "Receipt" ("no","date","customerId","customerName","amount","relatedBillNo","sourceId","sourceName","receivedBy","note")
          VALUES (?,?,?,?,?,?,?,?,?,?)`,
-        no, date, Number(body.customerId), cust[0].name, amount, body.relatedBillNo || '',
+        no, date, cust.id, cust.name, amount, body.relatedBillNo || '',
         body.sourceId ? Number(body.sourceId) : null, sourceName,
         body.receivedBy || '', body.note || '',
       );
     } catch {
       throw new HttpException('ثبت رسید انجام نشد — شماره رسید تکراری است.', 400);
     }
-    await logActivity({ action: 'create', entity: 'Receipt', detail: `${no} — ${cust[0].name} — ${amount}` });
+    await logActivity({
+      action: 'create', entity: 'Receipt',
+      detail: `${no} — ${cust.walkIn ? 'مشتری گذری' : cust.name} — ${amount}`,
+    });
     return { ok: true, no };
   }
 
@@ -167,14 +197,12 @@ export class ReceiptsController {
      * باگ: در ویرایش، مشتری ناموجود بررسی نمی‌شد؛ `customerId` به ردیفی اشاره
      * می‌کرد که وجود ندارد و نامِ قدیمی روی رسید می‌ماند (کارت حساب خراب).
      */
-    if (!body?.customerId) throw new HttpException('مشتری را انتخاب کنید.', 400);
-    const cust: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Customer" WHERE "id"=?`, Number(body.customerId));
-    if (!cust?.length) throw new HttpException('مشتری پیدا نشد.', 400);
+    const cust = await resolveReceiptCustomer(body);
     const sourceName = await resolveSourceName(body.sourceId, body.sourceName);
     await db().$executeRawUnsafe(
       `UPDATE "Receipt" SET "date"=?, "customerId"=?, "customerName"=?, "amount"=?, "relatedBillNo"=?,
        "sourceId"=?, "sourceName"=?, "receivedBy"=?, "note"=? WHERE "id"=?`,
-      date, Number(body.customerId), cust?.[0]?.name || body.customerName || '', amount,
+      date, cust.id, cust.name || body.customerName || '', amount,
       body.relatedBillNo || '', body.sourceId ? Number(body.sourceId) : null, sourceName,
       body.receivedBy || '', body.note || '', rid,
     );
@@ -184,7 +212,7 @@ export class ReceiptsController {
 
   @Delete(':id')
   @ManagerOnly()
-  async remove(@Param('id') id: string) {
+  async remove(@Req() req: any, @Param('id') id: string) {
     const rid = idParam(id, 'شناسه‌ی رسید');
     const rows: any[] = await db().$queryRawUnsafe(`SELECT "no" FROM "Receipt" WHERE "id"=?`, rid);
     /* باگ: حذف شناسه‌ی ناموجود ۲۰۰ و یک ردیف ساختگی در «فعالیت‌ها» */
@@ -194,7 +222,7 @@ export class ReceiptsController {
      * قابل بازیابی بدون آسیب». ردیف می‌ماند، فقط از همه‌ی فهرست‌ها و
      * گزارش‌ها پنهان می‌شود و از «سطل بازیافت» برمی‌گردد.
      */
-    const del = await softDelete("Receipt", rid);
+    const del = await softDelete("Receipt", rid, { username: userOf(req) });
     if (!del.ok) throw new HttpException('ردیف پیدا نشد.', 404);
     /*
      * باگ: این لاگ بعد از `return` بود و هرگز اجرا نمی‌شد — یعنی حذف رسید

@@ -2,7 +2,7 @@ import { Controller, Get, Query, UseGuards, HttpException } from '@nestjs/common
 import { db } from '../db';
 import { ensureSchemaAsync } from '../schema';
 import { AuthGuard } from '../common/auth';
-import { canonicalReceiptSource, receiptDebtSql, reducesCustomerDebt } from '../common/domain';
+import { canonicalReceiptSource, receiptDebtSql, reducesCustomerDebt, realCustomerSql } from '../common/domain';
 import { settingsService } from '../common/settings';
 import {
   CalendarMode, monthBucket, yearBucket, todayISO, formatDate, monthName, pad2,
@@ -509,7 +509,7 @@ export class ReportsController {
       `SELECT c."code", c."name", c."phone", c."openingBalance",
         (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE COALESCE(s."deletedAt",'')='' AND s."customerId"=c."id" AND s."paymentType"='credit') AS credit,
         (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE COALESCE(r."deletedAt",'')='' AND r."customerId"=c."id" AND ${receiptDebtSql('r."sourceName"')}) AS paid
-       FROM "Customer" c WHERE COALESCE(c."deletedAt",'')='' ORDER BY c."name"`);
+       FROM "Customer" c WHERE COALESCE(c."deletedAt",'')='' AND ${realCustomerSql('c')} ORDER BY c."name"`);
     const debts = debtors
       .map((d) => ({
         code: d.code, name: d.name, phone: d.phone,
@@ -545,12 +545,12 @@ export class ReportsController {
       `SELECT c."id", c."code", c."name",
         c."openingBalance" + (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE COALESCE(s."deletedAt",'')='' AND s."customerId"=c."id" AND s."paymentType"='credit')
         - (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE COALESCE(r."deletedAt",'')='' AND r."customerId"=c."id" AND ${receiptDebtSql('r."sourceName"')}) AS balance
-       FROM "Customer" c WHERE COALESCE(c."deletedAt",'')=''`);
+       FROM "Customer" c WHERE COALESCE(c."deletedAt",'')='' AND ${realCustomerSql('c')} ORDER BY c."name"`);
     const debtList = debts.map((d) => ({ ...d, balance: r2(num(d.balance)) })).sort((a, b) => b.balance - a.balance);
     const emp: any[] = await p.$queryRawUnsafe(
       `SELECT COUNT(*) c FROM "Employee" WHERE COALESCE("deletedAt",'')='' AND "status"='active'`);
     const cust: any[] = await p.$queryRawUnsafe(
-      `SELECT COUNT(*) c FROM "Customer" WHERE COALESCE("deletedAt",'')=''`);
+      `SELECT COUNT(*) c FROM "Customer" WHERE COALESCE("deletedAt",'')='' AND ${realCustomerSql()}`);
     const salaryPending: any[] = await p.$queryRawUnsafe(
       `SELECT COUNT(*) c FROM "Salary" WHERE COALESCE("deletedAt",'')='' AND "periodStart"=?`, mStart);
     /*

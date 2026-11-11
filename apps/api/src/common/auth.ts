@@ -40,6 +40,20 @@ export function getSession(token?: string): Session | null {
   return s;
 }
 
+/**
+ * کاربر جاری درخواست — «چه کسی این کار را کرد؟»
+ *
+ * ## باگی که این حل می‌کند
+ * `softDelete` نام کاربر را از `opts.username` می‌گرفت، ولی هیچ کنترلری این
+ * پارامتر را پر نمی‌کرد. نتیجه: در «سطل بازیافت» ستون «حذف توسط» همیشه
+ * `system` بود — دقیقاً همان چیزی که کاربر می‌خواست بداند («چه کسی حذف
+ * کرد») خالی بود. حالا نگهبان ورود `req.session` را می‌گذارد و کنترلرها با
+ * `userOf(req)` نام واقعی را به لایه‌ی حذف نرم می‌دهند.
+ */
+export function userOf(req: any): string {
+  return String(req?.session?.username || '');
+}
+
 export const PUBLIC_KEY = 'farday:public';
 export const Public = () => SetMetadata(PUBLIC_KEY, true);
 export const MANAGER_ONLY = 'farday:managerOnly';

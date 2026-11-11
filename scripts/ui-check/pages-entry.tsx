@@ -20,6 +20,7 @@ import ReportsDaily from '../../apps/web/src/pages/ReportsDaily';
 import Cashbook from '../../apps/web/src/pages/Cashbook';
 import Dashboard from '../../apps/web/src/pages/Dashboard';
 import Recycle from '../../apps/web/src/pages/Recycle';
+import Activity from '../../apps/web/src/pages/Activity';
 import EmployeeProfile from '../../apps/web/src/pages/EmployeeProfile';
 
 /** صفحه را داخل روتر و ToastProvider می‌گذارد — همان محیطی که کاربر می‌بیند */
@@ -50,5 +51,7 @@ export const ReportsDailyPage = () => React.createElement(Wrap, null, React.crea
 export const CashbookPage = () => React.createElement(Wrap, null, React.createElement(Cashbook));
 export const DashboardPage = () => React.createElement(Wrap, null, React.createElement(Dashboard));
 export const RecyclePage = () => React.createElement(Wrap, null, React.createElement(Recycle));
+/** صفحه‌ی «سابقه فعالیت» — شامل تب‌های سطل بازیافت و داده‌ی نمونه */
+export const ActivityPage = () => React.createElement(Wrap, null, React.createElement(Activity));
 export const EmployeeProfilePage = () =>
   React.createElement(Wrap, { initial: '/employees/3', path: '/employees/:id' }, React.createElement(EmployeeProfile));

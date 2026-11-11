@@ -60,7 +60,10 @@ export default function ReceiptsPage() {
   };
 
   const save = async () => {
-    if (!form.customerId) { toast.warn('مشتری را انتخاب کنید.'); return; }
+    /*
+     * مشتری اجباری نیست: رسیدِ گذری (پول از مشتری بدون حساب) هم ثبت می‌شود —
+     * همان قاعده‌ی بل فروش. سرور در این حالت «مشتری گذری» را می‌گذارد.
+     */
     if (Number(form.amount) <= 0) { toast.warn('مبلغ رسید را وارد کنید.'); return; }
     if (!dateISO) { toast.error('تاریخ', 'تاریخ را انتخاب یا وارد کنید.'); return; }
     const src = sources.find((s) => String(s.id) === String(form.sourceId));
@@ -176,9 +179,13 @@ export default function ReceiptsPage() {
           <div className="form-grid c2">
             <Field label="شماره رسید"><Text value={form.no} onChange={(v) => setForm({ ...form, no: v })} readOnly={!!form.id} /></Field>
             <Field label="تاریخ" required><DatePicker value={dateISO} onChange={setDateISO} calendar={calendar} /></Field>
-            <Field label="مشتری" required span={2}>
-              <Select value={form.customerId} placeholder="انتخاب مشتری…" onChange={(v) => setForm({ ...form, customerId: v })}
-                options={customers.map((c) => ({ value: c.id, label: `${c.code} — ${c.name} (باقی ${money(c.balance)})` }))} />
+            <Field label="مشتری" span={2}
+              hint={form.customerId ? undefined : 'بدون مشتری = رسید «گذری» (پول از مشتری بدون حساب)'}>
+              <Select value={form.customerId} placeholder="مشتری گذری (بدون حساب)" onChange={(v) => setForm({ ...form, customerId: v })}
+                options={[
+                  { value: '', label: '— مشتری گذری (بدون حساب) —' },
+                  ...customers.map((c) => ({ value: c.id, label: `${c.code} — ${c.name} (باقی ${money(c.balance)})` })),
+                ]} />
             </Field>
             <Field label="مبلغ رسید (افغانی)" required><Num value={form.amount} onChange={(v) => setForm({ ...form, amount: v })} /></Field>
             <Field label="شماره بل مربوط"><Text value={form.relatedBillNo} onChange={(v) => setForm({ ...form, relatedBillNo: v })} /></Field>

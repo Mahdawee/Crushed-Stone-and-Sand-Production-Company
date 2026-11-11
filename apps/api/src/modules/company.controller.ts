@@ -1,7 +1,7 @@
-import { Body, Controller, Get, Post, Put, UseGuards, Param, Delete, HttpException } from '@nestjs/common';
+import { Body, Controller, Get, Post, Put, UseGuards, Param, Delete, Req, HttpException } from '@nestjs/common';
 import { db } from '../db';
 import { ensureSchemaAsync } from '../schema';
-import { AuthGuard, ManagerOnly } from '../common/auth';
+import { AuthGuard, ManagerOnly, userOf } from '../common/auth';
 import { logActivity } from '../common/activity';
 import { softDelete } from '../common/soft-delete';
 import { settingsService, SettingsService, isSettingError } from '../common/settings';
@@ -95,8 +95,8 @@ export class CompanyController {
    */
   @Delete('machinery/:id')
   @ManagerOnly()
-  async removeMachinery(@Param('id') id: string) {
-    const del = await softDelete('Machinery', idParam(id, 'شناسه‌ی ماشین'));
+  async removeMachinery(@Req() req: any, @Param('id') id: string) {
+    const del = await softDelete('Machinery', idParam(id, 'شناسه‌ی ماشین'), { username: userOf(req) });
     if (!del.ok) throw new HttpException('ماشین پیدا نشد.', 404);
     return {
       ok: true,

@@ -91,7 +91,7 @@ const EXPORTS: Record<string, ExportDef> = {
     sql: `SELECT c.*,
       (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND s."paymentType"='credit') AS credit,
       (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE r."customerId"=c."id" AND ${receiptDebtSql('r."sourceName"')}) AS paid
-      FROM "Customer" c WHERE COALESCE(c."deletedAt",'')='' ORDER BY c."code"`,
+      FROM "Customer" c WHERE COALESCE(c."deletedAt",'')='' AND COALESCE(c."isWalkIn",0)=0 ORDER BY c."code"`,
     headers: ['کد مشتری', 'نام مشتری/شرکت', 'شخص رابط', 'شماره تماس', 'پلیت موتر', 'باقی مانده بدهی', 'توضیحات'],
     numeric: [5],
     map: (r) => [r.code, r.name, r.contactPerson, r.phone, r.truckPlate,
@@ -449,7 +449,7 @@ export class ImportController {
     /* تکراری‌ها را گزارش کن (هم داخل فایل، هم با دیتابیس) */
     const dupes: string[] = [];
     if (type === 'customers') {
-      const existing: any[] = await db().$queryRawUnsafe(`SELECT "name" FROM "Customer" WHERE COALESCE("deletedAt",'')=''`);
+      const existing: any[] = await db().$queryRawUnsafe(`SELECT "name" FROM "Customer" WHERE COALESCE("deletedAt",'')='' AND COALESCE("isWalkIn",0)=0`);
       const names = new Set(existing.map((e) => String(e.name).trim()));
       const seen = new Set<string>();
       for (const p of prepared) {
@@ -495,7 +495,7 @@ export class ImportController {
     let inserted = 0;
     const skipped: string[] = [];
     if (type === 'customers') {
-      const existing: any[] = await db().$queryRawUnsafe(`SELECT "name","code" FROM "Customer"`);
+      const existing: any[] = await db().$queryRawUnsafe(`SELECT "name","code" FROM "Customer" WHERE COALESCE("isWalkIn",0)=0`);
       const names = new Set(existing.map((e) => String(e.name).trim()));
       let nextNum = Math.max(0, ...existing.map((e) => Number(String(e.code).replace(/\D/g, '')) || 0)) + 1;
       for (const p of unique) {

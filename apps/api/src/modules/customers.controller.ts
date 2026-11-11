@@ -1,10 +1,13 @@
-import { Body, Controller, Get, Post, Put, Delete, Param, Query, UseGuards, HttpException } from '@nestjs/common';
+import { Body, Controller, Req, Get, Post, Put, Delete, Param, Query, UseGuards, HttpException } from '@nestjs/common';
 import { db } from '../db';
 import { ensureSchemaAsync } from '../schema';
-import { AuthGuard, ManagerOnly } from '../common/auth';
+import { AuthGuard, ManagerOnly, userOf } from '../common/auth';
 import { logActivity } from '../common/activity';
 import { softDelete } from '../common/soft-delete';
-import { allocationForSource, canonicalReceiptSource, receiptDebtSql, reducesCustomerDebt } from '../common/domain';
+import {
+  allocationForSource, canonicalReceiptSource, receiptDebtSql, reducesCustomerDebt,
+  realCustomerSql, isWalkInCustomer,
+} from '../common/domain';
 import { idParam } from '../common/params';
 
 /**
@@ -33,12 +36,21 @@ export class CustomersController {
    * صد کیلوبایت بود و باز شدن فورم کند می‌شد.
    */
   @Get()
-  async list(@Query('q') q?: string, @Query('light') light?: string) {
+  async list(@Query('q') q?: string, @Query('light') light?: string, @Query('walkIn') walkIn?: string) {
     await ensureSchemaAsync();
     const args: any[] = [];
     /* حذف‌نرم: مشتری حذف‌شده در فهرست نیاید (پرانتز لازم است، وگرنه OR
        بقیه‌ی شرط‌ها را بی‌اثر می‌کند — باگ کلاسیک SQL). */
-    let where = `WHERE COALESCE(c."deletedAt",'')=''`;
+    /*
+     * «مشتری گذری» در فهرست مشتریان نمایش داده نمی‌شود — نه به‌خاطر پنهان‌کاری،
+     * بلکه چون حساب واقعی نیست و کاربر نباید آن را با مشتری واقعی اشتباه
+     * بگیرد. بل‌های آن در فهرست فروشات و در گزارش‌ها کامل دیده می‌شوند.
+     * با `walkIn=1` می‌توان فقط همان را دید (برای مرور فروش گذری).
+     */
+    const walkInOnly = walkIn === '1' || walkIn === 'true';
+    let where = walkInOnly
+      ? `WHERE COALESCE(c."deletedAt",'')='' AND COALESCE(c."isWalkIn",0)=1`
+      : `WHERE COALESCE(c."deletedAt",'')='' AND ${realCustomerSql('c')}`;
     if (q) {
       where += ` AND (c."name" LIKE ? OR c."code" LIKE ? OR c."phone" LIKE ? OR c."contactPerson" LIKE ?)`;
       args.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
@@ -128,7 +140,10 @@ export class CustomersController {
       return { ...r, balance: bal };
     });
     const totals = out.reduce((a, r) => ({ debit: a.debit + r.debit, credit: a.credit + r.credit }), { debit: 0, credit: 0 });
-    return { customer: c[0], opening, rows: out, totals, closing: bal };
+    return {
+      customer: c[0], opening, rows: out, totals, closing: bal,
+      walkIn: isWalkInCustomer(c[0]),
+    };
   }
 
   @Post()
@@ -138,6 +153,8 @@ export class CustomersController {
     const rows: any[] = await db().$queryRawUnsafe(`SELECT "code" FROM "Customer"`);
     const nums = rows.map((r) => Number(String(r.code).replace(/\D/g, '')) || 0);
     const code = String(body.code || '').trim() || String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, '0');
+    /* کد ۰۰۰ مالِ «مشتری گذری» است — دو حساب نباید همان کد را بگیرند */
+    if (code === '000') throw new HttpException('کد «۰۰۰» برای «مشتری گذری» رزرو است؛ کد دیگری بدهید.', 400);
     try {
       await db().$executeRawUnsafe(
         `INSERT INTO "Customer" ("code","name","contactPerson","phone","truckPlate","openingBalance","note") VALUES (?,?,?,?,?,?,?)`,
@@ -156,6 +173,10 @@ export class CustomersController {
     const cid = idParam(id, 'شناسه‌ی مشتری');
     await assertLive('Customer', cid, 'مشتری');
     await ensureSchemaAsync();
+    const row: any[] = await db().$queryRawUnsafe(`SELECT "isWalkIn" FROM "Customer" WHERE "id"=?`, cid);
+    if (Number(row?.[0]?.isWalkIn) === 1) {
+      throw new HttpException('«مشتری گذری» یک ردیف سیستمی است و ویرایش نمی‌شود.', 400);
+    }
     if (!String(body?.name ?? '').trim()) throw new HttpException('نام مشتری لازم است.', 400);
     try {
       await db().$executeRawUnsafe(
@@ -172,12 +193,16 @@ export class CustomersController {
 
   @Delete(':id')
   @ManagerOnly()
-  async remove(@Param('id') id: string) {
+  async remove(@Req() req: any, @Param('id') id: string) {
     /*
      * باگ: حذف مشتری به‌خاطر سندهای «حذف‌نرم‌شده» هم رد می‌شد، در حالی که
      * آن سندها از دید کاربر وجود ندارند و از سطل بازیافت برمی‌گردند.
      */
     const cid = idParam(id, 'شناسه‌ی مشتری');
+    const guard: any[] = await db().$queryRawUnsafe(`SELECT "isWalkIn" FROM "Customer" WHERE "id"=?`, cid);
+    if (Number(guard?.[0]?.isWalkIn) === 1) {
+      throw new HttpException('«مشتری گذری» حذف‌شدنی نیست — ستون فروشِ بدون حساب است.', 400);
+    }
     const s: any[] = await db().$queryRawUnsafe(
       `SELECT COUNT(*) as c FROM "Sale" WHERE "customerId"=? AND COALESCE("deletedAt",'')=''`, cid);
     const r: any[] = await db().$queryRawUnsafe(
@@ -190,7 +215,7 @@ export class CustomersController {
      * قابل بازیابی بدون آسیب». ردیف می‌ماند، فقط از همه‌ی فهرست‌ها و
      * گزارش‌ها پنهان می‌شود و از «سطل بازیافت» برمی‌گردد.
      */
-    const del = await softDelete("Customer", cid);
+    const del = await softDelete("Customer", cid, { username: userOf(req) });
     if (!del.ok) throw new HttpException('ردیف پیدا نشد.', 404);
     /*
      * باگ: این ثبت سابقه **بعد از return** بود و هرگز اجرا نمی‌شد؛ یعنی
