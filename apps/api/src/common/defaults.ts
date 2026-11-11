@@ -123,3 +123,16 @@ export async function ensureDefaultLookups(): Promise<void> {
 
 /** نام مواد پیش‌فرض — برای بررسی سریع در تست/UI */
 export const DEFAULT_MATERIALS = MATERIALS;
+
+/**
+ * نام ردیف‌های پیش‌فرض هر نوع — **یک منبع** برای همه‌ی جاهایی که باید
+ * بدانند «این ردیف پیش‌فرض است یا ساخته‌ی کاربر» (مثلاً فعال‌سازی دوباره).
+ * اگر روزی ردیفی به پیش‌فرض‌ها اضافه شد، همین‌جا کافی است.
+ */
+export const DEFAULT_LOOKUP_NAMES: Record<string, string[]> = {
+  material: MATERIALS.map((r) => String(r[0])),
+  expense_category: EXPENSE_CATEGORIES.map((r) => String(r[0])),
+  payer: PAYERS.map((r) => String(r[0])),
+  receipt_source: RECEIPT_SOURCES.map((r) => String(r[0])),
+  contractor: CONTRACTORS.map((r) => String(r[0])),
+};

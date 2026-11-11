@@ -75,8 +75,15 @@ async function main() {
     console.log('\n— مشخصات شرکت و فهرست‌ها —');
     r = await api('PUT', '/company', { name: 'فردای روشن', activityType: 'تولید مواد ساختمانی', fiscalYear: '۱۴۰۵' });
     check('ذخیره مشخصات شرکت', r.status === 200 && r.body.name === 'فردای روشن');
-    r = await api('POST', '/lookups', { type: 'material', name: 'ماسه اول', extra: 'متر مکعب' });
-    check('افزودن قلم مواد', r.status === 201 || r.status === 200);
+    /*
+     * نام قلم باید یکتا باشد. از دور ۳۱ فهرست‌های پیش‌فرض روی نصب تازه خودکار
+     * ساخته می‌شوند و «ماسه اول» جزو پیش‌فرض‌ها است — پس تست از نام اختصاصی
+     * استفاده می‌کند (وگرنه ۴۰۹ می‌گیرد، نه به‌خاطر باگ بلکه به‌خاطر تکرار).
+     */
+    r = await api('POST', '/lookups', { type: 'material', name: 'قلم آزمون ۳۱', extra: 'متر مکعب' });
+    check('افزودن قلم مواد', r.status === 201 || r.status === 200, `${r.status} ${JSON.stringify(r.body)}`);
+    r = await api('POST', '/lookups', { type: 'material', name: 'قلم آزمون ۳۱', extra: '' });
+    check('قلم تکراری رد می‌شود (۴۰۹)', r.status === 409, String(r.status));
     r = await api('GET', '/lookups');
     const material = r.body.items.material[0];
     check('قلم در کشو دیده می‌شود', !!material);

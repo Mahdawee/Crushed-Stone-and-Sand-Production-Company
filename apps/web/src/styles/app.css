@@ -371,6 +371,14 @@ html[data-theme='dark'] .nav-link.active { color: #7ee7d8; }
   outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 .input[readonly] { background: var(--surface-2); color: var(--text-2); }
+/*
+ * «مقدار ناموجود در فهرست» — مثلاً پرداخت‌کننده‌ای که بعداً حذف شده.
+ * زردِ هشدار، نه قرمز: سند سالم است، فقط آن گزینه دیگر در فهرست نیست.
+ */
+select.input-warn {
+  border-color: var(--warn, #b26b00);
+  background: color-mix(in srgb, var(--warn, #b26b00) 8%, var(--surface));
+}
 .field textarea { min-height: 74px; resize: vertical; }
 .input-num { text-align: left; font-variant-numeric: tabular-nums; direction: ltr; }
 .field .computed {

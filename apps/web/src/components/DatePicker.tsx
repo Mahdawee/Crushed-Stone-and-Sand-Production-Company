@@ -242,7 +242,19 @@ export function MonthPicker({
 }) {
   const [y, m] = value.split('-').map(Number);
   const now = toCalendar(todayISOValue(), calendar);
-  const years = Array.from({ length: yearsBack + 2 }, (_, i) => now.jy + 1 - i);
+  /*
+   * ── باگ (شکار باگ دور ۳۱): سال‌های قدیمی در فهرست نبود ────────────────
+   * فهرست سال فقط از «امسال + ۱» تا `now.jy - yearsBack` بود (مثلاً ۱۴۰۱).
+   * دو نتیجه:
+   *   • روی سالِ قدیمی نمی‌شد رفت — حضور و غیاب یا معاش دو سال پیش از
+   *     داخل برنامه دسترس‌ناپذیر بود؛
+   *   • اگر سال انتخاب‌شده بیرون از فهرست بود، مرورگر اولی را نشان می‌داد
+   *     ولی مقدار واقعی همان سالِ قدیمی می‌ماند ⇒ فهرست ماه/سال با داده
+   *     نمی‌خواند.
+   * حالا بازه از سالِ انتخاب‌شده (اگر قدیمی‌تر است) تا امسال+۱ است.
+   */
+  const minYear = Math.min(now.jy - yearsBack, Number.isFinite(y) && y ? y : now.jy);
+  const years = Array.from({ length: now.jy + 1 - minYear + 1 }, (_, i) => now.jy + 1 - i);
   return (
     <div className="row" style={{ gap: 6 }}>
       <select

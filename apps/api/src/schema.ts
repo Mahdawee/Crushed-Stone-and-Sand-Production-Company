@@ -12,6 +12,7 @@ import { db, databaseFile, dataDir, BACKUP_DIR, resetDb } from './db';
 import { RECEIPT_SOURCE_ALIASES, RECEIPT_SOURCES, WALK_IN_CODE, WALK_IN_NAME } from './common/domain';
 import { SHAPE_VERSION, appVersion, logUpgrade, isNewerDatabase } from './common/upgrade';
 import { makeBackup, pruneBackups, restoreFromBackup } from './common/backup';
+import { ensureDefaultLookups, hasDefaultLookups } from './common/defaults';
 import { basename } from 'node:path';
 
 type Column = { name: string; ddl: string };
@@ -650,6 +651,30 @@ export async function ensureSchemaAsync(force = false) {
     await ensureWalkInCustomer();
   } catch (e: any) {
     console.warn('اطمینان از مشتری گذری انجام نشد:', e?.message || e);
+  }
+
+  /*
+   * ── فهرست‌های پیش‌فرض روی نصب تازه (باگ واقعی، شکار باگ دور ۳۱) ───────
+   *
+   * `ensureDefaultLookups()` فقط در سه جا صدا زده می‌شد: «صفر کردن»،
+   * «داده‌ی نمونه» و اسکریپت seed. یعنی روی **نصب تازه** (و روی هر نصبی که
+   * کاربر «صفر کردن» را با فهرست‌های خالی رد کرده) فهرست مواد، انواع مصرف،
+   * پرداخت‌کنندگان و باربری‌ها **خالی** بود — فورم فروش/مصرف/رسید با
+   * کشویی‌های خالی باز می‌شد و کاربر باید همه‌ی اقلام را دستی می‌ساخت.
+   * مشکل فقط این نبود: `POST /lookups/restore-defaults` هم وجود نداشت؛
+   * یعنی راه برگشتی از داخل برنامه نبود.
+   *
+   * حالا در بالا آمدن برنامه، فقط اگر فهرست `material` خالی باشد، پیش‌فرض‌ها
+   * ساخته می‌شوند. idempotent است: ردیف‌های موجود (و غیرفعال‌شده توسط کاربر)
+   * دست نمی‌خورند.
+   */
+  try {
+    if (!(await hasDefaultLookups())) {
+      await ensureDefaultLookups();
+      console.log('FARDAY_DEFAULTS_SEEDED فهرست‌های پیش‌فرض ساخته شد.');
+    }
+  } catch (e: any) {
+    console.warn('ساخت فهرست‌های پیش‌فرض انجام نشد:', e?.message || e);
   }
 
   schemaReadyFor = file;

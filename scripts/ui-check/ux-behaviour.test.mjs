@@ -144,5 +144,43 @@ for (const tool of ['license', 'reset-ui']) {
     /req\.pause\(\)/.test(code) && !/req\.destroy\(\)/.test(code));
 }
 
+/* ================================================================ */
+console.log('\n— کشویی: مقدار ناموجود بی‌صدا پاک نمی‌شود —');
+
+/*
+ * باگ دور ۳۱: اگر مقدار ذخیره‌شده در فهرست گزینه‌ها نبود (قلم حذف/تغییر نام
+ * شده)، مرورگر «انتخاب…» را نشان می‌داد و ذخیره‌ی دوباره‌ی فورم همان مقدار
+ * را پاک می‌کرد. حالا خودِ مقدار به‌عنوان گزینه‌ی «ناموجود در فهرست» می‌آید.
+ */
+const uiSrc = read('apps/web/src/components/ui.tsx');
+ok('Select مقدارِ ناموجود را تشخیص می‌دهد', /const ghost = current !== '' && !known/.test(uiSrc));
+ok('Select گزینه‌ی «ناموجود در فهرست» می‌سازد', /ناموجود در فهرست/.test(uiSrc));
+ok('Select مقدارِ ناموجود را با نشان هشدار رندر می‌کند', /input-warn/.test(uiSrc));
+ok('Select مقدار را رشته‌ای می‌کند (هم‌ترازی عدد/متن)', /String\(o\.value\) === current/.test(uiSrc));
+ok('CSS برای همین حالت تعریف شده', /\.input-warn|select\.input-warn/.test(read('apps/web/src/styles/app.css')));
+
+console.log('\n— انتخاب ماه/سال: داده‌های قدیمی دسترس‌پذیرند —');
+
+/*
+ * باگ دور ۳۱: فهرست سال با `yearsBack` قطع می‌شد (مثلاً ۱۴۰۱) و سالِ
+ * قدیمی‌تر از آن قابل انتخاب نبود؛ حضور و غیاب/معاش سال‌های قبل از داخل
+ * برنامه باز نمی‌شد.
+ */
+const dp = read('apps/web/src/components/DatePicker.tsx');
+ok('بازه‌ی سال به سالِ انتخاب‌شده گسترش می‌یابد', /const minYear = Math\.min\(now\.jy - yearsBack/.test(dp));
+ok('سال‌ها از «امسال+۱» تا کمینه ساخته می‌شوند', /now\.jy \+ 1 - minYear/.test(dp));
+
+console.log('\n— نصب تازه: فهرست‌های پیش‌فرض —');
+
+const schema = read('apps/api/src/schema.ts');
+ok('بالا آمدن برنامه فهرست‌های پیش‌فرض را می‌سازد', /hasDefaultLookups\(\)/.test(schema) && /ensureDefaultLookups\(\)/.test(schema));
+const lookups = read('apps/api/src/modules/lookups.controller.ts');
+ok('مسیر بازگرداندن پیش‌فرض‌ها هست', /restore-defaults/.test(lookups));
+ok('مسیر فعال‌سازی دوباره‌ی غیرفعال‌ها هست', /restore-inactive/.test(lookups));
+ok('فقط پیش‌فرض‌ها فعال می‌شوند (نه ردیف کاربر)', /DEFAULT_LOOKUP_NAMES/.test(lookups));
+const lookupsPage = read('apps/web/src/pages/Lookups.tsx');
+ok('صفحه‌ی فهرست‌ها دکمه‌ی بازگرداندن دارد', /بازگرداندن پیش‌فرض‌ها/.test(lookupsPage));
+ok('صفحه‌ی فهرست‌ها دکمه‌ی فعال‌سازی غیرفعال‌ها دارد', /فعال‌کردن غیرفعال‌ها/.test(lookupsPage));
+
 console.log(`\n${fail === 0 ? '✅' : '⛔'} ${pass} موفق، ${fail} ناکام\n`);
 process.exit(fail === 0 ? 0 : 1);

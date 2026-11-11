@@ -340,11 +340,30 @@ export function Select({ value, onChange, options, placeholder, disabled }: {
   value: any; onChange?: (v: any) => void;
   options: { value: any; label: string }[]; placeholder?: string; disabled?: boolean;
 }) {
+  /*
+   * ── باگ (شکار باگ دور ۳۱): «مقدارِ ناموجود» بی‌صدا گم می‌شد ──────────────
+   *
+   * اگر مقدار ذخیره‌شده در فهرست گزینه‌ها نبود — مثلاً پرداخت‌کننده‌ی یک سند
+   * قدیمی که از فهرست کشویی حذف/غیرفعال شده، یا «نوع مصرف»ی که نامش عوض
+   * شده — مرورگر اولین گزینه (متنِ خالی «انتخاب…») را نشان می‌داد.
+   *
+   * نتیجه: سند در جدول واقعاً همان مقدار قدیمی را داشت، ولی فورم می‌گفت
+   * «چیزی انتخاب نشده»؛ و اگر کاربر چیز دیگری را در همان فورم عوض می‌کرد و
+   * ذخیره می‌زد، مقدار قدیمی **صفر/خالی** می‌شد — بی‌هیچ پیامی.
+   *
+   * حالا خودِ مقدار به‌عنوان گزینه‌ی «(ناموجود در فهرست)» نشان داده می‌شود:
+   * کاربر می‌بیند چه چیزی ذخیره است، و ذخیره‌ی دوباره آن را پاک نمی‌کند.
+   */
+  const current = value === null || value === undefined ? '' : String(value);
+  const known = options.some((o) => String(o.value) === current);
+  const ghost = current !== '' && !known;
   return (
-    <select className="input" value={value ?? ''} disabled={disabled}
+    <select className={`input${ghost ? ' input-warn' : ''}`} value={current} disabled={disabled}
+      title={ghost ? 'این مقدار در فهرست فعلی نیست (حذف یا تغییر نام داده شده) — با ذخیره‌ی فورم پاک نمی‌شود.' : undefined}
       onChange={(e) => onChange?.(e.target.value)}>
       {placeholder ? <option value="">{placeholder}</option> : null}
-      {options.map((o) => <option key={String(o.value)} value={o.value}>{o.label}</option>)}
+      {ghost ? <option value={current}>{current} (ناموجود در فهرست)</option> : null}
+      {options.map((o) => <option key={String(o.value)} value={String(o.value)}>{o.label}</option>)}
     </select>
   );
 }

@@ -20,6 +20,24 @@ export default function LookupsPage() {
   const [busy, setBusy] = useState(false);
 
   const load = async () => { setD(await api.get(`/lookups/manage?type=${type}`)); setDirty({}); };
+  const restoreInactive = async () => {
+    setBusy(true);
+    try {
+      const r: any = await api.post('/lookups/restore-inactive', { type });
+      toast.success('فعال‌سازی دوباره', r?.message || 'انجام شد');
+      await load();
+    } catch (e: any) { toast.error('فعال نشد', e.message); }
+    finally { setBusy(false); }
+  };
+  const restoreDefaults = async () => {
+    setBusy(true);
+    try {
+      const r: any = await api.post('/lookups/restore-defaults', {});
+      toast.success('فهرست‌های پیش‌فرض', r?.message || 'انجام شد');
+      await load();
+    } catch (e: any) { toast.error('بازگردانی نشد', e.message); }
+    finally { setBusy(false); }
+  };
   useEffect(() => { setD(null); load().catch((e) => toast.error('بارگذاری نشد', e.message)); }, [type]);
 
   const rows = useMemo(() => {
@@ -130,13 +148,34 @@ export default function LookupsPage() {
               <button className="btn primary" onClick={saveAll} disabled={busy}>{busy ? 'ذخیره…' : 'ذخیره تغییرات'}</button>
             </>
           ) : (
-            <SummaryBar>
-              <K label="ردیف" value={counts.all} />
-              <span className="sep" />
-              <K label="فعال" value={counts.active} tone="ok" />
-              <span className="sep" />
-              <K label="استفاده‌شده" value={counts.used} />
-            </SummaryBar>
+            <>
+              <SummaryBar>
+                <K label="ردیف" value={counts.all} />
+                <span className="sep" />
+                <K label="فعال" value={counts.active} tone="ok" />
+                <span className="sep" />
+                <K label="استفاده‌شده" value={counts.used} />
+              </SummaryBar>
+              {/*
+                * راه برگشت: اگر کاربر همه‌ی ردیف‌های یک فهرست را حذف/غیرفعال
+                * کرد (یا روی نصب تازه فهرست خالی بود)، از این‌جا پیش‌فرض‌ها
+                * برمی‌گردند — بدون از دست دادن ردیف‌های موجود.
+                */}
+              {isManager ? (
+                <>
+                  <button className="btn sm" onClick={restoreDefaults} disabled={busy}
+                    title="ردیف‌های پیش‌فرضی که نیستند دوباره ساخته می‌شوند (ردیف‌های شما دست نمی‌خورند)">
+                    بازگرداندن پیش‌فرض‌ها
+                  </button>
+                  {counts.inactive ? (
+                    <button className="btn sm" onClick={restoreInactive} disabled={busy}
+                      title="قلم‌های پیش‌فرضی که «غیر فعال» شده‌اند دوباره در فهرست می‌آیند (ردیف‌های خودتان دست نمی‌خورند)">
+                      فعال‌کردن غیرفعال‌ها
+                    </button>
+                  ) : null}
+                </>
+              ) : null}
+            </>
           )
         }>
           <SearchBox value={q} onChange={setQ} placeholder="جستجو در نام‌ها…" width={240} />

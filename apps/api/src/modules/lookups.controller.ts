@@ -4,6 +4,7 @@ import { idParam } from '../common/params';
 import { ensureSchemaAsync } from '../schema';
 import { AuthGuard, ManagerOnly } from '../common/auth';
 import { logActivity } from '../common/activity';
+import { DEFAULT_LOOKUP_NAMES, ensureDefaultLookups } from '../common/defaults';
 
 export const LOOKUP_TYPES: Record<string, string> = {
   material: 'اقلام و مواد',
@@ -89,6 +90,47 @@ export class LookupsController {
     return { type, title: LOOKUP_TYPES[type], rows: out };
   }
 
+  /**
+   * بازگرداندن همه‌ی ردیف‌های **غیرفعالِ** پیش‌فرض (فعال‌کردن دوباره) — یک باره.
+   *
+   * چرا لازم است: کاربری که اشتباهی «غیر فعال» می‌زند ممکن است ماه‌ها بعد
+   * بفهمد یک قلم از فهرست نیست (مثلاً «پرداخت‌کننده»ی اشتباه). پیدا کردن
+   * همان ردیف در میان ده‌ها ردیف غیرفعال کار سختی است. این مسیر **فقط**
+   * پیش‌فرض‌ها را فعال می‌کند؛ ردیف‌های ساخته‌ی خودِ کاربر دست نمی‌خورند و
+   * ردیفی که عمداً غیرفعال نگه داشته شده هم («قفل‌شده») از فهرست فعال‌ها
+   * حذف نخواهد شد — چون فقط همان لحظه برمی‌گردد و به «غیرفعال» تبدیل نمی‌شود.
+   */
+  @Post('restore-inactive')
+  @ManagerOnly()
+  async restoreInactive(@Body() body: { type?: string }) {
+    await ensureSchemaAsync();
+    const types = body?.type ? [String(body.type)] : Object.keys(LOOKUP_TYPES);
+    for (const t of types) if (!LOOKUP_TYPES[t]) throw new HttpException('نوع فهرست ناشناخته است.', 400);
+    const defaults: Record<string, string[]> = {};
+    for (const t of types) defaults[t] = DEFAULT_LOOKUP_NAMES[t] || [];
+    let activated = 0;
+    for (const [type, names] of Object.entries(defaults)) {
+      const rows: any[] = await db().$queryRawUnsafe(
+        `SELECT "id","name" FROM "LookupItem" WHERE "type"=? AND "active"=0`, type,
+      );
+      for (const r of rows) {
+        if (!names.includes(String(r.name))) continue;
+        await db().$executeRawUnsafe(`UPDATE "LookupItem" SET "active"=1 WHERE "id"=?`, r.id);
+        activated++;
+      }
+    }
+    if (activated) {
+      await logActivity({ action: 'update', entity: 'LookupItem', detail: `فعال‌سازی دوباره‌ی ${activated} ردیف پیش‌فرض` });
+    }
+    return {
+      ok: true,
+      activated,
+      message: activated > 0
+        ? `${activated.toLocaleString('fa-IR')} قلم پیش‌فرض دوباره فعال شد.`
+        : 'هیچ قلم پیش‌فرضِ غیرفعالی پیدا نشد.',
+    };
+  }
+
   @Post()
   @ManagerOnly()
   async create(@Body() body: any) {
@@ -119,6 +161,34 @@ export class LookupsController {
     );
     await logActivity({ action: 'create', entity: 'LookupItem', detail: `${body.type}: ${name}` });
     return { ok: true };
+  }
+
+  /**
+   * بازگرداندن فهرست‌های پیش‌فرض — «اگر فهرست خالی شد یا ردیفی را اشتباهی
+   * حذف کردم، دکمه‌ای برای برگرداندن باشد».
+   *
+   * چرا لازم شد: پیش‌فرض‌ها فقط هنگام نصب/صفر کردن ساخته می‌شدند. اگر کاربر
+   * همه‌ی اقلام یک فهرست را حذف می‌کرد (یا نصب تازه با فهرست خالی بالا
+   * می‌آمد)، هیچ راهی از داخل برنامه نبود. این مسیر idempotent است: ردیف‌های
+   * موجود دست نمی‌خورند و ردیف غیرفعال‌شده هم **دوباره فعال نمی‌شود**
+   * (قاعده‌ی «حذف نرم»).
+   */
+  @Post('restore-defaults')
+  @ManagerOnly()
+  async restoreDefaults() {
+    await ensureSchemaAsync();
+    const before: any[] = await db().$queryRawUnsafe(`SELECT COUNT(*) c FROM "LookupItem"`);
+    await ensureDefaultLookups();
+    const after: any[] = await db().$queryRawUnsafe(`SELECT COUNT(*) c FROM "LookupItem"`);
+    const added = Number(after?.[0]?.c ?? 0) - Number(before?.[0]?.c ?? 0);
+    await logActivity({ action: 'update', entity: 'LookupItem', detail: `بازگرداندن فهرست‌های پیش‌فرض (${added} ردیف)` });
+    return {
+      ok: true,
+      added,
+      message: added > 0
+        ? `${added.toLocaleString('fa-IR')} ردیف پیش‌فرض بازگردانده شد.`
+        : 'همه‌ی ردیف‌های پیش‌فرض از قبل موجود بودند — چیزی تغییر نکرد.',
+    };
   }
 
   @Put(':id')
