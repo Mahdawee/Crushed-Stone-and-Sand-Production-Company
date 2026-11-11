@@ -32,6 +32,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findMsvc, msvcEnv as msvcEnvOfMsvc, isFile as libIsFile } from './lib/msvc.mjs';
+import { webview2Status, prepareWebView2 } from './lib/webview2.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const isWin = process.platform === 'win32';
@@ -578,6 +579,38 @@ if (skipApiPack) {
     console.log(`     ${C.bold(`npm run desktop:build:offline -- "D:\\node-v${process.versions.node}-win-x64.zip"`)}`);
     console.log(`   ${C.dim('لینک دانلود همان ZIP: https://nodejs.org/dist/v' + process.versions.node + `/node-v${process.versions.node}-win-x64.zip`)}\n`);
     process.exit(code);
+  }
+}
+
+/*
+ * پیش‌نیاز ماژول WebView2 (مستقل از انترنت سازنده).
+ *
+ * bundler در حالت offlineInstaller فایل نصب‌کننده‌ی WebView2 را از
+ * Microsoft (go.microsoft[.]com) می‌گیرد و **بعد** داخل نصب‌کننده می‌گذارد. اگر فایل از قبل
+ * در کش باشد (`if !file_path.exists()` در tauri-bundler)، دانلود انجام نمی‌شود.
+ * این بلوک همان حالت را تضمین می‌کند و اگر فایل نبود، به کاربر می‌گوید یک بار
+ * `npm run webview2:prepare` بزند — به‌جای اینکه وسط ساخت غافلگیر شود.
+ */
+{
+  const wv = webview2Status();
+  if (wv.readyOffline) {
+    console.log(`  ${C.ok('✔')} WebView2: نصب‌کننده‌ی آفلاین از قبل در کش هست — هیچ دانلودی لازم نیست.`);
+  } else if (wantOffline) {
+    console.log(`\n${C.bad('⛔ حالت آفلاین: نصب‌کننده‌ی آفلاین WebView2 در کش نیست.')}`);
+    console.log(`   بدون آن، bundler خودش سعی می‌کند از سایت مایکروسافت دانلود کند.`);
+    console.log(`   یک بار با انترنت:  ${C.bold('npm run webview2:prepare')}`);
+    console.log(`   ${C.dim(`یا فایل نصب‌کننده را در ${path.join(wv.toolsDir, 'x64', '<GUID>')} بگذارید.`)}\n`);
+    process.exit(1);
+  } else if (isWin) {
+    /* ساخت معمولی: سعی می‌کنیم همان‌جا آماده کنیم (اگر انترنت باشد) */
+    console.log(`  ${C.warn('⚠')} نصب‌کننده‌ی آفلاین WebView2 در کش نیست — تلاش برای گرفتن یک‌باره …`);
+    try {
+      await prepareWebView2({ log: (m) => console.log(`    ${C.dim(m)}`) });
+      console.log(`  ${C.ok('✔')} WebView2 آماده شد — ساخت بعدی کاملاً آفلاین است.`);
+    } catch (e) {
+      console.log(`  ${C.warn('⚠')} آماده‌سازی ناموفق: ${e.message}`);
+      console.log(`    ${C.dim('ساخت ادامه می‌یابد، ولی ممکن است bundler خودش دانلود کند.')}`);
+    }
   }
 }
 

@@ -114,8 +114,30 @@ ok('پلاگین‌های استفاده‌شده اعلام شده‌اند', /
 
 console.log('\n— نصب روی هر لپ‌تاپی (بدون نصب چیز اضافه / بدون انترنت) —');
 const conf = JSON.parse(fs.readFileSync(path.join(root, 'src-tauri/tauri.conf.json'), 'utf8'));
-ok('نصب‌کننده WebView2 را همراه دارد (embedBootstrapper) — نه دانلود از انترنت',
-  conf.bundle?.windows?.webviewInstallMode?.type === 'embedBootstrapper');
+/*
+ * باگ کاربر: در خروجی ساخت این خط می‌آمد:
+ *   Downloading https://go.microsoft.com/fwlink/p/?LinkId=2124703
+ * یعنی bundler در زمان ساخت بوت‌استرپ را از انترنت می‌گرفت — و همان
+ * بوت‌استرپ موقع نصب هم باید از انترنت WebView2 را می‌آورد.
+ * `offlineInstaller` هر دو وابستگی را حذف می‌کند (نصب بدون انترنت).
+ */
+ok('WebView2 کامل و آفلاین همراه نصب‌کننده است (offlineInstaller) — نه بوت‌استرپ اینترنتی',
+  conf.bundle?.windows?.webviewInstallMode?.type === 'offlineInstaller',
+  String(conf.bundle?.windows?.webviewInstallMode?.type));
+ok('نصب WebView2 خاموش و بی‌سؤال انجام می‌شود (silent)', conf.bundle?.windows?.webviewInstallMode?.silent === true);
+ok('ابزار آماده‌سازی WebView2 هست (فایل‌ها را در کش می‌گذارد تا ساخت دانلود نکند)',
+  fs.existsSync(path.join(root, 'scripts/lib/webview2.mjs')));
+const wvMod = fs.readFileSync(path.join(root, 'scripts/lib/webview2.mjs'), 'utf8');
+ok('اسکریپت WebView2 همان مسیر کش bundler را هدف می‌گیرد',
+  /\/tauri/.test(wvMod) && /LOCALAPPDATA/.test(wvMod));
+ok('اسکریپت WebView2 هر دو فایل (بوت‌استرپ و نصب‌کننده‌ی آفلاین) را می‌گیرد',
+  /WEBVIEW2_BOOTSTRAPPER_URL/.test(wvMod) && /WEBVIEW2_OFFLINE_X64_URL/.test(wvMod));
+const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+ok('دستور webview2:prepare در package.json هست', Boolean(pkg.scripts?.['webview2:prepare']));
+ok('دستور webview2:status (بدون انترنت) در package.json هست', Boolean(pkg.scripts?.['webview2:status']));
+const buildDesktop = fs.readFileSync(path.join(root, 'scripts/build-desktop.mjs'), 'utf8');
+ok('ساخت آفلاین بدون فایل WebView2 با پیام روشن متوقف می‌شود (نه دانلود خاموش)',
+  /readyOffline/.test(buildDesktop) && /webview2:prepare/.test(buildDesktop));
 ok('نصب بدون دسترسی مدیر (currentUser)', conf.bundle?.windows?.nsis?.installMode === 'currentUser');
 ok('node.exe اجباری است (نصب‌کننده بدون نود ساخته نمی‌شود)',
   /--require-node/.test(fs.readFileSync(path.join(root, 'package.json'), 'utf8')));

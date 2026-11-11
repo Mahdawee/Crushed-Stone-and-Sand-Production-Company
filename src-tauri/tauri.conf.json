@@ -48,7 +48,7 @@
         }
       },
       "webviewInstallMode": {
-        "type": "embedBootstrapper",
+        "type": "offlineInstaller",
         "silent": true
       },
       "allowDowngrades": false

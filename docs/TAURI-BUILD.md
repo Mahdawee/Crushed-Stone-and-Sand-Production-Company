@@ -389,6 +389,18 @@ npm run desktop:build
 | `npm start` | برنامه را در یک آدرس (`127.0.0.1:4317`) اجرا می‌کند | استفاده روزمره/آزمایش |
 | `npm run dev` | حالت توسعه: API + Vite با hot reload روی 5173 | کار روی ظاهر/کد |
 | `npm run doctor` | چک می‌کند Node/Rust/MSVC/WebView2/Tauri آماده‌اند | وقتی ساخت خطا داد |
+| `npm run webview2:status` | چک می‌کند فایل‌های آفلاین WebView2 در کش هستند | قبل از `desktop:build --offline` |
+| `npm run webview2:prepare` | یک بار با انترنت: بوت‌استرپ و نصب‌کننده‌ی آفلاین WebView2 را در کش می‌گذارد | وقتی پیام «نصب‌کننده‌ی آفلاین WebView2 در کش نیست» آمد |
+
+### چرا `Downloading go.microsoft.com/fwlink/p/?LinkId=2124703` دیگر لازم نیست
+
+این خط خودِ tauri-bundler بود، نه اسکریپت‌های ما. در `tauri-bundler`
+تابع `download_webview2_bootstrapper` هر بار — اگر فایل نبود — بوت‌استرپ را
+از سایت مایکروسافت می‌گرفت. با `offlineInstaller` فایل بزرگ‌تر (نصب‌کننده‌ی
+کامل) گرفته می‌شود و bundler همان را **قبل از ساخت** لازم دارد؛ اگر در کش
+باشد (`<cache>/tauri/x64/<GUID>/…`) هیچ دانلودی انجام نمی‌شود.
+`npm run webview2:prepare` همان دو فایل را در همان مسیر می‌گذارد و
+`build-desktop.mjs` در حالت `--offline` بدون آن‌ها با پیام روشن متوقف می‌شود.
 | `npm run desktop:build` | نصب‌کننده ویندوز می‌سازد (خودش cargo را پیدا و PATH را اصلاح می‌کند) | برای توزیع به کمپیوتر شرکت |
 | `npm run desktop:prefetch` | یک بار با اینترنت، crateهای Rust را ذخیره می‌کند | پیش از رفتن به کمپیوتر آفلاین |
 | `npm run desktop:build --offline` | ساخت بدون اینترنت | وقتی crateها ذخیره شده‌اند |
