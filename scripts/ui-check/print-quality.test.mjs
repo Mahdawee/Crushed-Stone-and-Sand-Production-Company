@@ -81,14 +81,26 @@ check('پشتیبان اجباری در سرور هست', /backup:\s*true/.test(
 
 console.log('\n— ۶) اجراکننده‌ی ابزار (مرورگر بعد از سرور باز شود) —');
 {
-  const cmd = fs.readFileSync(path.join(root, 'tools', 'reset-ui', 'start.cmd'), 'utf8');
-  const sh = fs.readFileSync(path.join(root, 'tools', 'reset-ui', 'start.sh'), 'utf8');
-  check('start.cmd قبل از باز کردن مرورگر صبر می‌کند', /timeout \/t 2/.test(cmd));
-  check('start.cmd کوتیشن تودرتو ندارد',
-    !/cmd \/c "timeout[^"]*start ""/.test(cmd));
-  check('start.sh قبل از باز کردن مرورگر صبر می‌کند', /sleep 2\.5/.test(sh));
-  check('start.sh فقط یک بار مرورگر را باز می‌کند',
-    (sh.match(/xdg-open "http:\/\/127\.0\.0\.1/g) || []).length === 1);
+  for (const tool of ['reset-ui', 'license']) {
+    const cmd = fs.readFileSync(path.join(root, 'tools', tool, 'start.cmd'), 'utf8');
+    const sh = fs.readFileSync(path.join(root, 'tools', tool, 'start.sh'), 'utf8');
+    /*
+     * باگ (شکار باگ دور ۳۰): این تأخیر فقط در ابزار «صفر کردن» اضافه شده
+     * بود؛ `tools/license/start.cmd` هنوز مرورگر را **قبل** از بالا آمدن
+     * سرور باز می‌کرد (ERR_CONNECTION_REFUSED). حالا هر دو ابزار بررسی
+     * می‌شوند و اسکریپت‌های شل تا آماده شدن سرور صبر می‌کنند (نه تأخیر ثابت).
+     */
+    check(`${tool}/start.cmd قبل از باز کردن مرورگر صبر می‌کند`, /timeout \/t \d/.test(cmd));
+    check(`${tool}/start.cmd کوتیشن تودرتو ندارد`, !/cmd \/c "timeout[^"]*start ""/.test(cmd));
+    check(`${tool}/start.sh تا آماده شدن سرور صبر می‌کند (نه sleep ثابت)`,
+      /curl -sf -o \/dev\/null/.test(sh) && !/^\s*sleep \d(\.\d)?\s*$/.test(sh));
+    check(`${tool}/start.sh فقط یک بار مرورگر را باز می‌کند`,
+      (sh.match(/xdg-open "http:\/\/127\.0\.0\.1/g) || []).length === 1);
+    /* پورت اشغال: پیام فارسی، نه استک‌تریس EADDRINUSE */
+    const serverSrc = fs.readFileSync(path.join(root, 'tools', tool, 'server.mjs'), 'utf8');
+    check(`${tool}/server.mjs پورت اشغال را با پیام فارسی می‌گوید`,
+      /EADDRINUSE/.test(serverSrc) && /در حال استفاده است/.test(serverSrc));
+  }
 }
 
 console.log(`\n${failed === 0 ? '✔' : '✘'} ${passed} تست موفق، ${failed} ناموفق`);

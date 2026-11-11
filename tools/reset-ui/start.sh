@@ -32,10 +32,19 @@ echo "  برای بستن: Ctrl+C"
 echo
 
 # باز کردن مرورگر، اگر ابزاری برای این کار هست (خطا مهم نیست)
-#  باگ: با تأخیر ۱ ثانیه، روی کمپیوتر کند مرورگر قبل از بالا آمدن سرور باز
-#  می‌شد و صفحه‌ی «اتصال برقرار نشد» نشان می‌داد. ۲.۵ ثانیه امن است.
+#  باگ: با تأخیر ثابت، روی کمپیوتر کند مرورگر قبل از بالا آمدن سرور باز
+#  می‌شد و صفحه‌ی «اتصال برقرار نشد» نشان می‌داد. حالا تا آماده شدن سرور
+#  صبر می‌کند (حداکثر ۱۵ ثانیه) — همان قاعده‌ی ابزار لایسنس.
 (
-  sleep 2.5
+  for _ in $(seq 1 30); do
+    if command -v curl >/dev/null 2>&1; then
+      curl -sf -o /dev/null "http://127.0.0.1:$PORT/" && break
+    else
+      sleep 0.5
+      (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null && { exec 3<&-; break; }
+    fi
+    sleep 0.5
+  done
   if command -v xdg-open >/dev/null 2>&1; then xdg-open "http://127.0.0.1:$PORT/" >/dev/null 2>&1 || true
   elif command -v open >/dev/null 2>&1; then open "http://127.0.0.1:$PORT/" >/dev/null 2>&1 || true
   fi

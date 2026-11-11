@@ -77,19 +77,42 @@ const json = (res, code, obj) => {
   res.end(JSON.stringify(obj));
 };
 
+/*
+ * خواندن بدنه، با سقفِ حجم.
+ *
+ * ── باگ (شکار باگ دور ۳۰) ────────────────────────────────────────────────
+ * در نسخه‌ی قبلی بعد از رد کردن بدنه‌ی بزرگ فقط `req.destroy()` صدا زده
+ * می‌شد و پرامیس **هیچ‌وقت** settle نمی‌شد: پاسخ HTTP فرستاده نمی‌شد، اتصال
+ * نیمه‌باز می‌ماند و در بدترین حالت یک درخواست بزرگ، سرور را در حالت معلق
+ * نگه می‌داشت. حالا پرامیس رد می‌شود، خواندن متوقف می‌شود (نه کشتن
+ * سوکت) تا سرور بتواند پاسخ ۴۰۰ را بفرستد.
+ */
 const readBody = (req) => new Promise((resolve, reject) => {
   let size = 0;
+  let settled = false;
   const chunks = [];
+  const fail = (msg) => {
+    if (settled) return;
+    settled = true;
+    chunks.length = 0;
+    try { req.pause(); } catch { /* ignore */ }
+    reject(new Error(msg));
+  };
   req.on('data', (c) => {
+    if (settled) return;
     size += c.length;
-    if (size > 200_000) { reject(new Error('بدنه‌ی درخواست بیش از حد بزرگ است.')); req.destroy(); return; }
+    /* سقف ۲۰۰ کیلوبایت — بدنه‌های این ابزار چند صد بایت‌اند */
+    if (size > 200_000) { fail('بدنه‌ی درخواست بیش از حد بزرگ است.'); return; }
     chunks.push(c);
   });
   req.on('end', () => {
+    if (settled) return;
+    settled = true;
     try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); }
     catch { reject(new Error('JSON نامعتبر.')); }
   });
-  req.on('error', reject);
+  req.on('error', (e) => { if (!settled) { settled = true; reject(e); } });
+  req.on('aborted', () => { if (!settled) { settled = true; reject(new Error('درخواست نیمه‌کاره قطع شد.')); } });
 });
 
 function guardMutation(req) {
@@ -314,6 +337,25 @@ const server = http.createServer(async (req, res) => {
   } catch (e) {
     json(res, 400, { ok: false, message: e instanceof Error ? e.message : String(e) });
   }
+});
+
+/*
+ * ── باگ (شکار باگ دور ۳۰) ────────────────────────────────────────────────
+ * اگر پورت اشغال بود (ابزار از قبل باز است، یا برنامه‌ی دیگری آن را گرفته)،
+ * Node یک استک‌تریس انگلیسی `EADDRINUSE` می‌ریخت و پنجره‌ی کنسول بسته
+ * می‌شد — کاربر هیچ نمی‌فهمید چه شد. حالا پیام فارسی با راه‌حل.
+ */
+server.on('error', (e) => {
+  if (e && e.code === 'EADDRINUSE') {
+    console.error(`\n⛔ پورت ${PORT} در حال استفاده است.`);
+    console.error('   یعنی ابزار از قبل باز است (یکی از پنجره‌های قبلی) یا برنامه‌ی دیگری این پورت را گرفته.');
+    console.error(`   • اگر ابزار باز است، همان صفحه‌ی مرورگر را استفاده کنید: http://${HOST}:${PORT}`);
+    console.error('   • یا با یک پورت دیگر اجرا کنید:  FD_RESET_UI_PORT=' + (PORT + 1));
+    console.error('   برای بستن نسخه‌ی قبلی، پنجره‌ی کنسول آن را ببندید.\n');
+    process.exit(1);
+  }
+  console.error('\n⛔ سرور ابزار بالا نیامد:', e?.message || e, '\n');
+  process.exit(1);
 });
 
 server.listen(PORT, HOST, () => {

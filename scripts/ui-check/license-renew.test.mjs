@@ -95,6 +95,18 @@ const b64 = Buffer.from(JSON.stringify(reqObj),'utf8').toString('base64url');
 const sum = crypto.createHash('sha256').update(b64).digest('hex').slice(0,16);
 const reqText = ['-----BEGIN FARDAY RENEW REQUEST-----', b64, 'SUM:'+sum, '-----END FARDAY RENEW REQUEST-----'].join('\n');
 
+/*
+ * بررسی محافظِ CSRF روی `renew-parse` (شکار باگ دور ۳۰): این تنها مسیر POST
+ * بود که `guardMutation` نداشت و هر صفحه‌ای روی همین کمپیوتر می‌توانست
+ * درخواست بفرستد. حالا بدون توکن، ۴۰۰ می‌دهد.
+ */
+{
+  const bare = await fetch(BASE + '/api/renew-parse', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ request: reqText }),
+  });
+  check('renew-parse بدون توکن CSRF رد می‌شود', bare.status === 400, String(bare.status));
+}
+
 const parsed = await post('/api/renew-parse', { request: reqText });
 check('درخواست خوانده می‌شود', parsed.status === 200 && parsed.body.machineKey === MK, JSON.stringify(parsed.body).slice(0,200));
 check('checksum سالم است', parsed.body.checksumMismatch !== true);

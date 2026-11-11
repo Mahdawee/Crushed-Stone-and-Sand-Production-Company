@@ -32,8 +32,21 @@ echo "  برای بستن: Ctrl+C"
 echo
 
 # باز کردن مرورگر، اگر ابزاری برای این کار هست (خطا مهم نیست)
+#
+# باگ: مرورگر بعد از یک ثانیه‌ی **ثابت** باز می‌شد؛ روی کمپیوتر کند سرور
+# هنوز بالا نیامده بود و کاربر صفحه‌ی «اتصال برقرار نشد» می‌دید. حالا تا
+# آماده شدن سرور صبر می‌کند (حداکثر ۱۵ ثانیه) و بعد مرورگر را باز می‌کند.
 (
-  sleep 1
+  for _ in $(seq 1 30); do
+    if command -v curl >/dev/null 2>&1; then
+      curl -sf -o /dev/null "http://127.0.0.1:$PORT/" && break
+    else
+      sleep 0.5
+      # بدون curl: به سرور وصل شو اگر /dev/tcp پشتیبانی شود
+      (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null && { exec 3<&-; break; }
+    fi
+    sleep 0.5
+  done
   if command -v xdg-open >/dev/null 2>&1; then xdg-open "http://127.0.0.1:$PORT/" >/dev/null 2>&1 || true
   elif command -v open >/dev/null 2>&1; then open "http://127.0.0.1:$PORT/" >/dev/null 2>&1 || true
   fi

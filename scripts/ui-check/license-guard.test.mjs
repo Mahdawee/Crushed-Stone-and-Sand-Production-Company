@@ -166,6 +166,23 @@ const uiHtml = exists(path.join(root, 'tools/license/ui.html')) ? read(path.join
 ok('سرور ابزار فقط روی 127.0.0.1 گوش می‌دهد', /HOST = '127\.0\.0\.1'/.test(server));
 ok('سرور کلید خصوصی را برنمی‌گرداند (هیچ پاسخ JSON آن را ندارد)', !/privateKey:\s*priv/.test(server) && !/readFileSync\(privatePath[^)]*\)\s*,\s*200/.test(server));
 ok('توکن CSRF برای درخواست‌های تغییردهنده لازم است', /x-license-csrf/.test(server) && /guardMutation/.test(server));
+/*
+ * باگ دور ۳۰: یک مسیر POST (`renew-parse`) بدون محافظ مانده بود. این تست
+ * مطمئن می‌شود **همه‌ی** مسیرهایی که بدنه می‌خوانند، `guardMutation` را
+ * قبل از `readBody` صدا می‌زنند (شمارش مسیرهای CSRF باید با مسیرهای
+ * خواننده‌ی بدنه یکی باشد).
+ */
+{
+  const posts = (server.match(/req\.method === 'POST'/g) || []).length;
+  const guarded = (server.match(/guardMutation\(req\)/g) || []).length;
+  const bodies = (server.match(/await readBody\(req\)/g) || []).length;
+  ok('هر مسیر POST که بدنه می‌خواند، محافظ CSRF دارد', guarded >= bodies,
+    `POST=${posts} محافظ=${guarded} بدنه=${bodies}`);
+  /* هیچ مسیری نباید بدنه را قبل از محافظ بخواند */
+  const order = server.indexOf('guardMutation(req)');
+  ok('در renew-parse محافظ قبل از خواندن بدنه است',
+    /guardMutation\(req\);\s*\n\s*const body = await readBody\(req\)/.test(server));
+}
 ok('مبدأ درخواست بررسی می‌شود (ضد CSRF مرورگری)', /origin/.test(server) && /مجاز نیست/.test(server));
 ok('شناسه‌ی فایل در برابر path traversal سنجیده می‌شود', /\^FR-LIC-\[A-Za-z0-9-\]/.test(server));
 ok('صفحه‌ی گرافیکی: صدور/کاپی/بازرسی/باطل‌کردن', /صدور لایسنس/.test(uiHtml) && /بازرسی/.test(uiHtml) && /revoke/.test(uiHtml));

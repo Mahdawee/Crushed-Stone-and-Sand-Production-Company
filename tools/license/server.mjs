@@ -339,18 +339,45 @@ const json = (res, code, obj) => {
   res.end(body);
 };
 
+/*
+ * خواندن بدنه، با سقفِ حجم.
+ *
+ * ── باگ (شکار باگ دور ۳۰) ────────────────────────────────────────────────
+ * در نسخه‌ی قبلی بعد از رد کردن («خارج از حد مجاز») فقط `req.destroy` صدا
+ * زده می‌شد ولی `reject` **نشد**؛ پرامیس معلق می‌ماند، پاسخ HTTP هرگز
+ * فرستاده نمی‌شد و اتصال باز می‌ماند. حالا هم پرامیس رد می‌شود و هم
+ * `settled` نگه داشته می‌شود تا یک‌بار بیشتر حل/رد نشود.
+ */
 const readBody = (req) => new Promise((resolve, reject) => {
   let size = 0;
+  let settled = false;
   const chunks = [];
+  /*
+   * ⚠ سوکت را نمی‌کشیم: `req.destroy()` باعث ECONNRESET می‌شد و مرورگر
+   * پیام خطای شبکه می‌دید، نه پیام فارسی «بدنه بیش از حد بزرگ است».
+   * فقط خواندن را متوقف می‌کنیم تا لایه‌ی بالاتر پاسخ ۴۰۰ را بفرستد.
+   */
+  const fail = (msg) => {
+    if (settled) return;
+    settled = true;
+    chunks.length = 0;
+    try { req.pause(); } catch { /* ignore */ }
+    reject(new Error(msg));
+  };
   req.on('data', (c) => {
+    if (settled) return;
     size += c.length;
-    if (size > 200_000) { reject(new Error('بدنه‌ی درخواست بیش از حد بزرگ است.')); req.destroy(); return; }
+    if (size > 200_000) { fail('بدنه‌ی درخواست بیش از حد بزرگ است.'); return; }
     chunks.push(c);
   });
   req.on('end', () => {
-    try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); } catch { reject(new Error('JSON نامعتبر.')); }
+    if (settled) return;
+    settled = true;
+    try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); }
+    catch { reject(new Error('JSON نامعتبر.')); }
   });
-  req.on('error', reject);
+  req.on('error', (e) => { if (!settled) { settled = true; reject(e); } });
+  req.on('aborted', () => { if (!settled) { settled = true; reject(new Error('درخواست نیمه‌کاره قطع شد.')); } });
 });
 
 /** فقط درخواست‌های same-origin و با توکن CSRF تغییردهنده پذیرفته می‌شوند. */
@@ -634,6 +661,15 @@ const server = http.createServer(async (req, res) => {
      * درخواست از کدام دستگاه و کدام لایسنس است.
      */
     if (req.method === 'POST' && p === '/api/renew-parse') {
+      /*
+       * ── باگ (شکار باگ دور ۳۰) ────────────────────────────────────────────
+       * تنها مسیر POSTی بود که `guardMutation` نداشت: هر صفحه‌ای که روی همین
+       * کمپیوتر باز باشد (یا یک iframe در یک سایت) می‌توانست درخواست تمدید
+       * را به این سرور بفرستد و پاسخ بگیرد. پاسخ محرمانه نیست، ولی یکدستی
+       * محافظ‌ها مهم است: هر مسیری که بدنه می‌خواند، همان بررسی مبدأ و
+       * توکن CSRF را باید داشته باشد.
+       */
+      guardMutation(req);
       const body = await readBody(req);
       const parsed = parseRenewRequest(String(body.request || ''));
       json(res, 200, { ok: true, ...parsed });
@@ -678,6 +714,25 @@ const server = http.createServer(async (req, res) => {
   } catch (e) {
     json(res, 400, { ok: false, message: e instanceof Error ? e.message : String(e) });
   }
+});
+
+/*
+ * ── باگ (شکار باگ دور ۳۰) ────────────────────────────────────────────────
+ * اگر پورت اشغال بود (ابزار از قبل باز است، یا برنامه‌ی دیگری آن را گرفته)،
+ * Node یک استک‌تریس انگلیسی `EADDRINUSE` می‌ریخت و پنجره‌ی کنسول بسته
+ * می‌شد — کاربر هیچ نمی‌فهمید چه شد. حالا پیام فارسی با راه‌حل.
+ */
+server.on('error', (e) => {
+  if (e && e.code === 'EADDRINUSE') {
+    console.error(`\n⛔ پورت ${PORT} در حال استفاده است.`);
+    console.error('   یعنی ابزار از قبل باز است (یکی از پنجره‌های قبلی) یا برنامه‌ی دیگری این پورت را گرفته.');
+    console.error(`   • اگر ابزار باز است، همان صفحه‌ی مرورگر را استفاده کنید: http://${HOST}:${PORT}`);
+    console.error('   • یا با یک پورت دیگر اجرا کنید:  FD_LICENSE_UI_PORT=' + (PORT + 1));
+    console.error('   برای بستن نسخه‌ی قبلی، پنجره‌ی کنسول آن را ببندید.\n');
+    process.exit(1);
+  }
+  console.error('\n⛔ سرور ابزار بالا نیامد:', e?.message || e, '\n');
+  process.exit(1);
 });
 
 server.listen(PORT, HOST, () => {
