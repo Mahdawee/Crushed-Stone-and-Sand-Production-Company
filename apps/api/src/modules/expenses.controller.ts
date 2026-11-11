@@ -138,9 +138,13 @@ export class ExpensesController {
      */
     const del = await softDelete("Expense", Number(id));
     if (!del.ok) throw new HttpException('ردیف پیدا نشد.', 404);
-    return { ok: true, softDeleted: true, message: 'حذف شد — از «سطل بازیافت» قابل بازگرداندن است.' };
+    /*
+     * باگ: این ثبت سابقه **بعد از return** بود و هرگز اجرا نمی‌شد؛ یعنی
+     * حذف در «سابقه فعالیت‌ها» نمی‌آمد و «قابل بازیابی بودن» فقط روی
+     * کاغذ بود. حالا قبل از برگشت ثبت می‌شود.
+     */
     await logActivity({ action: 'delete', entity: 'Expense', entityId: Number(id), detail: rows?.[0]?.no || '' });
-    return { ok: true };
+    return { ok: true, softDeleted: true, message: 'حذف شد — از «سطل بازیافت» قابل بازگرداندن است.' };
   }
 
   @Get(':id')

@@ -352,6 +352,30 @@ const makeLicense = ({ privateKey, payload }) => {
   const recById = await api('POST', '/receipts', { customerId: cid, amount: 60, sourceId: branchId }, token);
   check('ثبت رسید با فقط شناسه‌ی منبع', recById.status === 200 || recById.status === 201, String(recById.status));
 
+  /* --- باگ: کارت حساب اسناد حذف‌شده را هم می‌آورد (مانده با فهرست نمی‌خواند) --- */
+  const delTarget = (await api('GET', `/receipts?customerId=${cid}&pageSize=50`, undefined, token)).body?.rows
+    ?.find((r) => Number(r.amount) === 300);
+  if (delTarget) {
+    const delRes = await api('DELETE', `/receipts/${delTarget.id}`, undefined, token);
+    check('حذف نرم رسید انجام شد', delRes.status === 200, String(delRes.status));
+    const st2 = await api('GET', `/customers/${cid}/statement`, undefined, token);
+    check('کارت حساب رسید حذف‌شده را نشان نمی‌دهد',
+      !(st2.body?.rows || []).some((r) => Number(r.amount) === 300),
+      JSON.stringify((st2.body?.rows || []).map((r) => r.amount)));
+    const cl = await api('GET', '/customers?q=T17', undefined, token);
+    const row2 = (cl.body || [])[0] || {};
+    /* ۱۸۰۰ = ۱۰۰۰+۵۰۰+۳۰۰ · منهای ۳۰۰ حذف‌شده · به‌علاوه ۶۰ رسید شناسه‌ای = ۱۵۶۰ */
+    check('مانده‌ی فهرست با کارت حساب می‌خواند', Number(row2.receipts) === 1560, String(row2.receipts));
+    /* سابقه فعالیت حذف باید ثبت شده باشد (کد مرده‌ی قبلی) */
+    const act = await api('GET', '/system/activity?entity=Receipt&limit=20', undefined, token);
+    const acts = Array.isArray(act.body) ? act.body : (act.body?.rows || []);
+    check('حذف رسید در سابقه فعالیت‌ها ثبت شد',
+      acts.some((a) => a.action === 'delete' && a.entity === 'Receipt'),
+      JSON.stringify(acts.slice(0, 2)));
+  } else {
+    check('رسید مورد نظر برای حذف پیدا شد', false);
+  }
+
   try { await client.$disconnect(); } catch { /* */ }
   try { child.kill(); } catch { /* */ }
   finish();

@@ -64,12 +64,18 @@ export class CustomersController {
     await ensureSchemaAsync();
     const c: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Customer" WHERE "id"=?`, Number(id));
     if (!c?.length) throw new HttpException('مشتری پیدا نشد.', 404);
+    /*
+     * کارت حساب فقط اسناد «زنده» را نشان می‌دهد. باگ: اسناد حذف‌نرم‌شده هم
+     * می‌آمدند و مانده‌ی پایانی کارت حساب با مانده‌ی فهرست مشتریان نمی‌خواند.
+     */
     const sales: any[] = await db().$queryRawUnsafe(
-      `SELECT "id","no","date","materialName","volume","total","paymentType","note" FROM "Sale" WHERE "customerId"=?`,
+      `SELECT "id","no","date","materialName","volume","total","paymentType","note" FROM "Sale"
+       WHERE "customerId"=? AND COALESCE("deletedAt",'')=''`,
       Number(id),
     );
     const receipts: any[] = await db().$queryRawUnsafe(
-      `SELECT "id","no","date","amount","relatedBillNo","sourceName","note" FROM "Receipt" WHERE "customerId"=?`,
+      `SELECT "id","no","date","amount","relatedBillNo","sourceName","note" FROM "Receipt"
+       WHERE "customerId"=? AND COALESCE("deletedAt",'')=''`,
       Number(id),
     );
     const rows = [
@@ -147,8 +153,14 @@ export class CustomersController {
   @Delete(':id')
   @ManagerOnly()
   async remove(@Param('id') id: string) {
-    const s: any[] = await db().$queryRawUnsafe(`SELECT COUNT(*) as c FROM "Sale" WHERE "customerId"=?`, Number(id));
-    const r: any[] = await db().$queryRawUnsafe(`SELECT COUNT(*) as c FROM "Receipt" WHERE "customerId"=?`, Number(id));
+    /*
+     * باگ: حذف مشتری به‌خاطر سندهای «حذف‌نرم‌شده» هم رد می‌شد، در حالی که
+     * آن سندها از دید کاربر وجود ندارند و از سطل بازیافت برمی‌گردند.
+     */
+    const s: any[] = await db().$queryRawUnsafe(
+      `SELECT COUNT(*) as c FROM "Sale" WHERE "customerId"=? AND COALESCE("deletedAt",'')=''`, Number(id));
+    const r: any[] = await db().$queryRawUnsafe(
+      `SELECT COUNT(*) as c FROM "Receipt" WHERE "customerId"=? AND COALESCE("deletedAt",'')=''`, Number(id));
     if (Number(s?.[0]?.c) + Number(r?.[0]?.c) > 0) {
       throw new HttpException('این مشتری دارای فروش یا رسید است و حذف نمی‌شود.', 400);
     }
@@ -159,8 +171,12 @@ export class CustomersController {
      */
     const del = await softDelete("Customer", Number(id));
     if (!del.ok) throw new HttpException('ردیف پیدا نشد.', 404);
-    return { ok: true, softDeleted: true, message: 'حذف شد — از «سطل بازیافت» قابل بازگرداندن است.' };
+    /*
+     * باگ: این ثبت سابقه **بعد از return** بود و هرگز اجرا نمی‌شد؛ یعنی
+     * حذف در «سابقه فعالیت‌ها» نمی‌آمد و «قابل بازیابی بودن» فقط روی
+     * کاغذ بود. حالا قبل از برگشت ثبت می‌شود.
+     */
     await logActivity({ action: 'delete', entity: 'Customer', entityId: Number(id) });
-    return { ok: true };
+    return { ok: true, softDeleted: true, message: 'حذف شد — از «سطل بازیافت» قابل بازگرداندن است.' };
   }
 }

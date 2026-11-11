@@ -144,5 +144,55 @@ ok('کارت حساب هم از همان تصمیم استفاده می‌کند
   /reducesCustomerDebt/.test(read(path.join(apiDir, 'modules/customers.controller.ts'))));
 ok('مهاجرت داده برای نام‌های قدیمی هست', /migrateReceiptSources/.test(read(path.join(apiDir, 'schema.ts'))));
 
+/* ================================================================ */
+console.log('\n— کد مرده: هیچ کاری بعد از return نمی‌ماند —');
+
+/*
+ * باگ واقعی: در ۵ کنترلر، ثبت «سابقه فعالیت» بعد از `return` بود و هرگز
+ * اجرا نمی‌شد؛ یعنی حذف‌ها در سابقه نمی‌آمدند و «قابل بازیابی» فقط روی
+ * کاغذ بود. TypeScript این را خطا نمی‌دهد (allowUnreachableCode)، پس تست
+ * باید بگیرد.
+ */
+const ctrls = fs.readdirSync(path.join(root, 'apps/api/src/modules'))
+  .filter((f) => f.endsWith('.controller.ts'));
+offenders = [];
+for (const f of ctrls) {
+  const lines = read(path.join(root, 'apps/api/src/modules', f)).split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^(\s*)return\b/.exec(lines[i]);
+    if (!m) continue;
+    const indent = m[1].length;
+    for (let j = i + 1; j < lines.length; j++) {
+      const nxt = lines[j];
+      if (!nxt.trim()) continue;
+      if (/^\s*(\/\/|\*|\/\*)/.test(nxt)) continue;
+      const nIndent = nxt.length - nxt.trimStart().length;
+      /*
+       * فقط «دستور» را کد مرده می‌شماریم. خطوط ادامه‌ی یک رشته‌ی XML/HTML
+       * (مثل `xmlns:x="…"`) دستور نیستند و همین‌جا کنار می‌روند.
+       */
+      const STATEMENT = /^(await |const |let |var |return\b|throw |if |for |while |switch |db\(|p\.|this\.|logActivity|nextDocNo|[A-Za-z_$][\w$]*\()/;
+      if (nIndent <= indent && STATEMENT.test(nxt.trim())) {
+        offenders.push(`${f}:${j + 1} — ${nxt.trim().slice(0, 50)}`);
+      }
+      break;
+    }
+  }
+}
+ok('هیچ کدی بعد از return رهاشده نیست (سابقه‌ی حذف واقعاً ثبت می‌شود)', offenders.length === 0, offenders.join(' | '));
+
+offenders = [];
+for (const f of ctrls) {
+  const src = read(path.join(root, 'apps/api/src/modules', f));
+  /* حذف‌نرم‌شده‌ها نباید در کارت حساب/شمارش‌ها بیایند */
+  for (const m of src.matchAll(/FROM "(Sale|Receipt)" WHERE "customerId"=\?/g)) {
+    const around = src.slice(m.index, m.index + 260);
+    const cond = around.split('`')[0];
+    if (/deletedAt/.test(cond)) continue;
+    offenders.push(`${f} — ${m[0]}`);
+  }
+}
+ok('کارت حساب و شمارش‌ها اسناد حذف‌شده را حساب نمی‌کنند', offenders.length === 0, offenders.join(' | '));
+
 console.log(`\n${fail === 0 ? '✅' : '⛔'} ${pass} موفق، ${fail} ناکام\n`);
 process.exit(fail === 0 ? 0 : 1);
