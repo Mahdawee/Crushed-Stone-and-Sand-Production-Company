@@ -28,6 +28,8 @@ export default function SettingsPage() {
   const toast = useToast();
   const [s, setS] = useState<any>(settings);
   const [health, setHealth] = useState<any>(null);
+  /* وضعیت بروزرسانی — درخواست مالک: «همه بتوانند بروزرسانی را درست بگیرند» */
+  const [upg, setUpg] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState<any>(null);
   const [pw, setPw] = useState({ currentPassword: '', newPassword: '' });
@@ -36,6 +38,7 @@ export default function SettingsPage() {
   useEffect(() => {
     api.get('/system/health').then(setHealth).catch(() => {});
     api.get('/system/info').then(setInfo).catch(() => {});
+    api.get('/system/upgrade/status').then(setUpg).catch(() => {});
   }, []);
 
   const save = async () => {
@@ -181,6 +184,52 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {/*
+        * ── پنل «بروزرسانی» ─────────────────────────────────────────────
+        * برنامه بین چند شرکت توزیع شده. مدیر باید بدون تماس با پشتیبانی
+        * ببیند: نسخه‌ی برنامه چیست، ساختار دیتابیس هم‌تراز است یا نه، و
+        * آخرین بروزرسانی‌ها پشتیبان گرفته‌اند یا نه. اگر کاپی داده از یک
+        * نسخه‌ی **جدیدتر** آمده باشد، این پنل صریح می‌گوید.
+        */}
+      {isManager && upg ? (
+        <div className="card">
+          <div className="card-h"><h3>بروزرسانی و سازگاری داده</h3><div style={{ flex: 1 }} />
+            <span className={`badge ${upg.dbNewer || upg.dbBehind ? 'warn' : 'ok'}`}>
+              {upg.dbNewer ? 'داده از این نسخه جدیدتر است' : upg.dbBehind ? 'ساختار عقب مانده' : 'هم‌تراز'}
+            </span>
+          </div>
+          <div className="card-b">
+            <dl className="kv">
+              <dt>نسخه‌ی برنامه</dt><dd className="mono">{upg.appVersion}</dd>
+              <dt>ساختار دیتابیس</dt><dd className="mono">{upg.dbShape} از {upg.expectedShape}</dd>
+              <dt>پشتیبان‌های بروزرسانی</dt><dd>{upg.backups?.length ? upg.backups.join(' · ') : '—'}</dd>
+            </dl>
+            {upg.dbNewer ? (
+              <p className="small" style={{ marginTop: 10 }}>
+                این دیتابیس با نسخه‌ی جدیدتری از برنامه ساخته شده. برنامه را بروزرسانی کنید؛
+                نوشتن با نسخه‌ی قدیمی ممکن است داده را ناسازگار کند.
+              </p>
+            ) : upg.dbBehind ? (
+              <p className="small" style={{ marginTop: 10 }}>
+                ساختار دیتابیس از این نسخه عقب است. یک بار برنامه را ببندید و باز کنید تا بروزرسانی انجام شود؛
+                اگر همین‌جا ماند، از پوشه‌ی backups آخرین فایل <span className="mono">pre-upgrade</span> را با
+                «ابزار نجات» بازگردانید.
+              </p>
+            ) : null}
+            {upg.history?.length ? (
+              <div style={{ marginTop: 12 }}>
+                <div className="small muted" style={{ marginBottom: 6 }}>تاریخچه‌ی بروزرسانی این دیتابیس</div>
+                <ul className="small" style={{ margin: 0, paddingInlineStart: 18 }}>
+                  {upg.history.slice(0, 5).map((h: string, i: number) => (
+                    <li key={i} className="mono" style={{ wordBreak: 'break-all' }}>{h}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid c2">
         <div className="card">

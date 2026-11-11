@@ -9,6 +9,7 @@ import { settingsService } from '../common/settings';
 import { dataDir } from '../db';
 import { ensureSqliteEngine, nativePackageName, type EngineStatus } from '../common/sqlite-engine';
 import { checkBackupFile } from '../common/backup-check';
+import { SHAPE_VERSION, appVersion, recentUpgrades } from '../common/upgrade';
 import { SOFT_TABLES } from '../common/soft-delete';
 import { demoCounts, hasRealData, installDemo, removeDemo } from '../common/demo';
 import {
@@ -414,6 +415,40 @@ export class SystemController {
     return {
       ok: true, restored: name, safetyCopy: path.basename(safety), restartRequired: false,
       counts: check.counts,
+    };
+  }
+
+  /**
+   * وضعیت بروزرسانی — «برنامه‌ی من چند است؟ ساختار دیتابیس چند است؟
+   * آخرین بروزرسانی‌ها چه بودند و پشتیبان گرفتند یا نه؟»
+   *
+   * چرا لازم است: برنامه بین چندین شرکت توزیع شده و کاربران باید بتوانند
+   * بدون تیم پشتیبانی مطمئن شوند بروزرسانی درست انجام شده. هر ردیف تاریخچه
+   * یعنی «یک مهاجرت واقعی روی این دیتابیس اجرا شد» — همراه نام فایل پشتیبان.
+   */
+  @Get('upgrade/status')
+  @ManagerOnly()
+  async upgradeStatus() {
+    let dbShape = 0;
+    try {
+      const v: any[] = await db().$queryRawUnsafe('PRAGMA user_version');
+      dbShape = Number(v?.[0]?.user_version ?? 0);
+    } catch { /* ignore */ }
+    const dir = BACKUP_DIR();
+    const upgrades = fs.existsSync(dir)
+      ? fs.readdirSync(dir).filter((f) => f.startsWith('pre-upgrade-')).sort().slice(-5)
+      : [];
+    return {
+      appVersion: appVersion(),
+      expectedShape: SHAPE_VERSION,
+      dbShape,
+      /** ساختار دیتابیس از این برنامه جلوتر است (کاپی از نسخه‌ی جدیدتر) */
+      dbNewer: dbShape > SHAPE_VERSION,
+      /** ساختار عقب‌تر مانده — نباید رخ بدهد؛ نشانه‌ی مهاجرت ناموفق است */
+      dbBehind: dbShape < SHAPE_VERSION,
+      backups: upgrades,
+      backupDir: dir,
+      history: recentUpgrades(process.env.FD_DATA_DIR || path.resolve(process.cwd(), 'data')),
     };
   }
 

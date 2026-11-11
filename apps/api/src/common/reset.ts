@@ -35,6 +35,7 @@ import { ensureWalkInCustomer } from '../schema';
 import { ensureDefaultAdmin, hashPassword } from '../common/auth';
 import { ensureDefaultLookups } from './defaults';
 import { LICENSE_FILE } from './license-state';
+import { makeBackup } from './backup';
 
 /**
  * عبارت تأیید — جلوی «یک کلیک اشتباه» را می‌گیرد.
@@ -175,23 +176,9 @@ export async function dataInventory(): Promise<{
  * کند. دیتابیس SQLite در حالت WAL است، پس فایل‌های `-wal` و `-shm` هم کپی
  * می‌شوند تا پشتیبان «نیمه‌کاره» نباشد.
  */
+/** پشتیبان «قبل از صفر کردن» — از ماژول مشترک `common/backup` */
 function backupNow(): string {
-  const src = databaseFile();
-  if (!fs.existsSync(src)) throw new Error('فایل دیتابیس پیدا نشد؛ پشتیبان‌گیری ممکن نیست.');
-  const dir = BACKUP_DIR();
-  fs.mkdirSync(dir, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const dst = path.join(dir, `pre-reset-${stamp}.db`);
-  fs.copyFileSync(src, dst);
-  for (const suffix of ['-wal', '-shm']) {
-    if (fs.existsSync(src + suffix)) fs.copyFileSync(src + suffix, dst + suffix);
-  }
-  /*
-   * بررسی سلامت: اندازه‌ی صفر یعنی پشتیبان بی‌فایده. اگر پشتیبان سالم نیست،
-   * پاک کردن را متوقف می‌کنیم (قاعده‌ی «هیچ‌وقت بدون راه برگشت»).
-   */
-  if (fs.statSync(dst).size === 0) throw new Error('پشتیبان خالی ساخته شد؛ صفر کردن متوقف شد.');
-  return dst;
+  return makeBackup(databaseFile(), BACKUP_DIR(), 'pre-reset');
 }
 
 /**

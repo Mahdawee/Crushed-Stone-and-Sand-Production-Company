@@ -8,8 +8,11 @@
  * Every statement is idempotent (CREATE TABLE IF NOT EXISTS) and a tiny
  * "add column if missing" pass upgrades databases created by older versions.
  */
-import { db } from './db';
+import { db, databaseFile, dataDir, BACKUP_DIR, resetDb } from './db';
 import { RECEIPT_SOURCE_ALIASES, RECEIPT_SOURCES, WALK_IN_CODE, WALK_IN_NAME } from './common/domain';
+import { SHAPE_VERSION, appVersion, logUpgrade, isNewerDatabase } from './common/upgrade';
+import { makeBackup, pruneBackups, restoreFromBackup } from './common/backup';
+import { basename } from 'node:path';
 
 type Column = { name: string; ddl: string };
 
@@ -461,7 +464,7 @@ let schemaPromise: Promise<void> | null = null;
  * خود دیتابیس است، پس بعد از ری‌استارت هم دوباره کامل بررسی می‌شود اگر
  * نسخه‌ی برنامه تغییر کرده باشد.
  */
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = SHAPE_VERSION;
 let schemaReadyFor: string | null = null;
 let schemaReadyVersion = -1;
 
@@ -506,7 +509,66 @@ export async function ensureSchemaAsync(force = false) {
     dbVersion = Number(v?.[0]?.user_version ?? 0);
   } catch { /* ignore */ }
 
-  if (dbVersion !== SCHEMA_VERSION) {
+  /*
+   * ── دیتابیسی از نسخه‌ی **جدیدتر** ──────────────────────────────────────
+   * مشتری نسخه‌ی تازه نصب کرده و بعد کاپی داده را به کمپیوتری با برنامه‌ی
+   * قدیمی برده. اینجا نمی‌شود «قفل» کرد (کاربر داده‌اش را لازم دارد)، ولی
+   * باید در لاگ و در برنامه روشن نوشته شود تا کسی از آن سر در بیاورد.
+   */
+  /*
+   * اگر دیتابیس از این برنامه **جدیدتر** است: مهاجرت انجام نمی‌شود و مهر نسخه
+   * هم دست‌کاری نمی‌شود.
+   *
+   * باگ (تست بروزرسانی گرفت): نسخه‌ی قبلی این حالت را فقط هشدار می‌داد و بعد
+   * مهر `user_version` را روی نسخه‌ی قدیمیِ خودش می‌نوشت — یعنی دیتابیسِ
+   * نسخه‌ی جدید، «عقب» علامت می‌خورد و بروزرسانی بعدی روی آن مهاجرت‌های
+   * تکراری/ناسازگار اجرا می‌کرد. حالا فقط هشدار و بازکردن برنامه با همان
+   * ساختار (خواندن کار می‌کند؛ نوشتن‌های ناسازگار توسط خود SQLite خطا می‌دهد).
+   */
+  if (isNewerDatabase(dbVersion)) {
+    console.warn(
+      `FARDAY_DB_NEWER دیتابیس با ساختار ${dbVersion} از این برنامه (${SCHEMA_VERSION}) جدیدتر است — ` +
+        'مهاجرت و بازنویسی مهر انجام نمی‌شود؛ برنامه را بروزرسانی کنید.',
+    );
+    schemaReadyFor = file;
+    schemaReadyVersion = SCHEMA_VERSION;
+    return true;
+  }
+
+  if (dbVersion < SCHEMA_VERSION) {
+    /*
+     * ── پشتیبان اجباری قبل از مهاجرت (درخواست مالک: بروزرسانی داده را
+     *    خراب نکند) ────────────────────────────────────────────────────────
+     * اگر ساختار عوض می‌شود، **اول** یک کاپی کامل گرفته می‌شود. `dbVersion`
+     * صفر یعنی دیتابیس تازه ساخته شده — آنجا چیزی برای از دست دادن نیست و
+     * پشتیبان گرفتن فقط فایل اضافه می‌سازد.
+     */
+    const started = Date.now();
+    let upgradeBackup = '';
+    if (dbVersion > 0) {
+      try {
+        await p.$executeRawUnsafe('PRAGMA wal_checkpoint(TRUNCATE)');
+      } catch { /* ignore */ }
+      try {
+        upgradeBackup = makeBackup(databaseFile(), BACKUP_DIR(), `pre-upgrade-v${dbVersion}`);
+        pruneBackups(BACKUP_DIR(), 30, /^pre-upgrade-.*\.db$/);
+      } catch (e: any) {
+        /*
+         * پشتیبان نگرفت شد ⇒ مهاجرت انجام نمی‌شود. قاعده‌ی «هیچ تغییر
+         * برگشت‌ناپذیری بدون راه برگشت» از «بروزرسانی خودکار» مهم‌تر است؛
+         * پیام راه‌حل هم می‌دهد (جا/دسترسی را درست کنید و برنامه را باز کنید).
+         */
+        logUpgrade(dataDir(), {
+          at: new Date().toISOString(), from: dbVersion, to: SCHEMA_VERSION,
+          appVersion: appVersion(), backupFile: '', ms: Date.now() - started, ok: false,
+          note: `پشتیبان گرفته نشد: ${e?.message || e}`,
+        });
+        throw new Error(
+          `بروزرسانی ساختار انجام نشد: پشتیبان‌گیری قبل از بروزرسانی ناموفق بود (${e?.message || e}).\n` +
+            'داده‌ی فعلی دست‌نخورده است. فضای دیسک و دسترسی پوشه‌ی backups را بررسی کنید و برنامه را دوباره باز کنید.',
+        );
+      }
+    }
     for (const u of UPGRADES) {
       const cols: any[] = await p.$queryRawUnsafe(`PRAGMA table_info("${u.table}")`);
       if (!cols.some((c) => c.name === u.column)) {
@@ -534,6 +596,42 @@ export async function ensureSchemaAsync(force = false) {
       console.warn('مهاجرت منابع رسید انجام نشد:', e?.message || e);
     }
     await p.$executeRawUnsafe(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    logUpgrade(dataDir(), {
+      at: new Date().toISOString(), from: dbVersion, to: SCHEMA_VERSION,
+      appVersion: appVersion(), backupFile: upgradeBackup ? basename(upgradeBackup) : '',
+      ms: Date.now() - started, ok: true,
+      note: dbVersion === 0 ? 'دیتابیس تازه' : '',
+    });
+    /*
+     * ── بررسی **پس از** مهاجرت ──────────────────────────────────────────
+     * مهاجرت موفق یعنی «ستون‌ها اضافه شدند»، نه «داده سالم است». اینجا با
+     * یک `quick_check` مطمئن می‌شویم فایل پس از ALTERها سالم است؛ اگر نبود،
+     * از همان پشتیبانِ چند لحظه پیش برمی‌گردانیم و صریح می‌گوییم چه شد.
+     * (اتصال باید بسته شود، وگرنه بازگردانی بی‌اثر است.)
+     */
+    if (upgradeBackup) {
+      let healthy = true;
+      try {
+        const q: any[] = await p.$queryRawUnsafe('PRAGMA quick_check');
+        const verdict = String(q?.[0]?.quick_check ?? 'ok');
+        healthy = verdict === 'ok';
+      } catch { healthy = true; /* خودِ بررسی نشد — مهاجرت را شکست‌خورده اعلام نمی‌کنیم */ }
+      if (!healthy) {
+        await resetDb();
+        const restored = restoreFromBackup(upgradeBackup, databaseFile());
+        logUpgrade(dataDir(), {
+          at: new Date().toISOString(), from: dbVersion, to: SCHEMA_VERSION,
+          appVersion: appVersion(), backupFile: basename(upgradeBackup),
+          ms: Date.now() - started, ok: false,
+          note: restored ? 'دیتابیس پس از مهاجرت ناسالم بود — برگردانده شد' : 'برگرداندن ناموفق',
+        });
+        throw new Error(
+          restored
+            ? 'بروزرسانی ساختار سالم نبود و دیتابیس به نسخه‌ی قبل برگردانده شد — داده‌ی شما دست‌نخورده است.'
+            : 'بروزرسانی ساختار سالم نبود و برگرداندن خودکار ناموفق ماند؛ از پوشه‌ی backups فایل pre-upgrade را بازگردانید.',
+        );
+      }
+    }
   }
 
   /*
