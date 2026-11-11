@@ -280,4 +280,20 @@ if (problems.length === 0) {
   console.log(`⛔ ${problems.length} مورد باید درست شود:\n`);
   for (const p of problems) console.log(`• ${p.s}\n  راه‌حل: ${p.fix}\n`);
   console.log('بعد از رفع، دوباره: npm run doctor\n');
+  /*
+   * باگ (شکار باگ دور ۳۲): این اسکریپت با پیام «⛔ … باید درست شود» تمام
+   * می‌شد ولی **کد خروج صفر** داشت. در CI یا وقتی کسی `npm run doctor &&
+   * npm run desktop:build` می‌زند، ساخت با خطای گنگ Rust شکست می‌خورد و
+   * علت واقعی (همین گزارش) در لاگ گم می‌شد. حالا کد خروج با نتیجه می‌خواند.
+   *
+   * استثنا: در محیط توسعه/مخزن (نه CI، نه بررسی پیش از ساخت) شکست دادن
+   * دستور می‌تواند آزاردهنده باشد؛ پس `FD_DOCTOR_SOFT=1` آن را به هشدار
+   * برمی‌گرداند. پیش‌فرض = کد خروج ۱.
+   */
+  if (process.env.FD_DOCTOR_SOFT === '1') {
+    console.log('ℹ حالت نرم (FD_DOCTOR_SOFT=1): کد خروج صفر است.\n');
+    process.exitCode = 0;
+  } else {
+    process.exitCode = 1;
+  }
 }

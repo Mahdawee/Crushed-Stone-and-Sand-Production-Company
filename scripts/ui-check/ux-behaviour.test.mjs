@@ -205,5 +205,19 @@ const sys = read('apps/api/src/modules/system.controller.ts');
 ok('سابقه‌ی فعالیت با trash=0 پیمایش سطل را رد می‌کند', sys.includes('for (const table of (withTrash ? nonEmpty : []))'));
 ok('فقط جدول‌های غیرخالی پرسیده می‌شوند (شمارش قبلی)', /deletedCounts\(\)/.test(sys));
 
+console.log('\n— رفت‌وبرگشت اکسل: خروجی و ورودی هم‌تراز —');
+
+const ie = read('apps/api/src/modules/importexport.controller.ts');
+/*
+ * باگ دور ۳۲: فایل خروجی ستون «باقی مانده بدهی» و «کد مشتری» داشت ولی
+ * ورودی «باقی اولیه» می‌خواست ⇒ بدهی به ستون توضیحات می‌رفت و صفر می‌شد.
+ */
+ok('عنوان خروجی مشتریان با عنوان ورودی یکی است', /headers: \['نام مشتری\/شرکت', 'شخص رابط', 'شماره تماس', 'پلیت موتر', 'باقی اولیه', 'توضیحات', 'کد مشتری'\]/.test(ie));
+ok('سرستون/ستون‌ها با نام تطبیق می‌شوند نه جای ثابت', /colOf\(/.test(ie));
+ok('عنوان‌های اکسل نرمال می‌شوند (نیم‌فاصله/ي/ك)', /function normalizeHeader/.test(ie));
+ok('ردیف حذف‌شده مانع ورود نیست (یک قاعده در دو مسیر)', /const existing = allRows\.filter\(\(r\) => !r\.deletedAt\)/.test(ie));
+ok('استفاده‌ی دوباره از کد اشغال‌شده ۵۰۰ نمی‌دهد', /usedCodes\.has\(wanted\)/.test(ie));
+ok('فایل فقط-سرستون پیام روشن می‌دهد', /فقط سرستون بود/.test(ie));
+
 console.log(`\n${fail === 0 ? '✅' : '⛔'} ${pass} موفق، ${fail} ناکام\n`);
 process.exit(fail === 0 ? 0 : 1);

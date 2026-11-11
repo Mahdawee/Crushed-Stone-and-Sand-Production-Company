@@ -9,7 +9,7 @@ import { formatDate, CalendarMode } from '../common/calendar';
 import { toCsv, parseCsv, normalizeNumber } from '../common/csv';
 import { canonicalReceiptSource, receiptDebtSql } from '../common/domain';
 import { parseUserDate } from '../common/calendar';
-import { nextCustomerCode, nextEmployeeCode } from '../common/codes';
+import { nextCustomerCode, nextEmployeeCode, RESERVED_CUSTOMER_CODE } from '../common/codes';
 
 /**
  * خروجی و **ورودی** اکسل (CSV).
@@ -94,10 +94,19 @@ const EXPORTS: Record<string, ExportDef> = {
       (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND s."paymentType"='credit') AS credit,
       (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE r."customerId"=c."id" AND ${receiptDebtSql('r."sourceName"')}) AS paid
       FROM "Customer" c WHERE COALESCE(c."deletedAt",'')='' AND COALESCE(c."isWalkIn",0)=0 ORDER BY c."code"`,
-    headers: ['کد مشتری', 'نام مشتری/شرکت', 'شخص رابط', 'شماره تماس', 'پلیت موتر', 'باقی مانده بدهی', 'توضیحات'],
-    numeric: [5],
-    map: (r) => [r.code, r.name, r.contactPerson, r.phone, r.truckPlate,
-      Math.round(((Number(r.openingBalance) || 0) + (Number(r.credit) || 0) - (Number(r.paid) || 0)) * 100) / 100, r.note],
+    /*
+     * ── باگ (شکار باگ دور ۳۲): خروجی و ورودی هم‌تراز نبودند ─────────────
+     * خروجی ۷ ستون با عنوان «قدر مطلق بدهی» می‌داد و ورودی ۶ ستون
+     * (`کد` را نمی‌پذیرد). یعنی فایلِ خروجی‌شده را که دوباره وارد می‌کردید،
+     * هر ستون یک خانه عقب می‌افتاد: «شخص رابط» به تلفن، «تلفن» به پلیت،
+     * و مهم‌تر از همه **بدهی** به ستون «توضیحات» می‌رفت — بدهی مشتری بی‌صدا
+     * صفر می‌شد. حالا ستون‌ها دقیقاً همان ستون‌های ورودی‌اند (کد بیرون،
+     * «باقی اولیه» همان نامِ ورودی) و یک تست رفت‌وبرگشت دارد.
+     */
+    headers: ['نام مشتری/شرکت', 'شخص رابط', 'شماره تماس', 'پلیت موتر', 'باقی اولیه', 'توضیحات', 'کد مشتری'],
+    numeric: [4],
+    map: (r) => [r.name, r.contactPerson, r.phone, r.truckPlate,
+      Math.round(((Number(r.openingBalance) || 0) + (Number(r.credit) || 0) - (Number(r.paid) || 0)) * 100) / 100, r.note, r.code],
   },
   sales: {
     title: 'فروشات',
@@ -226,6 +235,25 @@ xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC
 /* ------------------------------------------------------------------ */
 /* ورودی (import) — نمونه و ثبت                                        */
 /* ------------------------------------------------------------------ */
+
+/**
+ * نرمال‌سازی عنوان ستون برای تطبیق.
+ *
+ * چرا لازم است: فایل از اکسل می‌آید و کاربر ممکن است عنوان را با نیم‌فاصله،
+ * «ي» عربی، فاصله‌ی اضافی یا «/» متفاوت بنویسد («نام مشتری / شرکت»). تطبیق
+ * دقیقِ نویسه‌به‌نویسه، ستون را پیدا نمی‌کرد و داده در ستون اشتباه می‌نشست.
+ */
+function normalizeHeader(s: string): string {
+  return String(s || '')
+    .replace(/\u200c/g, ' ')          /* نیم‌فاصله */
+    .replace(/[يئ]/g, 'ی')
+    .replace(/[ك]/g, 'ک')
+    .replace(/[\/\\|،,]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 
 type ImportDef = {
   title: string;
@@ -417,18 +445,69 @@ export class ImportController {
     const parsed = parseCsv(text);
     if (!parsed.rows.length) throw new HttpException('هیچ سطری در فایل نبود.', 400);
 
-    /* آیا سطر اول سرستون است یا داده؟ با نام ستون‌ها تشخیص می‌دهیم */
-    const first = parsed.rows[0].map((c) => c.replace(/\s+/g, ' ').trim());
-    const isHeader = cfg.headers.every((h, i) => !first[i] || first[i] === h || h.includes(first[i]) || first[i].includes(h));
-    const dataRows = isHeader ? parsed.rows.slice(1) : parsed.rows;
-
-    /* سطر راهنما (فایل نمونه) را رد کن: اگر همه‌ی خانه‌ها یکی از واژه‌های راهنما باشند */
+    /*
+     * آیا سطر اول سرستون است یا داده؟ با نام ستون‌ها تشخیص می‌دهیم.
+     *
+     * نسخه‌ی قبلی هر ستون را با **همان ایندکس** مقایسه می‌کرد؛ فایل مرورگر
+     * که ستون‌ها را جابه‌جا دارد (یا ستون اضافه/کم دارد) یا سرستون به‌عنوان
+     * داده خوانده می‌شد یا داده‌ها با ایندکس غلط در ستون‌های اشتباه می‌نشستند.
+     * حالا: سرستون اگر «بیشترِ» نام‌ها در هر جای سطر پیدا شوند.
+     */
+    const first = parsed.rows[0].map((c) => normalizeHeader(c));
+    const want = cfg.headers.map((h) => normalizeHeader(h));
+    /* سطر راهنما (فایل نمونه) و سرستون‌ها با همین واژگان شناخته می‌شوند */
     const hintWords = new Set(['اجباری', 'اختیاری', 'عدد', 'مثلاً', 'تاریخ']);
+    const hit = want.filter((h) => first.some((c) => c && (c === h || c.includes(h) || h.includes(c)))).length;
+    /*
+     * ── باگ (شکار باگ دور ۳۲): سطر سرستون به‌عنوان داده ثبت می‌شد ─────────
+     * اگر فایلی فقط سرستون داشت یا ستون‌های کمتری داشت (مثلاً تنها
+     * «نام مشتری/شرکت»)، قاعده‌ی «نصف ستون‌ها» آن را داده می‌دید و یک مشتری
+     * به نام «نام مشتری/شرکت» ساخته می‌شد. حالا سطر را سرستون می‌دانیم اگر
+     * نصف ستون‌ها را داشته باشد **یا** هر خانه‌ی پرش؟ آن واژه‌ای از واژگان
+     * عنوان‌ها/راهنما‌ها باشد.
+     */
+    const vocab = new Set<string>(hintWords);
+    for (const def of Object.values(IMPORTS)) {
+      for (const h of def.headers) vocab.add(normalizeHeader(h));
+      for (const h of def.hints || []) vocab.add(normalizeHeader(h));
+    }
+    const nonEmpty = first.filter(Boolean);
+    const allKnown = nonEmpty.length > 0 && nonEmpty.every((c) => vocab.has(c));
+    const isHeader = want.length > 0 && (hit >= Math.ceil(want.length / 2) || allKnown);
+    const dataRows = isHeader ? parsed.rows.slice(1) : parsed.rows;
+    /*
+     * نقشه‌ی ستون‌ها با **نام**، نه جای ثابت. اگر ستونی پیدا نشود، به ترتیب
+     * فایل برمی‌گردیم (فایل‌های بی‌سرستون که تا امروز کار می‌کردند).
+     */
+    const colOf = (headerName: string, fallbackIdx: number): number => {
+      if (!isHeader) return fallbackIdx;
+      const h = normalizeHeader(headerName);
+      const i = first.findIndex((c) => c && (c === h || c.includes(h) || h.includes(c)));
+      return i >= 0 ? i : fallbackIdx;
+    };
+    const COL = {
+      name: colOf('نام', 0), contact: colOf('شخص رابط', 1), phone: colOf('شماره تماس', 2),
+      plate: colOf('پلیت موتر', 3), balance: colOf('باقی اولیه', 4), note: colOf('توضیحات', 5),
+      father: colOf('نام پدر', 1), position: colOf('وظیفه', 2), hireDate: colOf('تاریخ استخدام', 3),
+      salary: colOf('معاش ثابت', 4), nationalId: colOf('شماره تذکره', 6), address: colOf('آدرس', 7),
+      contract: colOf('مدت قرارداد', 8), empNote: colOf('توضیحات', 9),
+      code: colOf('کد مشتری', -1),
+    };
+    const cellAt = (r: string[], idx: number) => (idx >= 0 ? String(r[idx] || '').trim() : '');
+
     const cleaned = dataRows.filter((r) => !(r.length && r.every((c) => !c || hintWords.has(c))));
 
     const errors: string[] = [];
     const warnings: string[] = [...parsed.warnings];
     const prepared: any[] = [];
+
+    /*
+     * فایلِ «فقط سرستون» (یا خالی بعد از سرستون) باید پیام روشن بدهد، نه
+     * گزارش موفق با صفر ردیف — وگرنه کاربر فکر می‌کند فایل خوانده شد.
+     */
+    if (!cleaned.length) {
+      throw new HttpException('فایل هیچ سطر داده‌ای نداشت (فقط سرستون بود). یک سطر داده اضافه کنید و دوباره امتحان کنید.', 400);
+    }
 
     const dryRun = body?.dryRun !== false;
 
@@ -438,10 +517,10 @@ export class ImportController {
       const cell = (idx: number) => (r[idx] || '').trim();
 
       if (type === 'customers') {
-        const name = cell(0);
+        const name = cell(COL.name);
         if (!name) { errors.push(`سطر ${line}: نام مشتری خالی است.`); continue; }
         if (name.length > 160) { errors.push(`سطر ${line}: نام مشتری بیش از ۱۶۰ نویسه است.`); continue; }
-        const balRaw = cell(4);
+        const balRaw = cell(COL.balance);
         const opening = balRaw ? normalizeNumber(balRaw) : 0;
         if (opening === null) { errors.push(`سطر ${line}: «باقی اولیه» عدد نیست («${balRaw}»).`); continue; }
         /*
@@ -455,13 +534,15 @@ export class ImportController {
           warnings.push(`سطر ${line}: «باقی اولیه» منفی بود («${opening}») و صفر ثبت شد. اگر مشتری بستانکار است، آن را در «رسیدات» ثبت کنید.`);
         }
         prepared.push({
-          name, contactPerson: cell(1), phone: cell(2), truckPlate: cell(3),
-          openingBalance: opening < 0 ? 0 : opening, note: cell(5),
+          name, contactPerson: cell(COL.contact), phone: cell(COL.phone), truckPlate: cell(COL.plate),
+          openingBalance: opening < 0 ? 0 : opening, note: cell(COL.note),
+          /* کد فقط از فایل می‌آید؛ فرم دستی کد خودش را دارد */
+          code: cellAt(r, COL.code),
         });
       } else if (type === 'employees') {
-        const name = cell(0);
+        const name = cell(COL.name);
         if (!name) { errors.push(`سطر ${line}: نام کارمند خالی است.`); continue; }
-        const salRaw = cell(4);
+        const salRaw = cell(COL.salary);
         const baseSalary = salRaw ? normalizeNumber(salRaw) : 0;
         if (baseSalary === null) { errors.push(`سطر ${line}: «معاش ثابت» عدد نیست («${salRaw}»).`); continue; }
         if (baseSalary < 0) { errors.push(`سطر ${line}: معاش نمی‌تواند منفی باشد.`); continue; }
@@ -472,7 +553,7 @@ export class ImportController {
          * (`۱۴۰۴/۰۱/۱۵`) در ستون ISO می‌نشست — نتیجه: کارمندی با تاریخ
          * استخدامِ نامعتبر که در هیچ مرتب‌سازی/گزارشی درست جا نمی‌گرفت.
          */
-        const hireRaw = cell(3);
+        const hireRaw = cell(COL.hireDate);
         let hireISO = '';
         if (hireRaw) {
           const mode = await settingsService.calendar();
@@ -480,9 +561,9 @@ export class ImportController {
           catch { errors.push(`سطر ${line}: تاریخ استخدام درست نیست («${hireRaw}») — نمونه‌ی درست: ۱۴۰۴/۰۱/۱۵.`); continue; }
         }
         prepared.push({
-          name, fatherName: cell(1), position: cell(2), hireDate: hireISO,
-          baseSalary, phone: cell(5), nationalId: cell(6), address: cell(7),
-          contractPeriod: cell(8), note: cell(9),
+          name, fatherName: cell(COL.father), position: cell(COL.position), hireDate: hireISO,
+          baseSalary, phone: cell(COL.phone), nationalId: cell(COL.nationalId), address: cell(COL.address),
+          contractPeriod: cell(COL.contract), note: cell(COL.empNote),
         });
       }
     }
@@ -536,16 +617,44 @@ export class ImportController {
     let inserted = 0;
     const skipped: string[] = [];
     if (type === 'customers') {
-      const existing: any[] = await db().$queryRawUnsafe(`SELECT "name","code" FROM "Customer" WHERE COALESCE("isWalkIn",0)=0`);
+      /*
+       * ── باگ (شکار باگ دور ۳۲): ردیف‌های سطل بازیافت مانع ورود می‌شدند ──
+       * این کوئری `deletedAt` را فیلتر نمی‌کرد، در حالی که بررسی تکراریِ
+       * پیش‌نمایش (`dryRun`) فیلتر می‌کرد. نتیجه: مشتری‌ای که حذف کرده بودید
+       * در پیش‌نمایش «آزاد» نشان داده می‌شد، ولی ثبت واقعی او را «تکراری»
+       * می‌دید و **هیچ ردیفی** وارد نمی‌شد (پیام: «۰ ردیف ثبت شد، ۱ رد شد»).
+       * حالا هر دو از یک قاعده استفاده می‌کنند: حذف‌شده = آزاد.
+       */
+      /*
+       * کدِ **همه‌ی** ردیف‌ها (حتی حذف‌شده‌ها) لازم است چون ایندکس یکتا
+       * `Customer_code_key` روی کد است؛ استفاده‌ی دوباره‌ی کدِ یک ردیف
+       * حذف‌شده، خطای UNIQUE و ۵۰۰ می‌داد. برای «نام»، حذف‌شده آزاد است.
+       */
+      const allRows: any[] = await db().$queryRawUnsafe(`SELECT "name","code","deletedAt" FROM "Customer" WHERE COALESCE("isWalkIn",0)=0`);
+      const existing = allRows.filter((r) => !r.deletedAt);
       /* کدها با یک منبع واحد ساخته می‌شوند (`common/codes`) تا با کد رزرو ۰۰۰
          یا کد دستیِ غیرعددی تصادم نکنند — `Math.max` قبلی هر دو را می‌شکست. */
       const names = new Set(existing.map((e) => String(e.name).trim()));
+      const usedCodes = new Set(allRows.map((e) => String(e.code ?? '').trim()).filter(Boolean));
       for (const p of unique) {
         if (names.has(String(p.name).trim())) { skipped.push(p.name); continue; }
-        /* کد از یک منبع واحد (`common/codes`) — نه `Math.max` که با کد رزرو
-           ۰۰۰ و کدهای دستیِ غیرعددی تصادم می‌کرد و با فهرست بزرگ هم
-           `RangeError` می‌داد. */
-        const code = await nextCustomerCode();
+        /*
+         * ── کد مشتری در رفت‌وبرگشت (شکار باگ دور ۳۲) ──────────────────────
+         * «کد مشتری» در فایل خروجی هست؛ اگر ورودی آن را نادیده بگیرد،
+         * خروجی‌ای که پشتیبان گرفته‌اید با کدهای **تازه** برمی‌گردد و
+         * ارجاع‌های کاغذی/دفتری مشتری دیگر به حساب او نمی‌خورد.
+         * قاعده: اگر کد در فایل بود و **آزاد** بود، همان را نگه دار؛
+         * وگرنه کد بعدی (`nextCustomerCode`، یک منبع واحد).
+         */
+        const wanted = String(p.code ?? '').trim();
+        let code: string;
+        if (wanted && wanted !== RESERVED_CUSTOMER_CODE && !usedCodes.has(wanted)) {
+          code = wanted;
+        } else {
+          if (wanted) warnings.push(`کد «${wanted}» برای «${p.name}» از قبل استفاده شده — کد تازه داده شد.`);
+          code = await nextCustomerCode();
+        }
+        usedCodes.add(String(code).trim());
         await db().$executeRawUnsafe(
           `INSERT INTO "Customer" ("code","name","contactPerson","phone","truckPlate","openingBalance","note","createdAt") VALUES (?,?,?,?,?,?,?,datetime('now'))`,
           code, p.name, p.contactPerson, p.phone, p.truckPlate, p.openingBalance, p.note,
@@ -554,7 +663,9 @@ export class ImportController {
         inserted++;
       }
     } else if (type === 'employees') {
-      const existing: any[] = await db().$queryRawUnsafe(`SELECT "name","code" FROM "Employee"`);
+      /* همان قاعده: ردیف سطل بازیافت مانع ورود نمی‌شود */
+      const allEmp: any[] = await db().$queryRawUnsafe(`SELECT "name","code","deletedAt" FROM "Employee"`);
+      const existing = allEmp.filter((r) => !r.deletedAt);
       const names = new Set(existing.map((e) => String(e.name).trim()));
       for (const p of unique) {
         if (names.has(String(p.name).trim())) { skipped.push(p.name); continue; }
