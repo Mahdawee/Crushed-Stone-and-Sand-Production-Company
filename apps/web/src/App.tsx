@@ -108,7 +108,24 @@ function Shell() {
           /* اگر برنامه قفل است، راه برگشتی وجود ندارد — دکمه پنهان می‌شود */
           onBack={license?.ok ? leaveLicense : undefined}
           canContinue={Boolean(license?.ok)}
-          onHelp={() => navigate('/help')}
+          /*
+           * ── باگ (شکار باگ دور ۳۴): دکمه‌ی «راهنما» مرده بود ──────────────
+           * این دکمه کاربر را به `/help` می‌برد، ولی گیتِ پایین‌تر
+           * (`license && !license.ok`) هر مسیری جز `/login` و `/license` را
+           * با `<Navigate to="/license">` برمی‌گرداند. یعنی وقتی کاربر
+           * *بیشتر از همه* به راهنما نیاز داشت (لایسنس نامعتبر/منقضی)، دکمه
+           * او را به همان صفحه برمی‌گرداند و هیچ اتفاقی نمی‌افتاد.
+           * حالا راهنما داخل خود صفحه‌ی لایسنس باز و بسته می‌شود — بدون
+           * جابه‌جایی مسیر، پس هیچ گیتی نمی‌تواند آن را ببلعد.
+           */
+          onHelp={() => {
+            /* راهنمای کامل داخل همین صفحه است — به آن اسکرول و برجسته می‌کنیم */
+            const el = document.getElementById('license-help');
+            if (!el) return;
+            try { el.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch { /* */ }
+            el.classList.add('lic-flash');
+            setTimeout(() => el.classList.remove('lic-flash'), 1600);
+          }}
         />
       </Suspense>
     );

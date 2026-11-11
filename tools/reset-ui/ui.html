@@ -106,6 +106,23 @@
     </div>
   </div>
 
+  <!--
+    شکار باگ دور ۳۴: روی نسخه‌ی نصب‌شده، صفحه باید بگوید داده را از کجا
+    پیدا کرده و اگر پیدا نکرد، همه‌ی مسیرهای گشته‌شده را نشان بدهد. پیام
+    قبلی «داده‌ای نیست» در حالی می‌آمد که ابزار فقط پوشه‌ی مخزن را گشته بود.
+  -->
+  <div class="card" id="whereCard" style="display:none">
+    <div class="card-h"><h2>مسیر داده</h2></div>
+    <div class="card-b">
+      <div id="whereBox"></div>
+    </div>
+  </div>
+
+  <div class="card danger" id="runtimeCard" style="display:none">
+    <div class="card-h"><h2>⚠ نسخه‌ی Node آماده نیست</h2></div>
+    <div class="card-b"><div id="runtimeBox" class="warnbox"></div></div>
+  </div>
+
   <!-- هشدار -->
   <div class="card danger">
     <div class="card-h"><h2>۲) این کار چه می‌کند (و چه نمی‌کند)</h2></div>
@@ -276,6 +293,37 @@ function render(){
     ? 'اینها همان چیزی است که با تأیید شما پاک می‌شود.'
     : 'سیستم آک است؛ صفر کردن فقط فهرست‌های پیش‌فرض و کاربر مدیر را بازسازی می‌کند.';
 
+  /* مسیر داده و مسیرهای گشته‌شده — همیشه دیده شود */
+  const searched = Array.isArray(st.searched) ? st.searched : [];
+  $('whereCard').style.display = searched.length || st.dataSource ? '' : 'none';
+  $('whereBox').innerHTML = [
+    `<div class="small">منبع: <b class="mono">${String(st.dataSource || '—')}</b>`
+      + (st.dataDirExplicit ? ' <span class="muted">(دستی تعیین شده)</span>' : ' <span class="muted">(تشخیص خودکار)</span>')
+      + '</div>',
+    st.note ? `<div class="hint">${String(st.note).replace(/[<>]/g, '')}</div>` : '',
+    searched.length
+      ? `<div class="small muted" style="margin-top:8px">جاهایی که ابزار گشته است:</div>`
+        + searched.map((c) => `<div class="mono small" dir="ltr" style="line-height:1.8">`
+          + `${c.hasDb ? '✔' : '·'} ${String(c.dir).replace(/[<>]/g, '')} <span class="muted">[${String(c.source || '').replace(/[<>]/g, '')}]</span></div>`).join('')
+      : '',
+    !st.available
+      ? '<div class="hint" style="margin-top:8px">داده پیدا نشد. اگر در جای دیگری است، ابزار را با '
+        + '<span class="mono" dir="ltr">--data-dir "&lt;مسیر&gt;"</span> اجرا کنید.</div>'
+      : '',
+  ].join('');
+
+  /* نسخه‌ی Node / دسترسی به node:sqlite */
+  const rt = st.runtime || { ok: true };
+  $('runtimeCard').style.display = rt.ok === false ? '' : 'none';
+  $('runtimeBox').innerHTML = rt.ok === false
+    ? `<b>${String(rt.message || '').replace(/[<>]/g, '')}</b>
+       <div class="hint" style="margin-top:6px">
+         نسخه‌ی Node این پنجره: <span class="mono" dir="ltr">${String(rt.node || '?')}</span>.
+         اگر نسخه‌ی نصب‌شده را دارید، <span class="mono" dir="ltr">node.exe</span> همراه آن هست؛
+         ابزار را با <span class="mono" dir="ltr">start.cmd</span> از همان پوشه باز کنید.
+       </div>`
+    : '';
+
   $('appOpenBox').style.display = open ? '' : 'none';
   const pre = st.preflight || { ok: true, problems: [] };
   $('preflightBox').style.display = pre.ok ? 'none' : '';
@@ -287,7 +335,8 @@ function syncBtn(){
   const ack = $('ack').checked;
   const typed = $('confirm').value.trim() === 'صفر کردن';
   const passOk = !state.appOpen || $('password').value.length > 0;
-  const ready = !state.preflight || state.preflight.ok !== false;
+  const rtOk = !state.runtime || state.runtime.ok !== false;
+  const ready = (!state.preflight || state.preflight.ok !== false) && rtOk;
   /* کلید لازم نیست — فقط تیک، عبارت تأیید، و (در حالت باز) رمز مدیر */
   $('go').disabled = !(ack && typed && passOk && ready);
   $('confirmHint').textContent = typed ? '' : 'با حروف فارسی: صفر کردن';

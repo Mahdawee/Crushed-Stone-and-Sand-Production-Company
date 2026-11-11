@@ -1090,6 +1090,16 @@ html[data-theme='dark'] .btn.primary { box-shadow: 0 6px 18px -12px var(--accent
 
 .lic-links { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 
+/*
+ * «راهنما» در صفحه‌ی لایسنس به این کارت اسکرول می‌کند؛ یک برجسته‌سازی کوتاه
+ * نشان می‌دهد کدام بخش را باید بخواند (باگ دور ۳۴: دکمه‌ی راهنما مرده بود).
+ */
+@keyframes licFlash {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0); }
+  20%, 60% { box-shadow: 0 0 0 3px var(--accent-soft, rgba(37, 99, 235, .35)); }
+}
+.lic-flash { animation: licFlash 1.5s ease-out; }
+
 .lic-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
 @media (max-width: 560px) { .lic-row { grid-template-columns: minmax(0, 1fr); } }
 

@@ -67,6 +67,13 @@ if (tables.includes('LookupItem')) {
 }
 db.close();
 fs.writeFileSync(path.join(dir, 'license.key'), '-----BEGIN FARDAY LICENSE-----\nFR-1\nx\ny\n-----END FARDAY LICENSE-----\n');
+/*
+ * مُهر دوره‌ی آزمایشی و ساعت لایسنس — شکار باگ دور ۳۴: این دو فایل بعد از
+ * «صفر کردن» می‌ماندند و مشتری **جدید** برنامه را با «دوره‌ی آزمایشی تمام
+ * شد» تحویل می‌گرفت. حالا باید پاک شوند.
+ */
+fs.writeFileSync(path.join(dir, 'license.trial'), '{"anchor":1}');
+fs.writeFileSync(path.join(dir, 'license.clock'), '{"anchor":1}');
 fs.mkdirSync(path.join(dir, 'backups'), { recursive: true });
 fs.writeFileSync(path.join(dir, 'backups', 'old-1.db'), 'backup');
 fs.writeFileSync(path.join(dir, 'backups', 'old-2.db'), 'backup');
@@ -234,6 +241,9 @@ check('گزارش «چند ردیف پاک شد» دارد', Number(st2.mark?.to
 
 /* فایل‌ها */
 check('لایسنس فعال پاک شد (ردّ مشتری قبلی)', !fs.existsSync(path.join(dir, 'license.key')));
+check('مُهر دوره‌ی آزمایشی پاک شد (مشتری جدید روزهای کامل می‌گیرد)', !fs.existsSync(path.join(dir, 'license.trial')));
+check('ساعت لایسنس (license.clock) پاک شد', !fs.existsSync(path.join(dir, 'license.clock')));
+check('پاسخ گزارش می‌دهد لایسنس پاک شد', done.body.removedLicense === true, String(done.body.removedLicense));
 check('پشتیبان‌های قبلی پاک شدند',
   fs.readdirSync(path.join(dir, 'backups')).filter((f) => f.startsWith('old-')).length === 0,
   fs.readdirSync(path.join(dir, 'backups')).join(','));
@@ -455,6 +465,158 @@ console.log('\n— رگرسیون: صفر کردن روی دیتابیس نصب 
   check('فایل خراب دست‌نخورده ماند', fs.readFileSync(badDb, 'utf8') === 'این یک دیتابیس نیست');
 
   for (const d of [oldDir, rbDir, badDir]) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* */ } }
+}
+
+/* ================================================================ */
+console.log('\n— تشخیص پوشه‌ی داده‌ی نسخه‌ی نصب‌شده (باگ دور ۳۴) —');
+{
+  const dd = await import(`file://${path.join(root, 'tools', 'reset-ui', 'data-dir.mjs')}`);
+
+  /* ۱) APPDATA ویندوز: اولین جایی که `farday.db` دارد باید انتخاب شود */
+  const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'farday-home-'));
+  const appdata = path.join(fakeHome, 'AppData', 'Roaming');
+  const installed = path.join(appdata, 'af.farday.roshan');
+  fs.mkdirSync(installed, { recursive: true });
+  fs.writeFileSync(path.join(installed, 'farday.db'), 'x');
+  const winEnv = { APPDATA: appdata, USERPROFILE: fakeHome, PATH: process.env.PATH };
+  const r1 = dd.resolveDataDir({ root, env: winEnv, argv: [], platform: 'win32' });
+  check('نسخه‌ی نصب‌شده در %APPDATA% پیدا می‌شود', r1.dataDir === installed, r1.dataDir);
+  check('فایل دیتابیس همان‌جا انتخاب می‌شود', r1.dbFile === path.join(installed, 'farday.db'), r1.dbFile);
+  check('وجود دیتابیس تأیید می‌شود', r1.dbExists === true && r1.explicit === false, JSON.stringify({ e: r1.explicit }));
+  check('منبع «تشخیص خودکار» گزارش می‌شود', /APPDATA/.test(r1.source), r1.source);
+
+  /* ۲) مسیر صریح همیشه برنده است */
+  const r2 = dd.resolveDataDir({ root, env: winEnv, argv: ['--data-dir', '/tmp/somewhere-else'], platform: 'win32' });
+  check('--data-dir بر تشخیص خودکار اولویت دارد', r2.dataDir === path.resolve('/tmp/somewhere-else'), r2.dataDir);
+  check('--data-dir «صریح» علامت می‌خورد', r2.explicit === true && r2.source === '--data-dir', r2.source);
+  const r2b = dd.resolveDataDir({ root, env: winEnv, argv: ['--data-dir=/tmp/eq-form'], platform: 'win32' });
+  check('شکل --data-dir=مسیر هم پذیرفته می‌شود', r2b.dataDir === path.resolve('/tmp/eq-form'), r2b.dataDir);
+
+  /* ۳) FD_RESET_DATA_DIR / FD_DATA_DIR */
+  const r3 = dd.resolveDataDir({ root, env: { ...winEnv, FD_RESET_DATA_DIR: '/tmp/fd-reset' }, argv: [], platform: 'win32' });
+  check('FD_RESET_DATA_DIR پذیرفته می‌شود', r3.dataDir === path.resolve('/tmp/fd-reset'), r3.dataDir);
+  const r3b = dd.resolveDataDir({ root, env: { ...winEnv, FD_DATA_DIR: '/tmp/fd-data' }, argv: [], platform: 'win32' });
+  check('FD_DATA_DIR (قاعده‌ی برنامه) پذیرفته می‌شود', r3b.dataDir === path.resolve('/tmp/fd-data'), r3b.dataDir);
+
+  /* ۴) لینوکس: XDG_DATA_HOME */
+  const linHome = fs.mkdtempSync(path.join(os.tmpdir(), 'farday-lin-'));
+  const xdg = path.join(linHome, 'xdg');
+  const linInstalled = path.join(xdg, 'af.farday.roshan');
+  fs.mkdirSync(linInstalled, { recursive: true });
+  fs.writeFileSync(path.join(linInstalled, 'farday.db'), 'x');
+  const r4 = dd.resolveDataDir({
+    root, env: { HOME: linHome, XDG_DATA_HOME: xdg, PATH: process.env.PATH }, argv: [], platform: 'linux',
+  });
+  check('روی لینوکس $XDG_DATA_HOME/af.farday.roshan پیدا می‌شود',
+    r4.dataDir === linInstalled, `${r4.dataDir} ← ${r4.source}`);
+
+  /* ۵) هیچ داده‌ای نیست → همه‌ی مسیرها گزارش می‌شوند (نه یک مسیر کور) */
+  const emptyHome = fs.mkdtempSync(path.join(os.tmpdir(), 'farday-empty-'));
+  /* `root` را به یک پوشه‌ی خالی می‌دهیم، وگرنه `data/` خودِ مخزن پیدا می‌شد */
+  const r5 = dd.resolveDataDir({
+    root: emptyHome, env: { USERPROFILE: emptyHome, HOME: emptyHome, PATH: process.env.PATH }, argv: [], platform: 'win32',
+  });
+  check('وقتی داده نیست، dbExists=false است', r5.dbExists === false);
+  check('همه‌ی مسیرهای گشته‌شده گزارش می‌شوند', Array.isArray(r5.searched) && r5.searched.length >= 3,
+    String(r5.searched?.length));
+  check('پیام راهنما می‌گوید با --data-dir مسیر را بدهید', /--data-dir/.test(String(r5.note || '')), String(r5.note));
+
+  /* ۶) CLI باید مسیر نصب‌شده را واقعاً پیدا و صفر کند */
+  const cliEnv = { ...process.env, APPDATA: appdata, USERPROFILE: fakeHome };
+  delete cliEnv.FD_DATA_DIR; delete cliEnv.FD_DB_FILE; delete cliEnv.FD_RESET_DATA_DIR;
+  const cliFile = fs.mkdtempSync(path.join(os.tmpdir(), 'farday-cli-'));
+  const cliInstalled = path.join(cliFile, 'af.farday.roshan');
+  fs.mkdirSync(cliInstalled, { recursive: true });
+  fs.copyFileSync(dbFile, path.join(cliInstalled, 'farday.db'));
+  fs.writeFileSync(path.join(cliInstalled, 'license.trial'), '{"anchor":1}');
+  const cliRun = execFileSync(process.execPath, [path.join(root, 'tools', 'reset-ui', 'cli.mjs'), '--info'], {
+    cwd: os.tmpdir(), env: { ...cliEnv, APPDATA: cliFile }, encoding: 'utf8',
+  });
+  check('CLI داده‌ی نسخه‌ی نصب‌شده را پیدا می‌کند',
+    cliRun.includes(cliInstalled), cliRun.replace(/\x1b\[[0-9;]*m/g, '').slice(0, 300));
+  const cliInfo = execFileSync(process.execPath, [path.join(root, 'tools', 'reset-ui', 'cli.mjs'), '--info', '--data-dir', cliInstalled], {
+    cwd: os.tmpdir(), env: { ...cliEnv, APPDATA: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'farday-none-')), 'x') }, encoding: 'utf8',
+  });
+  check('CLI با --data-dir هم کار می‌کند', cliInfo.includes(cliInstalled), cliInfo.replace(/\x1b\[[0-9;]*m/g, '').slice(0, 200));
+
+  for (const d of [fakeHome, linHome, emptyHome, cliFile]) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* */ } }
+}
+
+/* ================================================================ */
+console.log('\n— جدول‌های لایسنس و شمارنده هم صفر می‌شوند (باگ دور ۳۴) —');
+{
+  const core = await import(`file://${path.join(root, 'tools', 'reset-ui', 'reset-core.mjs')}`);
+  for (const t of ['License', 'LicenseClock', 'LicenseEvent', 'Sequence']) {
+    check(`جدول ${t} در فهرست صفر کردن هست`, core.RESET_ORDER.includes(t), core.RESET_ORDER.join(','));
+  }
+  check('جدول User عمداً صفر نمی‌شود (کاربران می‌مانند)', !core.RESET_ORDER.includes('User'));
+
+  /* یک دیتابیس تازه + لایسنس/شمارنده، بعد صفر کردن */
+  const ldir = fs.mkdtempSync(path.join(os.tmpdir(), 'farday-lic-'));
+  const ldb = path.join(ldir, 'farday.db');
+  const { DatabaseSync: DS } = await import('node:sqlite');
+  const seed = new DS(ldb);
+  seed.exec(`CREATE TABLE "User" ("id" INTEGER PRIMARY KEY AUTOINCREMENT, "username" TEXT NOT NULL, "fullName" TEXT NOT NULL DEFAULT '', "passwordHash" TEXT NOT NULL, "role" TEXT NOT NULL DEFAULT 'manager', "active" INTEGER NOT NULL DEFAULT 1)`);
+  seed.exec(`CREATE TABLE "Customer" ("id" INTEGER PRIMARY KEY AUTOINCREMENT, "code" TEXT NOT NULL, "name" TEXT NOT NULL, "openingBalance" REAL NOT NULL DEFAULT 0)`);
+  seed.exec(`CREATE TABLE "License" ("id" INTEGER PRIMARY KEY AUTOINCREMENT, "text" TEXT NOT NULL)`);
+  seed.exec(`CREATE TABLE "LicenseClock" ("id" INTEGER PRIMARY KEY, "anchor" INTEGER NOT NULL DEFAULT 0)`);
+  seed.exec(`CREATE TABLE "LicenseEvent" ("id" INTEGER PRIMARY KEY AUTOINCREMENT, "action" TEXT NOT NULL)`);
+  seed.exec(`CREATE TABLE "Sequence" ("scope" TEXT PRIMARY KEY, "value" INTEGER NOT NULL DEFAULT 0)`);
+  seed.exec(`INSERT INTO "Customer" ("code","name") VALUES ('C-9','مشتری قبلی')`);
+  seed.exec(`INSERT INTO "License" ("text") VALUES ('FR-OLD-LICENSE')`);
+  seed.exec(`INSERT INTO "LicenseClock" ("id","anchor") VALUES (1, 1)`);
+  seed.exec(`INSERT INTO "LicenseEvent" ("action") VALUES ('activate')`);
+  seed.exec(`INSERT INTO "Sequence" ("scope","value") VALUES ('S-1405', 41)`);
+  seed.close();
+
+  const lrun = await core.resetOffline({ dbFile: ldb, dataDir: ldir }, { confirm: 'صفر کردن', operator: 'test' });
+  check('صفر کردن با جدول‌های لایسنس موفق است', lrun.ok === true, String(lrun.message).slice(0, 120));
+  const after = new DS(ldb, { readOnly: true });
+  try {
+    for (const t of ['License', 'LicenseClock', 'LicenseEvent', 'Sequence']) {
+      const c = Number(after.prepare(`SELECT COUNT(*) c FROM "${t}"`).get().c);
+      check(`  ${t} خالی شد`, c === 0, String(c));
+    }
+    check('  کاربر مدیر ساخته شد', Number(after.prepare(`SELECT COUNT(*) c FROM "User"`).get().c) === 1);
+  } finally { after.close(); }
+  check('فایل دیتابیس بعد از VACUUM سالم است',
+    fs.statSync(ldb).size > 0 && fs.readFileSync(ldb).subarray(0, 15).toString() === 'SQLite format 3');
+  fs.rmSync(ldir, { recursive: true, force: true });
+}
+
+/* ================================================================ */
+console.log('\n— نسخه‌ی Node و node:sqlite —');
+{
+  const core = await import(`file://${path.join(root, 'tools', 'reset-ui', 'reset-core.mjs')}`);
+  const rt = await core.runtimeInfo();
+  check('وضعیت Node گزارش می‌شود', typeof rt.node === 'string' && rt.node.length > 0, rt.node);
+  check('node:sqlite در این نسخه کار می‌کند', rt.sqlite === true, rt.message);
+  /*
+   * سرورِ اصلی تست در بلوک‌های قبلی بسته شد؛ برای خواندن `/api/state` یک
+   * نمونه‌ی کوتاه روی پورت دیگر بالا می‌آوریم (همان پوشه‌ی داده، فقط خواندن).
+   */
+  {
+    const p2 = 4478, b2 = `http://127.0.0.1:${p2}`;
+    const srv = spawn(process.execPath, [path.join(root, 'tools', 'reset-ui', 'server.mjs')], {
+      cwd: root,
+      env: { ...process.env, FD_DATA_DIR: dir, FD_DB_FILE: dbFile, FD_RESET_UI_PORT: String(p2) },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let st3 = {};
+    for (let i = 0; i < 60; i++) {
+      try { const r = await fetch(b2 + '/api/state'); if (r.ok) { st3 = await r.json(); break; } } catch { /* wait */ }
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    try { srv.kill('SIGKILL'); } catch { /* */ }
+    check('صفحه‌ی ابزار وضعیت Node را می‌گیرد', st3.runtime && st3.runtime.sqlite === true, JSON.stringify(st3.runtime));
+    check('صفحه‌ی ابزار مسیرهای گشته‌شده را می‌گیرد', Array.isArray(st3.searched) && st3.searched.length >= 1,
+      String(st3.searched?.length));
+    check('صفحه‌ی ابزار منبع داده را می‌گوید', typeof st3.dataSource === 'string' && st3.dataSource.length > 0, st3.dataSource);
+  }
+  const uiSrc = fs.readFileSync(path.join(root, 'tools', 'reset-ui', 'ui.html'), 'utf8');
+  check('صفحه جعبه‌ی «نسخه‌ی Node آماده نیست» دارد', /id="runtimeCard"/.test(uiSrc) && /runtimeBox/.test(uiSrc));
+  check('صفحه مسیرهای گشته‌شده را نشان می‌دهد', /whereBox/.test(uiSrc) && /searched/.test(uiSrc));
+  check('دکمه‌ی اجرا با Node ناسالم قفل می‌شود', /state\.runtime\.ok !== false/.test(uiSrc));
 }
 
 try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* */ }

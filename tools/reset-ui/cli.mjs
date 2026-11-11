@@ -14,13 +14,23 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { inventory, resetOffline, RESET_PHRASE } from './reset-core.mjs';
+import { inventory, resetOffline, resetMark, RESET_PHRASE } from './reset-core.mjs';
+import { resolveDataDir, explain } from './data-dir.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
 
-const dataDir = process.env.FD_DATA_DIR ? path.resolve(process.env.FD_DATA_DIR) : path.join(root, 'data');
-const dbFile = process.env.FD_DB_FILE || path.join(dataDir, 'farday.db');
+/**
+ * ── باگ (شکار باگ دور ۳۴) ──────────────────────────────────────────────
+ * پیش‌تر مسیر داده فقط `FD_DATA_DIR` یا `data/` کنار مخزن بود. روی کمپیوتر
+ * مشتری برنامه **نصب‌شده** است و داده در `%APPDATA%\af.farday.roshan` است،
+ * پس CLI همیشه می‌گفت «فایل دیتابیس نیست» — حتی وقتی یک سال داده وجود داشت.
+ * حالا `data-dir.mjs` نسخه‌ی نصب‌شده را خودش پیدا می‌کند و `--data-dir`
+ * هم برای وقتی است که اپراتور مسیر را می‌داند.
+ */
+const resolved = resolveDataDir({ root });
+const dataDir = resolved.dataDir;
+const dbFile = resolved.dbFile;
 
 const argv = process.argv.slice(2);
 const flag = (name) => argv.includes(`--${name}`);
@@ -43,9 +53,12 @@ function usage() {
       ${dim('--reason "تحویل به مشتری"  --operator "نام شما"')}
       ${dim('--keep-admin / --no-admin        کاربر مدیر بازسازی شود یا نه')}
       ${dim('--keep-backups                  پشتیبان‌های قبلی پاک نشوند')}
+      ${dim('--data-dir <مسیر>               پوشه‌ی داده را دستی بدهید')}
+      ${dim('--db-file <مسیر>                فایل دیتابیس را دستی بدهید')}
 
   داده: ${dbFile}
   پوشه: ${dataDir}
+  منبع: ${resolved.source}${resolved.dbExists ? '' : yellow('   (دیتابیس در این مسیر نیست)')}
 
 ${yellow('⚠')} بدون عبارت تأیید «${RESET_PHRASE}» هیچ کاری انجام نمی‌شود.
 ${yellow('⚠')} قبل از هر تغییر یک پشتیبان خودکار در پوشه‌ی ${bold('backups')} گرفته می‌شود.
@@ -56,10 +69,20 @@ ${yellow('⚠')} قبل از هر تغییر یک پشتیبان خودکار د
 async function cmdInfo() {
   const inv = await inventory({ dbFile, dataDir });
   if (!inv.exists) {
-    console.log(yellow('ℹ فایل دیتابیس نیست — این کمپیوتر داده‌ای ندارد.'));
-    console.log(dim(`   مسیر بررسی‌شده: ${dbFile}`));
+    /*
+     * باگ (دور ۳۴): پیام قبلی می‌گفت «این کمپیوتر داده‌ای ندارد»، ولی ابزار
+     * فقط یک مسیر (پوشه‌ی مخزن) را گشته بود. حالا همه‌ی مسیرهای شناخته‌شده
+     * — از جمله نسخه‌ی نصب‌شده — چاپ می‌شوند تا اپراتور ببیند واقعاً کجا
+     * گشته و با `--data-dir` مسیر درست را بدهد.
+     */
+    console.log(yellow('ℹ فایل دیتابیس پیدا نشد — در مسیرهای زیر داده‌ای نیست:'));
+    for (const c of resolved.searched || []) {
+      console.log(dim(`   ${c.hasDb ? '✔' : '·'} ${c.dir}  [${c.source}]`));
+    }
+    console.log(dim('   اگر داده در جای دیگری است: --data-dir "<مسیر>" یا FD_RESET_DATA_DIR'));
     return 0;
   }
+  console.log(dim(`  منبع: ${resolved.source}`));
   console.log(bold('وضعیت داده'));
   console.log(`  دیتابیس: ${dim(inv.database)}`);
   console.log(`  اندازه:  ${(inv.dbSize / 1024).toFixed(0)} KB`);

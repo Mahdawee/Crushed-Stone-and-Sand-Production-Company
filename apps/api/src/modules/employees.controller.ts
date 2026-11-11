@@ -379,26 +379,43 @@ export class EmployeesController {
      */
     const name = String(body?.name ?? '').trim();
     if (!name) throw new HttpException('نام کارمند لازم است.', 400);
-    const cur: any[] = await db().$queryRawUnsafe(`SELECT "code" FROM "Employee" WHERE "id"=?`, eid);
-    const code = String(body?.code ?? '').trim() || String(cur?.[0]?.code ?? '');
+    /*
+     * ── باگ (شکار باگ دور ۳۴): ویرایش ناقص، بقیه‌ی فیلدها را پاک می‌کرد ──────
+     * این مسیر بدنه‌ی «کامل» می‌خواست؛ فراخوانی که فقط `name` یا فقط `status`
+     * می‌فرستاد، کد را نگه می‌داشت ولی پدر، وظیفه، تاریخ استخدام، معاش،
+     * تلفن، تذکره، آدرس، دوره‌ی قرارداد و یادداشت را **خالی/صفر** می‌کرد و
+     * وضعیت را به «فعال» برمی‌گرداند. برای کارمندی که «غیر فعال» شده بود
+     * یعنی یک ویرایش ساده او را دوباره فعال می‌کرد.
+     * حالا مقدار نبوده = دست‌نزن (صفحه‌ی کارمندان همه‌ی فیلدها را می‌فرستد).
+     */
+    const full: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Employee" WHERE "id"=?`, eid);
+    const cur: any = full?.[0] || {};
+    const code = String(body?.code ?? '').trim() || String(cur?.code ?? '');
     if (!code) throw new HttpException('کد کارمند لازم است.', 400);
-    const baseSalary = moneyOrZero(body.baseSalary, 'معاش ثابت');
+    const baseSalary = body?.baseSalary === undefined ? Number(cur?.baseSalary || 0) : moneyOrZero(body.baseSalary, 'معاش ثابت');
     if (baseSalary < 0) throw new HttpException('معاش ثابت نمی‌تواند منفی باشد.', 400);
     const mode = await this.cal();
-    let hireDate = body.hireDate || '';
+    let hireDate = body?.hireDate === undefined ? String(cur?.hireDate || '') : String(body.hireDate || '');
     try {
       hireDate = hireDate ? parseUserDate(hireDate, mode) : '';
     } catch (e: any) {
       throw new HttpException(e.message, 400);
     }
+    /* فیلدهای متنی: نبودن در بدنه = دست‌نزن */
+    const txt = (key: string, max: number) => (
+      body?.[key] === undefined ? String(cur?.[key] ?? '') : String(body[key] ?? '').slice(0, max)
+    );
+    const status = body?.status === undefined
+      ? (String(cur?.status || 'active') === 'inactive' ? 'inactive' : 'active')
+      : (body.status === 'inactive' ? 'inactive' : 'active');
     try {
       await db().$executeRawUnsafe(
         `UPDATE "Employee" SET "code"=?, "name"=?, "fatherName"=?, "position"=?, "hireDate"=?, "baseSalary"=?,
          "phone"=?, "nationalId"=?, "address"=?, "contractPeriod"=?, "status"=?, "note"=? WHERE "id"=?`,
-        code, name, String(body.fatherName ?? '').slice(0, 80), String(body.position ?? '').slice(0, 80), hireDate,
-        baseSalary, String(body.phone ?? '').slice(0, 60), String(body.nationalId ?? '').slice(0, 60),
-        String(body.address ?? '').slice(0, 200), String(body.contractPeriod ?? '').slice(0, 60),
-        body.status === 'inactive' ? 'inactive' : 'active', String(body.note ?? '').slice(0, 300), eid,
+        code, name, txt('fatherName', 80), txt('position', 80), hireDate,
+        baseSalary, txt('phone', 60), txt('nationalId', 60),
+        txt('address', 200), txt('contractPeriod', 60),
+        status, txt('note', 300), eid,
       );
     } catch (e: any) {
       /* خطای اعتبارسنجی خودمان (۴۰۰) نباید به ۵۰۰ تبدیل شود */

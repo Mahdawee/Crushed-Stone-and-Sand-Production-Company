@@ -259,12 +259,30 @@ export class CustomersController {
     const code = wantedCode || String(curRow?.[0]?.code ?? '');
     if (!code) throw new HttpException('کد مشتری لازم است.', 400);
     if (code === RESERVED_CUSTOMER_CODE) throw new HttpException('کد «۰۰۰» برای «مشتری گذری» رزرو است؛ کد دیگری بدهید.', 400);
+    /*
+     * ── باگ (شکار باگ دور ۳۴): ویرایش ناقص، فیلدهای دیگر را پاک می‌کرد ──────
+     * `PUT /customers/:id` بدنه را «کامل» فرض می‌کرد؛ فراخوانی که فقط `name`
+     * می‌فرستاد، تلفن، شخص رابط، پلاک موتر، «باقی اولیه» و یادداشت را **خالی**
+     * می‌کرد (راستی‌آزمایی شد: `phone`/`truckPlate`/`note` → `""` و
+     * `openingBalance` → ۰، بدون هیچ هشداری). حالا فقط کلیدهایی که واقعاً در
+     * بدنه آمده‌اند نوشته می‌شوند — همان قاعده‌ای که در ویرایش کاربر گذاشتیم.
+     */
+    const cur: any = curRow?.[0] || {};
+    const pick = (key: string, max: number, fallback = '') => (
+      body?.[key] === undefined ? String(fallback ?? '') : String(body[key] ?? '').slice(0, max)
+    );
+    const full = await db().$queryRawUnsafe(`SELECT * FROM "Customer" WHERE "id"=?`, cid);
+    const existing: any = full?.[0] || cur;
     try {
       await db().$executeRawUnsafe(
         `UPDATE "Customer" SET "code"=?, "name"=?, "contactPerson"=?, "phone"=?, "truckPlate"=?, "openingBalance"=?, "note"=? WHERE "id"=?`,
-        code, name, String(body.contactPerson ?? '').slice(0, 80), String(body.phone ?? '').slice(0, 60),
-        String(body.truckPlate ?? '').slice(0, 40), moneyOrZero(body.openingBalance, 'باقی اولیه'),
-        String(body.note ?? '').slice(0, 300), cid,
+        code, name,
+        pick('contactPerson', 80, existing.contactPerson),
+        pick('phone', 60, existing.phone),
+        pick('truckPlate', 40, existing.truckPlate),
+        body?.openingBalance === undefined ? Number(existing.openingBalance || 0) : moneyOrZero(body.openingBalance, 'باقی اولیه'),
+        pick('note', 300, existing.note),
+        cid,
       );
     } catch (e: any) {
       /* خطای اعتبارسنجی خودمان (۴۰۰) نباید به ۵۰۰ تبدیل شود */

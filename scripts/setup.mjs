@@ -102,6 +102,21 @@ try {
 
 /* ۶) جمع‌بندی */
 console.log('\n✅ آماده است.\n');
-console.log('   اجرای برنامه در مرورگر:   npm start        →  http://127.0.0.1:4317');
+/*
+ * ── باگ (شکار باگ دور ۳۴): دستورِ اشتباه در پایان آماده‌سازی ──────────────
+ * این‌جا نوشته بود «npm start → http://127.0.0.1:4317» برای «اجرای برنامه در
+ * مرورگر». ولی `npm start` فقط `apps/api/dist/main.js` را اجرا می‌کند و
+ * رابط کاربری **از قبل باید ساخته شده باشد**؛ اگر `apps/web/dist` نبود
+ * (مثلاً کاربر فقط API را ساخته)، مرورگر صفحه‌ی راهنمای انگلیسی/فارسی
+ * «UI not built» با کد ۵۰۳ نشان می‌داد و کاربر فکر می‌کرد برنامه خراب است.
+ * حالا وضعیت واقعی ساخته شده است و پیام بر اساس آن داده می‌شود.
+ */
+const webBuilt = fs.existsSync(path.join(root, 'apps/web/dist/index.html'));
+if (webBuilt) {
+  console.log(`   اجرای برنامه در مرورگر:   npm start        →  http://127.0.0.1:${process.env.FD_PORT || 4317}`);
+} else {
+  console.log('   ⚠ رابط کاربری ساخته نشده — npm start فقط سرویس داخلی را بالا می‌آورد.');
+  console.log('     برای ساخت رابط:  npm run build -w @farday/web');
+}
 console.log('   حالت توسعه (hot reload):  npm run dev      →  http://localhost:5173');
 console.log('   ساخت نصب‌کننده ویندوز:    npm run desktop:build\n');

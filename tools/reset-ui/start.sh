@@ -8,9 +8,12 @@
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
-cd "$root"
+# ⚠ در نسخه‌ی نصب‌شده «ریشه‌ی مخزن» وجود ندارد؛ به آن تکیه نمی‌کنیم (باگ دور ۳۴).
+cd "$here"
 
-PORT="${1:-4322}"
+PORT="${FD_RESET_UI_PORT:-4322}"
+# اگر آرگومان اول عدد بود، همان پورت است (سازگاری با نسخه‌ی قبلی)
+if [ $# -gt 0 ] && [[ "${1}" =~ ^[0-9]+$ ]]; then PORT="$1"; shift; fi
 export FD_RESET_UI_PORT="$PORT"
 
 if ! command -v node >/dev/null 2>&1; then
@@ -19,7 +22,7 @@ if ! command -v node >/dev/null 2>&1; then
   echo "     اگر نسخه‌ی نصب‌شده‌ی برنامه را دارید: src-tauri/api/node"
   echo
   # اگر نود همراه بسته باشد، از همان استفاده کن
-  for cand in "$root/src-tauri/api/node" "$HOME/.local/share/af.farday.roshan/node"; do
+  for cand in "$root/src-tauri/api/node" "$here/../node" "$here/node" "$HOME/.local/share/af.farday.roshan/node"; do
     if [ -x "$cand" ]; then exec "$cand" "$here/server.mjs"; fi
   done
   exit 1
@@ -50,4 +53,5 @@ echo
   fi
 ) &
 
-exec node "$here/server.mjs"
+# آرگومان‌ها پاس داده می‌شوند: ./start.sh --data-dir "$HOME/.local/share/af.farday.roshan"
+exec node "$here/server.mjs" "$@"

@@ -38,15 +38,22 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { inventory, preflight as preflightCore, resetOffline as resetCore } from './reset-core.mjs';
+import { inventory, preflight as preflightCore, resetOffline as resetCore, runtimeInfo } from './reset-core.mjs';
+import { resolveDataDir } from './data-dir.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
-/* ── پوشه‌ی داده: همان قاعده‌ی برنامه (FD_DATA_DIR یا پیش‌فرض) ── */
-const dataDir = process.env.FD_DATA_DIR
-  ? path.resolve(process.env.FD_DATA_DIR)
-  : path.join(root, 'data');
-const dbFile = process.env.FD_DB_FILE || path.join(dataDir, 'farday.db');
+/*
+ * ── پوشه‌ی داده (شکار باگ دور ۳۴) ───────────────────────────────────────
+ * پیش‌تر فقط `FD_DATA_DIR` یا `data/` کنار مخزن. روی کمپیوتر مشتری برنامه
+ * **نصب‌شده** است و داده در `%APPDATA%\af.farday.roshan` — یعنی ابزار همان
+ * جایی را که باید، نمی‌گشت و صفحه می‌گفت «داده‌ای نیست» در حالی که مشتری
+ * یک سال داده داشت. حالا `data-dir.mjs` نسخه‌ی نصب‌شده را خودش پیدا می‌کند
+ * (و `--data-dir` / `FD_RESET_DATA_DIR` هم پذیرفته می‌شود).
+ */
+const resolved = resolveDataDir({ root });
+const dataDir = resolved.dataDir;
+const dbFile = resolved.dbFile;
 const backupDir = path.join(dataDir, 'backups');
 const markFile = path.join(dataDir, 'system-reset.json');
 
@@ -187,6 +194,11 @@ async function offlineState() {
   return {
     ...inv,
     preflight: pre,
+    /* کجاها گشته شد — اپراتور باید ببیند، نه این‌که کورکورانه اعتماد کند */
+    dataSource: resolved.source,
+    dataDirExplicit: resolved.explicit,
+    searched: resolved.searched,
+    note: resolved.note || '',
     available: inv.exists,
     /* دیگر کلیدی در کار نیست — برای سازگاری با UI قدیمی همیشه true */
     resetKeyPresent: true,
@@ -261,6 +273,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/state') {
       const app = await appStatus();
       const st = await offlineState();
+      /* نسخه‌ی Node و کارکردن `node:sqlite` — باگ دور ۳۴: نسخه‌ی ناقص نباید
+         مثل «سیستم آک» به نظر برسد */
+      st.runtime = await runtimeInfo();
       st.appOpen = app.open;
       st.port = app.port;
       st.apiBase = `${API_BASE}`;
@@ -298,6 +313,18 @@ const server = http.createServer(async (req, res) => {
       /* ── حفاظ ۲: تیک «برگشت‌ناپذیر است» ── */
       if (body.acknowledged !== true) {
         json(res, 400, { ok: false, message: 'تیک «می‌دانم برگشت‌ناپذیر است» لازم است.' });
+        return;
+      }
+
+      /* ── حفاظ ۳: نسخه‌ی Node سالم باشد ──
+         اگر `node:sqlite` کار نکند، صفر کردن آفلاین ممکن نیست. پیش‌تر
+         نتیجه یک خطای مبهم وسط کار بود (یا بدتر: صفر ردیف و پیام «آک است»). */
+      const rt = await runtimeInfo();
+      if (!rt.ok) {
+        json(res, 500, {
+          ok: false,
+          message: `این نسخه‌ی Node نمی‌تواند دیتابیس را باز کند: ${rt.message}\nهیچ داده‌ای تغییر نکرد.`,
+        });
         return;
       }
 
@@ -374,6 +401,12 @@ server.on('error', (e) => {
 server.listen(PORT, HOST, () => {
   console.log(`\n🧹 ابزار «صفر کردن سیستم» → http://${HOST}:${PORT}\n`);
   console.log(`   داده: ${dbFile}`);
+  console.log(`   منبع: ${resolved.source}${resolved.dbExists ? '' : '  (⚠ دیتابیس در این مسیر نیست)'}`);
+  if (!resolved.dbExists) {
+    console.log('   مسیرهای گشته‌شده:');
+    for (const c of resolved.searched || []) console.log(`     ${c.hasDb ? '✔' : '·'} ${c.dir}  [${c.source}]`);
+    console.log('   مسیر درست را با --data-dir بدهید:  node server.mjs --data-dir "<مسیر>"');
+  }
   console.log('   تأیید: تیک «برگشت‌ناپذیر» + تایپ عبارت «صفر کردن» (کلید لازم نیست)');
   console.log('   برای بستن: Ctrl+C\n');
 });

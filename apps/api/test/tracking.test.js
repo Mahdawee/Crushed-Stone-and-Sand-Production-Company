@@ -304,6 +304,31 @@ async function main() {
       const e3b = (empList2.body?.rows || []).find((e) => e.id === e3.id);
       check('ویرایش کارمند بدون کد، کد را خالی نمی‌کند', e3b?.code === '952', `${e3b?.code} (${e3put.status})`);
 
+      /*
+       * ── باگ (شکار باگ دور ۳۴): ویرایش ناقص کارمند، بقیه را پاک می‌کرد ─────
+       * فراخوانی با فقط `name`، پدر/وظیفه/تلفن/تذکره/آدرس/قرارداد/یادداشت را
+       * خالی، معاش را صفر و تاریخ استخدام را پاک می‌کرد و کارمند «غیر فعال»
+       * را دوباره «فعال» می‌کرد. حالا نبودن یک فیلد یعنی «دست نزن».
+       */
+      const empFull = await api('POST', '/employees', {
+        name: 'کارمند کامل', code: '953', fatherName: 'پدر جان', position: 'راننده',
+        hireDate: '2025-03-01', baseSalary: 15000, phone: '0700000', nationalId: '1400',
+        address: 'کابل', contractPeriod: 'یک سال', status: 'inactive', note: 'یادداشت',
+      });
+      check('کارمند کامل ساخته می‌شود', [200, 201].includes(empFull.status), String(empFull.status));
+      const empFullRow = (await api('GET', '/employees')).body?.rows?.find((e) => e.code === '953');
+      await api('PUT', `/employees/${empFullRow.id}`, { name: 'کارمند کامل (ویرایش)' });
+      const empAfter = (await api('GET', '/employees')).body?.rows?.find((e) => e.id === empFullRow.id);
+      check('ویرایش نام، پدر/وظیفه/تلفن/تذکره/آدرس را پاک نمی‌کند',
+        empAfter?.fatherName === 'پدر جان' && empAfter?.position === 'راننده'
+        && empAfter?.phone === '0700000' && empAfter?.nationalId === '1400' && empAfter?.address === 'کابل',
+        JSON.stringify({ f: empAfter?.fatherName, p: empAfter?.position, ph: empAfter?.phone }));
+      check('ویرایش نام، معاش و تاریخ استخدام را صفر نمی‌کند',
+        Number(empAfter?.baseSalary) === 15000 && String(empAfter?.hireDate || '').startsWith('2025-03-01'),
+        `${empAfter?.baseSalary}/${empAfter?.hireDate}`);
+      check('ویرایش نام، کارمند «غیر فعال» را دوباره فعال نمی‌کند',
+        empAfter?.status === 'inactive', String(empAfter?.status));
+
       const blankCo = await api('PUT', '/company', { name: '  ' });
       check('نام شرکت خالی رد می‌شود (سرصفحه‌ی همه‌ی اسناد است)', blankCo.status === 400, String(blankCo.status));
       const co = await api('PUT', '/company', { name: 'شرکت آزمایشی' });

@@ -20,6 +20,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 /**
+ * ── جدول‌های لایسنس و شماره‌گذاری (شکار باگ دور ۳۴) ──────────────────────
+ * این چهار جدول در فهرست نبودند و «صفر کردن» آن‌ها را دست‌نخورده می‌گذاشت،
+ * در حالی که صفحه صریح می‌گفت لایسنس پاک می‌شود. نتیجه: تأیید مشتری قبلی و
+ * شماره‌ی سند ادامه‌دار روی سیستم تحویلی. توضیح کامل در
+ * `apps/api/src/common/reset.ts` (همان فهرست، یک منبع حقیقت).
+ */
+/**
  * جدول‌هایی که خالی می‌شوند — پایین به بالا.
  * ⚠ با `RESET_ORDER` در `apps/api/src/common/reset.ts` یکی بماند.
  */
@@ -30,6 +37,7 @@ export const RESET_ORDER = [
   'LookupItem', 'Machinery', 'Vehicle', 'Product', 'Inventory',
   'StockMove', 'Shipment', 'Deal', 'Document', 'JournalEntry', 'JournalLine',
   'Company', 'Setting',
+  'License', 'LicenseClock', 'LicenseEvent', 'Sequence',
 ];
 
 /** همان عبارت تأییدِ برنامه */
@@ -78,6 +86,41 @@ let DatabaseSyncCtor = null;
 async function databaseClass() {
   if (!DatabaseSyncCtor) DatabaseSyncCtor = (await sqliteModule()).DatabaseSync;
   return DatabaseSyncCtor;
+}
+
+/**
+ * آیا این «نود» می‌تواند اصلاً کار کند؟ (شکار باگ دور ۳۴)
+ *
+ * چرا لازم است: نسخه‌ی نصب‌شده `node.exe` خودش را همراه دارد. اگر روزی کاپی
+ * قدیمی یا ناقصی از آن کنار ابزار بیفتد، اپراتور فقط پیام مبهم «ماژول sqlite
+ * بارگذاری نشده» یا صفحه‌ای با صفر ردیف می‌دید و فکر می‌کرد سیستم آک است.
+ * حالا ابزار **قبل** از هر کاری نسخه را می‌سنجد و پیام روشن می‌دهد.
+ */
+export async function runtimeInfo() {
+  const raw = String(process.versions?.node || '');
+  const major = Number(raw.split('.')[0] || 0);
+  let sqlite = false;
+  let error = '';
+  try {
+    const m = await sqliteModule();
+    sqlite = typeof m?.DatabaseSync === 'function';
+    if (!sqlite) error = 'ماژول node:sqlite کلاس DatabaseSync ندارد.';
+  } catch (e) {
+    error = e instanceof Error ? e.message : String(e);
+  }
+  const ok = sqlite && major >= 22;
+  return {
+    ok,
+    node: raw,
+    major,
+    sqlite,
+    error,
+    message: ok
+      ? `Node ${raw} — آماده`
+      : major < 22
+        ? `نسخه‌ی Node خیلی قدیمی است (${raw}). نسخه‌ی ۲۲ یا بالاتر لازم است.`
+        : `این Node نمی‌تواند دیتابیس را بخواند: ${error || 'دلیل نامشخص'}`,
+  };
 }
 
 function openDbSync(file, readOnly = false) {
@@ -344,6 +387,17 @@ export async function resetOffline(paths, opts) {
       if (n > 0) counts[t] = n;
     }
     try { db.exec('DELETE FROM sqlite_sequence'); } catch { /* ignore */ }
+    /*
+     * ── پاک‌سازی فیزیکی فایل (شکار باگ دور ۳۴) ─────────────────────────────
+     * `DELETE` فقط صفحه‌ها را «آزاد» می‌کند؛ داده‌ی مشتری قبلی در فایل
+     * می‌ماند و با ابزار بازیابی قابل بازگردانی است — یعنی «ردّ مشتری قبلی»
+     * واقعاً پاک نمی‌شد و حجم فایل هم همان می‌ماند. `VACUUM` فایل را از نو
+     * می‌سازد (داده‌ی آزادشده حذف می‌شود) و اندازه هم کوچک می‌شود.
+     * `wal_checkpoint(TRUNCATE)` هم WAL را خالی می‌کند تا ردیف‌های قدیمی در
+     * فایل کنارِ دیتابیس نمانند.
+     */
+    try { db.exec('VACUUM'); } catch { /* اگر نشد، صفر کردن موفق است */ }
+    try { db.exec('PRAGMA wal_checkpoint(TRUNCATE)'); } catch { /* ignore */ }
     try { db.exec('PRAGMA foreign_keys=ON'); } catch { /* ignore */ }
     wiped = true;
 
@@ -388,12 +442,35 @@ export async function resetOffline(paths, opts) {
       }
     }
 
+    /*
+     * ۱.۵) لایسنس و ساعت دوره‌ی آزمایشی — ردّ مشتری قبلی (شکار باگ دور ۳۴)
+     *
+     * باگ: این‌جا فقط `license.key` و `*.req/*.lic/renew*` پاک می‌شد، ولی
+     * `license.trial` و `license.clock` می‌ماندند. روی نصب آفلاین، دوره‌ی
+     * آزمایشی از همان مُهرِ قبلی ادامه می‌داد — یعنی مشتری **جدید** برنامه را
+     * با «دوره‌ی آزمایشی تمام شد» تحویل می‌گرفت یا روزهای کمتری داشت. صفحه
+     * هم صریح می‌گفت لایسنس پاک می‌شود، پس رفتار با وعده یکی نبود.
+     *
+     * نسخه‌ی آنلاین (`common/reset.ts`) هر سه فایل را پاک می‌کرد؛ حالا هر دو
+     * یک کار می‌کنند.
+     */
+    let removedLicense = false;
+    for (const f of safeReaddir(paths.dataDir)) {
+      const isLicense = f === 'license.key' || f === 'license.trial' || f === 'license.clock';
+      const isOld = /\.(req|lic)$/i.test(f) || /^renew/i.test(f);
+      if (!isLicense && !isOld) continue;
+      try {
+        fs.unlinkSync(path.join(paths.dataDir, f));
+        removedLicense = removedLicense || isOld || f !== 'license.clock';
+      } catch { /* ignore */ }
+    }
+
     const total = Object.values(counts).reduce((a, b) => a + b, 0);
     const at = new Date().toISOString();
     const report = {
       at, operator: opts.operator || 'reset-tool', reason: String(opts.reason || '').slice(0, 300),
       counts, total, backupFile: path.basename(backupFile), admin,
-      removedBackups: 0, mode: 'offline', host: hostName(),
+      removedLicense, removedBackups: 0, mode: 'offline', host: hostName(),
       id: crypto.randomBytes(6).toString('hex'),
     };
     fs.writeFileSync(path.join(paths.dataDir, RESET_MARK_FILE), JSON.stringify(report, null, 2), 'utf8');
@@ -405,13 +482,6 @@ export async function resetOffline(paths, opts) {
       );
     } catch { /* ignore */ }
 
-    /* لاگ فعالیتِ خودِ فایل‌ها هم پاک می‌شود (ردّ مشتری قبلی) */
-    for (const f of safeReaddir(paths.dataDir)) {
-      if (/\.(req|lic)$/i.test(f) || /^renew/i.test(f) || f === 'license.key') {
-        try { fs.unlinkSync(path.join(paths.dataDir, f)); } catch { /* ignore */ }
-      }
-    }
-
     if (opts.wipeBackups !== false) report.removedBackups = wipeBackups(paths, backupFile);
     fs.writeFileSync(path.join(paths.dataDir, RESET_MARK_FILE), JSON.stringify(report, null, 2), 'utf8');
 
@@ -421,7 +491,8 @@ export async function resetOffline(paths, opts) {
         ? `سیستم صفر شد — ${total.toLocaleString('fa-IR')} ردیف پاک شد. مدیر: admin / admin123`
         : 'دیتابیس از قبل خالی بود؛ کاربر مدیر و مشتری گذری بازسازی شد.',
       counts, total, backupFile: report.backupFile, admin, at,
-      operator: report.operator, removedBackups: report.removedBackups, mode: 'offline',
+      operator: report.operator, removedLicense: report.removedLicense,
+      removedBackups: report.removedBackups, mode: 'offline',
     };
   } catch (e) {
     /*

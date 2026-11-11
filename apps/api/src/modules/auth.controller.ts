@@ -170,10 +170,28 @@ export class AuthController {
     const p = db();
     const current: any[] = await p.$queryRawUnsafe(`SELECT * FROM "User" WHERE "id"=?`, uid);
     if (!current?.length) throw new HttpException('کاربر پیدا نشد.', 404);
-    /* نقش نامعتبر باید ۴۰۰ بدهد — نه اینکه بی‌صدا «مدیر» شود */
-    const newRole = AuthController.roleOf(body?.role, current[0].role);
+    /*
+     * ── باگ (شکار باگ دور ۳۴): «ویرایش کوتاه» کاربر را بی‌صدا عوض می‌کرد ────
+     * این مسیر `POST /users/:id` است و بدنه‌ی ناقص را مثل یک «به‌روزرسانی
+     * کامل» می‌نوشت:
+     *
+     *   • `role` نبوده → `roleOf(undefined, 'employee')` پیش‌فرض **کارمند**
+     *     را می‌گذاشت: فراخوانی که فقط رمز/نام را عوض می‌کرد (اسکریپت پشتیبانی،
+     *     ابزار تحویل، یا `PUT`-گونه‌ای که فقط `{password}` می‌فرستد) مدیر را
+     *     بی‌صدا به کارمند تنزل می‌داد.
+     *   • `active` نبوده → `body.active === false ? 0 : 1` کاربر غیرفعال را
+     *     دوباره **فعال** می‌کرد (و نشست‌هایش را هم باطل).
+     *   • `fullName` نبوده → نام کامل کاربر پاک می‌شد.
+     *
+     * حالا مقدار **نبوده** یعنی «دست نزن»؛ فقط مقدار صریح و نامعتبر ۴۰۰
+     * می‌دهد. صفحه‌ی «کاربران» همیشه همه‌ی فیلدها را می‌فرستد، پس رفتار
+     * ظاهری آن عوض نمی‌شود.
+     */
+    const roleGiven = body?.role !== undefined && body?.role !== null && body?.role !== '';
+    const activeGiven = body?.active !== undefined && body?.active !== null;
+    const newRole = AuthController.roleOf(roleGiven ? body.role : current[0].role, current[0].role);
     const becomingNonManager = current[0].role === 'manager' && newRole === 'employee';
-    const becomingInactive = Boolean(current[0].active) && body.active === false;
+    const becomingInactive = Boolean(current[0].active) && activeGiven && body.active === false;
     if ((becomingNonManager || becomingInactive) && current[0].role === 'manager') {
       const man: any[] = await p.$queryRawUnsafe(`SELECT COUNT(*) c FROM "User" WHERE "role"='manager' AND "active"=1`);
       if (Number(man?.[0]?.c ?? 0) <= 1) {
@@ -183,11 +201,14 @@ export class AuthController {
     if (body.password && String(body.password).length < 5) {
       throw new HttpException('رمز عبور باید حداقل ۵ حرف باشد.', 400);
     }
+    /* «نبودن» یعنی دست‌نزن — نه این‌که به پیش‌فرض برگردان */
+    const newFullName = body?.fullName === undefined ? String(current[0].fullName || '') : String(body.fullName || '').slice(0, 80);
+    const newActive = activeGiven ? (body.active === false ? 0 : 1) : (current[0].active ? 1 : 0);
     await p.$executeRawUnsafe(
       `UPDATE "User" SET "fullName"=?, "role"=?, "active"=? WHERE "id"=?`,
-      String(body.fullName || '').slice(0, 80),
+      newFullName,
       newRole,
-      body.active === false ? 0 : 1,
+      newActive,
       uid,
     );
     if (body.password) {
@@ -202,7 +223,7 @@ export class AuthController {
      *     (وگرنه کارمندِ ارتقایافته تا ۱۲ ساعت دسترسی قدیمی داشت).
      */
     const roleChanged = String(current[0].role) !== String(newRole);
-    const deactivated = Boolean(current[0].active) && body.active === false;
+    const deactivated = Boolean(current[0].active) && newActive === 0;
     if (body.password || roleChanged || deactivated) destroySessionsOf(uid);
     await logActivity({ username: req.session.username, action: 'update', entity: 'User', entityId: uid, detail: `کاربر ${body.username || ''}` });
     return { ok: true, sessionsCleared: Boolean(body.password || roleChanged || deactivated) };

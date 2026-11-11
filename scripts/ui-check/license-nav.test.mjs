@@ -85,6 +85,21 @@ console.log('\n— ترتیب گیت‌ها در Shell —');
   ok('مسیر برگشت به /license نمی‌افتد (حلقه نشود)', /startsWith\('\/license'\)/.test(shell));
 }
 
+console.log('\n— دکمه‌ی «راهنما» در صفحه‌ی لایسنس (باگ دور ۳۴) —');
+{
+  /*
+   * باگ: `onHelp` کاربر را به `/help` می‌برد، ولی وقتی لایسنس نامعتبر است
+   * گیت `if (license && !license.ok)` هر مسیری جز `/login` و `/license` را
+   * به `/license` برمی‌گرداند — یعنی دکمه‌ی راهنما درست وقتی که کاربر به آن
+   * نیاز داشت، هیچ کاری نمی‌کرد. حالا راهنما داخل همان صفحه باز می‌شود.
+   */
+  const lic = fs.readFileSync(path.join(root, 'apps', 'web', 'src', 'pages', 'License.tsx'), 'utf8');
+  ok('کارت راهنما شناسه‌ی license-help دارد', /id="license-help"/.test(lic));
+  ok('دکمه‌ی راهنما به مسیر /help ناوبری نمی‌کند', !/navigate\('\/help'\)/.test(app), 'مسیر /help زیر گیت لایسنس بسته است');
+  ok('دکمه‌ی راهنما داخل صفحه اسکرول/برجسته می‌کند',
+    /getElementById\('license-help'\)/.test(app) && /scrollIntoView/.test(app));
+}
+
 console.log('\n— مسیر /license فقط یک بار تعریف شده —');
 {
   const count = (app.match(/path="\/license"/g) || []).length;

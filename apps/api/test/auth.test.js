@@ -132,6 +132,33 @@ async function main() {
     const loginDeact = await api('POST', '/auth/login', { username: empUser, password: 'newpass123' }, '');
     check('کاربر غیرفعال نمی‌تواند وارد شود', loginDeact.status === 401, String(loginDeact.status));
 
+    /*
+     * ── باگ (شکار باگ دور ۳۴): «ویرایش کوتاه» کاربر را عوض می‌کرد ──────────
+     * اگر بدنه فقط `password` (یا فقط `fullName`) داشته باشد، نقش و
+     * فعال/غیرفعال‌بودن باید **دست‌نخورده** بمانند. پیش‌تر نقش به «کارمند»
+     * برمی‌گشت و `active` به ۱ — یعنی غیرفعال‌سازی کاربر با یک ویرایش ساده
+     * باطل می‌شد و مدیر بی‌صدا تنزل می‌کرد.
+     */
+    const mgrName = `mgr${Date.now() % 100000}`;
+    await api('POST', '/users', { username: mgrName, password: 'mgr12345', fullName: 'مدیر دوم', role: 'manager' });
+    const mgrRow = sql(`SELECT "id" FROM "User" WHERE "username"=?`, mgrName)[0];
+    const shortEdit = await api('POST', `/users/${mgrRow.id}`, { password: 'mgr54321' });
+    const afterShort = sql(`SELECT "role","active","fullName" FROM "User" WHERE "id"=?`, mgrRow.id)[0];
+    check('ویرایش فقط رمز، نقش مدیر را تنزل نمی‌دهد',
+      [200, 201].includes(shortEdit.status) && afterShort?.role === 'manager', `${shortEdit.status}/${afterShort?.role}`);
+    check('ویرایش فقط رمز، نام کامل را پاک نمی‌کند', afterShort?.fullName === 'مدیر دوم', String(afterShort?.fullName));
+    await api('POST', `/users/${mgrRow.id}`, { role: 'manager', active: false });
+    const reEnable = await api('POST', `/users/${mgrRow.id}`, { fullName: 'مدیر دوم (ویرایش)' });
+    const afterEdit = sql(`SELECT "role","active","fullName" FROM "User" WHERE "id"=?`, mgrRow.id)[0];
+    check('ویرایش نام، کاربر غیرفعال را دوباره فعال نمی‌کند',
+      [200, 201].includes(reEnable.status) && Number(afterEdit?.active) === 0,
+      `${reEnable.status}/${afterEdit?.active}`);
+    check('ویرایش نام، نقش را دست‌نخورده می‌گذارد', afterEdit?.role === 'manager', String(afterEdit?.role));
+    const badRoleEdit = await api('POST', `/users/${mgrRow.id}`, { role: 'boss' });
+    check('نقش نامعتبر در ویرایش ۴۰۰ می‌دهد', badRoleEdit.status === 400, String(badRoleEdit.status));
+    const restored = await api('POST', `/users/${mgrRow.id}`, { role: 'manager', active: true });
+    check('می‌شود کاربر را دوباره فعال کرد', [200, 201].includes(restored.status), String(restored.status));
+
     console.log('\n— ۴) تغییر رمز خودِ کاربر —');
     const same = await api('POST', '/auth/change-password', { currentPassword: 'admin123', newPassword: 'admin123' });
     check('رمز تازه یکسان با رمز فعلی رد می‌شود', same.status === 400, String(same.status));

@@ -186,7 +186,12 @@ export default function LicensePage({ onBack, canContinue, onHelp }: {
           </div>
         </div>
 
-        <div className="card">
+        {/*
+          شناسه‌ی `license-help` مقصد دکمه‌ی «راهنما» است. پیش‌تر این دکمه به
+          مسیر `/help` می‌رفت و گیت لایسنس آن را به `/license` برمی‌گرداند —
+          دکمه هیچ کاری نمی‌کرد (باگ دور ۳۴).
+        */}
+        <div className="card" id="license-help">
           <div className="card-b">
             <h2 className="lic-h2">راهنمای سریع</h2>
             <ol className="lic-steps">

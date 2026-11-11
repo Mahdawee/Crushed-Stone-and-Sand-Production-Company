@@ -9,7 +9,9 @@ REM  بالا می‌آید و مرورگر خودکار باز می‌شود.
 REM ─────────────────────────────────────────────────────────────────────
 chcp 65001 >nul
 setlocal enableextensions
-cd /d "%~dp0..\.."
+REM  ⚠ در نسخه‌ی نصب‌شده پوشه‌ی tools کنار فایل اجرایی است و «ریشه‌ی مخزن» وجود ندارد؛
+REM  پس به ریشه‌ی مخزن تکیه نمی‌کنیم (باگ دور ۳۴).
+cd /d "%~dp0"
 
 where node >nul 2>nul
 if errorlevel 1 goto no_node
@@ -17,10 +19,15 @@ if errorlevel 1 goto no_node
 REM  اگر نود همراه نسخه‌ی نصب‌شده هست، از همان استفاده کن (بدون نیاز به نصب چیزی)
 set "NODE_EXE=node"
 if exist "%~dp0..\..\src-tauri\api\node.exe" set "NODE_EXE=%~dp0..\..\src-tauri\api\node.exe"
+if exist "%~dp0..\node.exe" set "NODE_EXE=%~dp0..\node.exe"
+if exist "%~dp0node.exe" set "NODE_EXE=%~dp0node.exe"
+if exist "%LOCALAPPDATA%\Programs\Farday Roshan\api\node.exe" set "NODE_EXE=%LOCALAPPDATA%\Programs\Farday Roshan\api\node.exe"
 if exist "%LOCALAPPDATA%\Programs\Farday Roshan\_up_\api\node.exe" set "NODE_EXE=%LOCALAPPDATA%\Programs\Farday Roshan\_up_\api\node.exe"
 
 set "PORT=4322"
-if not "%~1"=="" set "PORT=%~1"
+REM  اگر گزینه داده شده (مثل --data-dir)، پورت را از آن نمی‌گیریم (باگ دور ۳۴)
+set "FIRST=%~1"
+if not "%FIRST%"=="" if not "%FIRST:~0,1%"=="-" set "PORT=%FIRST%"
 set "FD_RESET_UI_PORT=%PORT%"
 
 echo.
@@ -34,7 +41,9 @@ REM  ثانیه صبر می‌کند (سرور در همین پنجره بالا
 REM  نکته‌ی cmd: آدرس بدون فاصله است، پس داخل `start` نیازی به کوتیشن
 REM  تودرتو نیست (کوتیشن تودرتو در cmd به‌راحتی می‌شکند).
 start "" /b cmd /c "timeout /t 2 /nobreak >nul & start http://127.0.0.1:%PORT%/""
-"%NODE_EXE%" "%~dp0server.mjs"
+REM  آرگومان‌ها پاس داده می‌شوند تا بشود مسیر داده را دستی داد:
+REM    start.cmd --data-dir "%APPDATA%\af.farday.roshan"
+"%NODE_EXE%" "%~dp0server.mjs" %*
 goto end
 
 :no_node

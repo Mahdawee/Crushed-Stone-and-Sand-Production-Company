@@ -165,6 +165,33 @@ const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDa
 
   /* فایل‌ها: لایسنس باید پاک شده باشد، پشتیبان مانده باشد */
   check('لایسنس فعال پاک شد (ردّ مشتری قبلی)', !fs.existsSync(path.join(dataDir, 'license.key')));
+  check('مُهر دوره‌ی آزمایشی پاک شد (license.trial)', !fs.existsSync(path.join(dataDir, 'license.trial')));
+  /*
+   * ── باگ دور ۳۴ ──────────────────────────────────────────────────────────
+   * متن لایسنس در **جدول** `License` هم ذخیره می‌شود و `activeLicenseText`
+   * اول از همان می‌خواند. `RESET_ORDER` این جدول‌ها را نداشت، پس با وجود
+   * پاک شدن فایل، لایسنس مشتری قبلی روی نصب می‌ماند و مشتری بعدی با آن
+   * وارد می‌شد. حالا جدول‌ها هم باید خالی باشند.
+   */
+  const { DatabaseSync: DSync } = require('node:sqlite');
+  {
+    const d = new DSync(path.join(dataDir, 'farday.db'), { readOnly: true });
+    try {
+      const cnt = (t) => Number(d.prepare(`SELECT COUNT(*) c FROM "${t}"`).get().c);
+      check('جدول License خالی شد (لایسنس مشتری قبلی نمی‌ماند)', cnt('License') === 0, String(cnt('License')));
+      check('جدول LicenseEvent خالی شد', cnt('LicenseEvent') === 0, String(cnt('LicenseEvent')));
+      /* شمارنده بعد از ثبت سند تازه (`fresh`) دوباره یک ردیف دارد — پس
+         «صفر شدن» از روی شماره‌ی همان سند سنجیده می‌شود (پایین‌تر). */
+      check('شمارنده‌ی شماره‌ی اسناد دوباره از یک شروع شده (نه ادامه‌ی مشتری قبلی)',
+        cnt('Sequence') <= 2, String(cnt('Sequence')));
+      check('کاربران سیستم باقی ماندند', cnt('User') >= 1, String(cnt('User')));
+    } finally { d.close(); }
+  }
+  /* بعد از صفر کردن، شماره‌ی سند تازه باید از ۱ شروع شود، نه ادامه‌ی قبلی */
+  {
+    const no = String(fresh.body?.no || '');
+    check('شماره‌ی سند بعد از صفر کردن از ۰۰۰۱ شروع می‌شود', /-0001$/.test(no), no);
+  }
   const backups = fs.existsSync(path.join(dataDir, 'backups')) ? fs.readdirSync(path.join(dataDir, 'backups')) : [];
   check('فقط پشتیبان همین عملیات مانده', backups.length >= 1 && backups.every((f) => f.startsWith('pre-reset-') || f.startsWith('.')),
     backups.join(','));
