@@ -4,6 +4,7 @@ import { ensureSchemaAsync } from '../schema';
 import { AuthGuard, ManagerOnly } from '../common/auth';
 import { logActivity } from '../common/activity';
 import { softDelete } from '../common/soft-delete';
+import { resolveRelatedBranch } from '../common/related';
 import { settingsService } from '../common/settings';
 import { nextDocNo } from '../common/sequence';
 import { parseUserDate, formatDate, CalendarMode } from '../common/calendar';
@@ -121,6 +122,8 @@ export class SalesController {
     const no = String(body.no || '').trim() || (await nextDocNo(prefix, mode, date));
     const cust: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Customer" WHERE "id"=?`, Number(body.customerId));
     if (!cust?.length) throw new HttpException('مشتری پیدا نشد.', 400);
+    /* «مربوط» (شاخه‌ی مصرف): نام از شناسه خوانده می‌شود، نه از کلاینت */
+    const branch = await resolveRelatedBranch(body.contractorId, body.contractorName);
     try {
       await db().$executeRawUnsafe(
         `INSERT INTO "Sale" ("no","date","customerId","customerName","driverName","truckPlate","destination",
@@ -131,7 +134,7 @@ export class SalesController {
         body.driverName || '', body.truckPlate || '', body.destination || '',
         body.materialId ? Number(body.materialId) : null, body.materialName || '',
         volume, unitPrice, freightPerUnit, freightTotal, total,
-        body.contractorId ? Number(body.contractorId) : null, body.contractorName || '',
+        branch.contractorId, branch.contractorName,
         body.paymentType === 'credit' ? 'credit' : 'cash', body.note || '',
       );
     } catch (e: any) {
@@ -157,6 +160,8 @@ export class SalesController {
      */
     const cust: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Customer" WHERE "id"=?`, Number(body.customerId));
     if (!cust?.length) throw new HttpException('مشتری پیدا نشد.', 400);
+    /* «مربوط» (شاخه‌ی مصرف): نام از شناسه خوانده می‌شود، نه از کلاینت */
+    const branch = await resolveRelatedBranch(body.contractorId, body.contractorName);
     try {
       await db().$executeRawUnsafe(
         `UPDATE "Sale" SET "date"=?, "customerId"=?, "customerName"=?, "driverName"=?, "truckPlate"=?, "destination"=?,
@@ -165,7 +170,7 @@ export class SalesController {
         date, Number(body.customerId), cust?.[0]?.name || body.customerName || '', body.driverName || '',
         body.truckPlate || '', body.destination || '', body.materialId ? Number(body.materialId) : null,
         body.materialName || '', volume, unitPrice, freightPerUnit, freightTotal, total,
-        body.contractorId ? Number(body.contractorId) : null, body.contractorName || '',
+        branch.contractorId, branch.contractorName,
         body.paymentType === 'credit' ? 'credit' : 'cash', body.note || '', Number(id),
       );
     } catch {

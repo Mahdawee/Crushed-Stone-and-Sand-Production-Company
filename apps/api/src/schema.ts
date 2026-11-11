@@ -9,6 +9,7 @@
  * "add column if missing" pass upgrades databases created by older versions.
  */
 import { db } from './db';
+import { RECEIPT_SOURCE_ALIASES, RECEIPT_SOURCES } from './common/domain';
 
 type Column = { name: string; ddl: string };
 
@@ -305,6 +306,82 @@ const UPGRADES: { table: string; column: string; ddl: string }[] = [
   { table: 'Machinery', column: 'deletedBy', ddl: 'TEXT' },
 ];
 
+/**
+ * مهاجرت داده (نسخه‌ی ۴): یکسان‌سازی منابع رسید و مفهوم «مربوط».
+ *
+ * چرا داده را هم می‌نویسیم و نه فقط در خواندن نگاشت می‌کنیم:
+ *   ۱) فهرست‌های کشویی «بیانیه» و «پیش پرداخت» را هر دو داشتند؛ کاربر
+ *      گفت یکی است. اگر ردیف تکراری بماند، دوباره انتخاب می‌شود.
+ *   ۲) گزارش‌های SQL روی `sourceName` گروه می‌کنند؛ با دو املا، یک منبع
+ *      در گزارش دو خط می‌شود.
+ *
+ * امن است: فقط `sourceName` رسیدها و `name` فهرست `receipt_source` بازنویسی
+ * می‌شود — مبلغ، تاریخ و مشتری دست نمی‌خورد، هیچ ردیفی حذف نمی‌شود.
+ */
+export async function migrateReceiptSources() {
+  const p = db();
+  /* ۱) رسیدها: نام قدیمی → نام رسمی */
+  for (const [from, to] of Object.entries(RECEIPT_SOURCE_ALIASES)) {
+    if (from === to) continue;
+    await p.$executeRawUnsafe(`UPDATE "Receipt" SET "sourceName"=? WHERE "sourceName"=?`, to, from);
+  }
+  /*
+   * ۲) فهرست کشویی: نام قدیمی را به نام رسمی تغییر بده، بعد ردیف‌های تکراری
+   *    همان نام را غیرفعال کن (قدیمی‌ترین فعال می‌ماند).
+   *
+   * ⚠ هیچ ردیفی حذف نمی‌شود: کاربر گفته «حذف‌ها نرم باشند». ردیف تکراری
+   * فقط `active=0` می‌شود، پس اگر روزی لازم شد، از همان‌جا برمی‌گردد.
+   */
+  for (const [from, to] of Object.entries(RECEIPT_SOURCE_ALIASES)) {
+    if (from === to) continue;
+    await p.$executeRawUnsafe(
+      `UPDATE "LookupItem" SET "name"=? WHERE "type"='receipt_source' AND "name"=?`,
+      to, from,
+    );
+  }
+  /* ۳) همه‌ی منابع رسمی باید در فهرست باشند (بیانیه، امانت، باقی داری، مربوط) */
+  for (const s of RECEIPT_SOURCES) {
+    const has = await p.$queryRawUnsafe(
+      `SELECT COUNT(*) c FROM "LookupItem" WHERE "type"='receipt_source' AND "name"=?`,
+      s.name,
+    );
+    if (!Number(has?.[0]?.c)) {
+      await p.$executeRawUnsafe(
+        `INSERT INTO "LookupItem" ("type","name","extra","sortOrder","active") VALUES ('receipt_source',?,?,?,1)`,
+        s.name, s.kind, RECEIPT_SOURCES.findIndex((x) => x.name === s.name) + 1,
+      );
+    } else {
+      /* دست‌کم یکی از ردیف‌های همین نام باید فعال باشد */
+      await p.$executeRawUnsafe(
+        `UPDATE "LookupItem" SET "active"=1
+         WHERE "type"='receipt_source' AND "name"=?
+           AND "id"=(SELECT MIN("id") FROM "LookupItem" WHERE "type"='receipt_source' AND "name"=?)`,
+        s.name, s.name,
+      );
+    }
+  }
+  await dedupeReceiptSources();
+}
+
+/** ردیف‌های تکراری یک نام را غیرفعال می‌کند (قدیمی‌ترین فعال می‌ماند). */
+async function dedupeReceiptSources() {
+  const p = db();
+  const rows: any[] = await p.$queryRawUnsafe(
+    `SELECT "id","name" FROM "LookupItem" WHERE "type"='receipt_source' ORDER BY "id"`,
+  );
+  const keep = new Map<string, number>();
+  for (const r of rows) {
+    const name = String(r.name);
+    if (!keep.has(name)) keep.set(name, Number(r.id));
+    else {
+      const keepId = keep.get(name)!;
+      /* قدیمی‌تر (کمترین id) با نام رسمی می‌ماند، بقیه غیرفعال */
+      await p.$executeRawUnsafe(`UPDATE "LookupItem" SET "active"=0 WHERE "id"=?`, Number(r.id));
+      await p.$executeRawUnsafe(`UPDATE "LookupItem" SET "active"=1 WHERE "id"=?`, keepId);
+    }
+  }
+}
+
 let schemaPromise: Promise<void> | null = null;
 
 /**
@@ -320,7 +397,7 @@ let schemaPromise: Promise<void> | null = null;
  * خود دیتابیس است، پس بعد از ری‌استارت هم دوباره کامل بررسی می‌شود اگر
  * نسخه‌ی برنامه تغییر کرده باشد.
  */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 let schemaReadyFor: string | null = null;
 let schemaReadyVersion = -1;
 
@@ -371,6 +448,16 @@ export async function ensureSchemaAsync(force = false) {
       if (!cols.some((c) => c.name === u.column)) {
         await p.$executeRawUnsafe(`ALTER TABLE "${u.table}" ADD COLUMN "${u.column}" ${u.ddl}`);
       }
+    }
+    try {
+      await migrateReceiptSources();
+    } catch (e: any) {
+      /*
+       * مهاجرت داده نباید برنامه را از کار بیندازد؛ اگر شکست خورد، همان
+       * نگاشت خواندنی (`canonicalReceiptSource`) کار را انجام می‌دهد و
+       * دفعه‌ی بعد دوباره تلاش می‌شود (مهر نسخه ست نمی‌شود).
+       */
+      console.warn('مهاجرت منابع رسید انجام نشد:', e?.message || e);
     }
     await p.$executeRawUnsafe(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   }

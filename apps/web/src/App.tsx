@@ -1,11 +1,30 @@
 import React, { lazy, Suspense, useState as useReactState } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { SessionProvider, useSession } from './lib/session';
 import { ToastProvider, Spinner } from './components/ui';
 import Layout from './components/Layout';
 import LoginPage from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import StartupLicense, { BOOT_LICENSE_KEY } from './pages/StartupLicense';
+
+/**
+ * کلید «برگشتن از صفحه‌ی لایسنس».
+ *
+ * کاربر گفت: «از صفحه لایسنس برگشت نمی‌شود به برنامه — این مشکل است و باید
+ * رفع شود».
+ *
+ * ## ریشه‌ی باگ
+ * صفحه‌ی لایسنس با یک لینک معمولی (`<a href>` به `#/license`) باز می‌شد؛ از صفحه‌ی شروع و از
+ * صفحه‌ی ورود). `href` باعث **بارگذاری کامل صفحه** می‌شد؛ بعد از آن
+ * `sessionStorage` همان سند قبلی نبود و مسیر هم `#/license` می‌ماند. نتیجه:
+ * کاربر دوباره روی «صفحه‌ی شروع» یا صفحه‌ی لایسنس گیر می‌کرد و راه برگشتی
+ * نداشت. اکنون:
+ *   • `EndLicense` یک دروازه‌ی واقعی است: دکمه‌ی «بازگشت به برنامه» با
+ *     `navigate(-1)` یا مسیر امن برمی‌گردد.
+ *   • صفحه‌ی شروع هم دکمه‌ی «ادامه» دارد و هم Escape.
+ *   • صفحه‌ی لایسنس همیشه راه برگشت دارد (مگر برنامه قفل باشد).
+ */
+const RETURN_KEY = 'farday.license.returnTo';
 
 /*
  * کارایی: قبلاً **همه‌ی** صفحه‌ها (و کتابخانه‌ی نمودار recharts با ~۴۰۰KB) در
@@ -51,16 +70,50 @@ function Guard({ children, managerOnly }: { children: React.ReactNode; managerOn
 
 function Shell() {
   const { ready, license } = useSession();
+  const navigate = useNavigate();
+  const location = useLocation();
   /* شمارنده‌ی «تأیید شروع»: بعد از کلیک «ورود به برنامه» دوباره رندر می‌شویم */
   const [, setAck] = useReactState(0);
   const [bootKey] = useReactState(() => sessionStorage.getItem(BOOT_LICENSE_KEY));
-  if (!ready) return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}><Spinner label="آماده‌سازی سیستم…" /></div>;
+
   /*
-   * قفل لایسنس — **قبل از** هر مسیر دیگری.
+   * مسیر امن برای برگشت از صفحه‌ی لایسنس.
    *
-   * فقط خانه‌ی لایسنس باز می‌ماند؛ این کار جلوی «صفحه‌ی سفید» و «چرخیدن
-   * بی‌پایان اسپینر» را می‌گیرد و کاربر را مستقیم به راه‌حل می‌برد.
+   * اگر کاربر از «داشبورد» به لایسنس رفته، همان مسیر ذخیره می‌شود. اگر
+   * صفحه‌ی لایسنس از یک لینک/صفحه‌ی شروع باز شده، مسیر پیش‌فرض «/» است —
+   * نه `-1`، چون تاریخ مرورگر می‌تواند به صفحه‌ی لایسنس خودش برگردد و
+   * حلقه بسازد.
    */
+  const leaveLicense = () => {
+    let back = sessionStorage.getItem(RETURN_KEY) || '/';
+    sessionStorage.removeItem(RETURN_KEY);
+    if (!back.startsWith('/') || back.startsWith('/license')) back = '/';
+    navigate(back, { replace: true });
+    setAck((n) => n + 1);
+  };
+
+  if (!ready) return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}><Spinner label="آماده‌سازی سیستم…" /></div>;
+
+  /*
+   * صفحه‌ی لایسنس — همیشه از همه‌ی حالت‌ها راه برگشت دارد.
+   *
+   * این مسیر **قبل از** هر گیت دیگری بررسی می‌شود تا وقتی کاربر روی
+   * `#/license` است، هیچ گیتی او را جابه‌جا نکند و دکمه‌ی «بازگشت» هدف
+   * درستی داشته باشد.
+   */
+  if (location.pathname === '/license') {
+    return (
+      <Suspense fallback={<div style={{ padding: 24 }}><Spinner label="بارگذاری…" /></div>}>
+        <LicensePage
+          /* اگر برنامه قفل است، راه برگشتی وجود ندارد — دکمه پنهان می‌شود */
+          onBack={license?.ok ? leaveLicense : undefined}
+          canContinue={Boolean(license?.ok)}
+          onHelp={() => navigate('/help')}
+        />
+      </Suspense>
+    );
+  }
+
   /*
    * درخواست کاربر: «صفحه لایسنس باید در شروع برنامه ظاهر شود».
    *
@@ -73,29 +126,44 @@ function Shell() {
    * ولی هر بار رفتن به یک صفحه، این را تکرار نمی‌کند (فقط یک بار در هر
    * اجرای برنامه — `sessionStorage`).
    */
+  /*
+   * ⚠ باگ رفع‌شده: قبلاً این بلوک `path="*"` می‌گذاشت، پس هر مسیری را
+   * می‌بلعید و کاربر تا کلیک نمی‌کرد هیچ صفحه‌ای نمی‌دید — حتی بعد از
+   * فعال‌سازی، باز هم برای یک لحظه به صفحه‌ی شروع برمی‌گشت. حالا فقط وقتی
+   * مسیر عادی است (نه لایسنس/ورود/چاپ) و کاربر تأیید نکرده.
+   */
   const acknowledged = bootKey === '1' || sessionStorage.getItem(BOOT_LICENSE_KEY) === '1';
-  if (license && license.ok && !acknowledged) {
+  const isPlainRoute = !['/login', '/license'].includes(location.pathname)
+    && !location.pathname.startsWith('/print/');
+  if (license && license.ok && !acknowledged && isPlainRoute) {
+    const ack = () => {
+      sessionStorage.setItem(BOOT_LICENSE_KEY, '1');
+      setAck((n) => n + 1);
+    };
     return (
       <Suspense fallback={<div style={{ padding: 24 }}><Spinner label="بارگذاری…" /></div>}>
-        <Routes>
-          <Route
-            path="*"
-            element={
-              <StartupLicense
-                license={license}
-                onContinue={() => { sessionStorage.setItem(BOOT_LICENSE_KEY, '1'); setAck((n) => n + 1); }}
-              />
-            }
-          />
-        </Routes>
+        <StartupLicense license={license} onContinue={ack} onOpenLicense={() => {
+          /* مسیر برگشت اینجا «/» است، نه صفحه‌ی شروع */
+          sessionStorage.setItem(RETURN_KEY, '/');
+          navigate('/license');
+        }} />
       </Suspense>
     );
   }
+
+  /*
+   * قفل لایسنس — **قبل از** هر مسیر دیگری.
+   *
+   * فقط خانه‌ی لایسنس باز می‌ماند؛ این کار جلوی «صفحه‌ی سفید» و «چرخیدن
+   * بی‌پایان اسپینر» را می‌گیرد و کاربر را مستقیم به راه‌حل می‌برد.
+   * صفحه‌ی ورود هم باز است تا کاربرِ کارمند بتواند وارد شود (فقط مدیر
+   * باید لایسنس را فعال کند).
+   */
   if (license && !license.ok) {
     return (
       <Suspense fallback={<div style={{ padding: 24 }}><Spinner label="بارگذاری…" /></div>}>
         <Routes>
-          <Route path="/license" element={<LicensePage />} />
+          <Route path="/login" element={<LoginPage />} />
           <Route path="*" element={<Navigate to="/license" replace />} />
         </Routes>
       </Suspense>
@@ -105,7 +173,7 @@ function Shell() {
     <Suspense fallback={<div style={{ padding: 24 }}><Spinner label="بارگذاری صفحه…" /></div>}>
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/license" element={<LicensePage />} />
+      {/* مسیر /license بالاتر گرفته شد — دوباره تعریف نمی‌شود */}
       <Route path="/print/sale/:id" element={<PrintSale />} />
       <Route path="/print/salary/:id" element={<PrintSalary />} />
       <Route element={<Guard><Layout /></Guard>}>

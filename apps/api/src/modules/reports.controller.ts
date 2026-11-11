@@ -2,6 +2,7 @@ import { Controller, Get, Query, UseGuards, HttpException } from '@nestjs/common
 import { db } from '../db';
 import { ensureSchemaAsync } from '../schema';
 import { AuthGuard } from '../common/auth';
+import { canonicalReceiptSource, receiptDebtSql, reducesCustomerDebt } from '../common/domain';
 import { settingsService } from '../common/settings';
 import {
   CalendarMode, monthBucket, yearBucket, todayISO, formatDate, monthName, pad2,
@@ -32,9 +33,9 @@ export class ReportsController {
        FROM "Sale" WHERE COALESCE("deletedAt",'')='' AND "date"=?`, dateISO);
     const receipts: any[] = await p.$queryRawUnsafe(
       `SELECT COALESCE(SUM("amount"),0) AS total,
-        COALESCE(SUM(CASE WHEN COALESCE("sourceName",'')='امانت' THEN "amount" ELSE 0 END),0) AS trust,
+        COALESCE(SUM(CASE WHEN NOT (${receiptDebtSql('"sourceName"')}) THEN "amount" ELSE 0 END),0) AS trust,
         /* در حالت دقیق: فقط پولی که نزد دخل آمده (نه امانت، نه بانک) */
-        COALESCE(SUM(CASE WHEN COALESCE("sourceName",'')<>'امانت'
+        COALESCE(SUM(CASE WHEN ${receiptDebtSql('"sourceName"')}
                           AND (COALESCE("receivedBy",'')='' OR "receivedBy"='دخل')
                      THEN "amount" ELSE 0 END),0) AS cashToBox
        FROM "Receipt" WHERE COALESCE("deletedAt",'')='' AND "date"=?`, dateISO);
@@ -124,8 +125,8 @@ export class ReportsController {
       q(
         `SELECT "date" d,
            COALESCE(SUM("amount"),0) total,
-           COALESCE(SUM(CASE WHEN COALESCE("sourceName",'')='امانت' THEN "amount" ELSE 0 END),0) trust,
-           COALESCE(SUM(CASE WHEN COALESCE("sourceName",'')<>'امانت'
+           COALESCE(SUM(CASE WHEN NOT (${receiptDebtSql('"sourceName"')}) THEN "amount" ELSE 0 END),0) trust,
+           COALESCE(SUM(CASE WHEN ${receiptDebtSql('"sourceName"')}
                              AND (COALESCE("receivedBy",'')='' OR "receivedBy"='دخل')
                         THEN "amount" ELSE 0 END),0) toBox
          FROM "Receipt" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=? GROUP BY "date"`,
@@ -376,11 +377,14 @@ export class ReportsController {
     const accurate = cashMode === 'accurate';
     for (const s of sales) entries.push({ date: s.date, type: 'فروش نقده', doc: s.no, party: s.customerName, in: num(s.total), out: 0 });
     for (const r of receipts) {
-      const trust = String(r.sourceName || '') === 'امانت';
+      /* تصمیم «امانت بودن» از یک جا — نه رشته‌ی دستی */
+      const trust = !reducesCustomerDebt(null, r.sourceName);
       const toBox = !r.receivedBy || r.receivedBy === 'دخل';
       entries.push({
         date: r.date,
-        type: trust ? 'رسید (امانت — وارد دخل نشد)' : `رسید (${r.sourceName || 'باقی داری'})`,
+        type: trust
+          ? 'رسید (امانت — وارد دخل نشد)'
+          : `رسید (${canonicalReceiptSource(r.sourceName) || 'باقی داری'})`,
         kind: trust || (accurate && !toBox) ? 'info' : '',
         doc: r.no, party: r.customerName,
         in: trust || (accurate && !toBox) ? 0 : num(r.amount), out: 0,
@@ -429,7 +433,16 @@ export class ReportsController {
     const end = to || today;
     try { assertRange(start, end); } catch (e: any) { throw new HttpException(e.message, 400); }
     const p = db();
-    const q = async (sql: string) => (await p.$queryRawUnsafe(sql, start, end)) as any[];
+    /*
+     * هر کوئری دو «؟» (بازه) دارد؛ کوئری «مربوط» سه بخش دارد و شش «؟».
+     * پارامترها را از روی تعداد «؟» می‌سازیم تا هیچ کوئری‌ای با آرگومان
+     * کم/زیاد اجرا نشود (خطای خاموش libSQL).
+     */
+    const q = async (sql: string) => {
+      const n = (sql.match(/\?/g) || []).length;
+      const args = Array.from({ length: Math.floor(n / 2) }, () => [start, end]).flat();
+      return (await p.$queryRawUnsafe(sql, ...args)) as any[];
+    };
     const byMaterial = await q(
       `SELECT "materialName" as name, COUNT(*) as docs, COALESCE(SUM("volume"),0) as volume,
               COALESCE(SUM("total"),0) as total, COALESCE(SUM("freightTotal"),0) as freight
@@ -448,13 +461,54 @@ export class ReportsController {
     const byContractor = await q(
       `SELECT "contractorName" as name, COUNT(*) as docs, COALESCE(SUM("freightTotal"),0) as freight
        FROM "Sale" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=? AND COALESCE("contractorName",'') <> '' GROUP BY "contractorName" ORDER BY freight DESC`);
+    /*
+     * «مربوط» = شاخه‌ی مصرف.
+     *
+     * درخواست کاربر: «"مربوط" در حقیقت همان شاخه مصرف است این مفهوم جدید را
+     * در تمامی سیستم و برنامه پیاده کن». شاخه در سه سند ظاهر می‌شود و تا
+     * امروز هر سه جدا گزارش می‌شدند: کرایه‌ی فروش، مصرف، و رسیدی که از آن
+     * شاخه آمده. این‌جا یک‌جا جمع می‌شوند تا «این شاخه چقدر خرج/درآمد
+     * داشت؟» یک عدد داشته باشد.
+     *
+     * محاسبه با `UNION ALL` و گروه‌بندی روی نام شاخه است؛ هیچ جدولی عوض
+     * نمی‌شود و اسناد قدیمی که شاخه نداشتند در ردیف «بدون شاخه» می‌آیند تا
+     * جمع کل با جمع اسناد بخواند.
+     */
+    const byRelated = await q(
+      `SELECT "branch" as name,
+              SUM("saleDocs") as saleDocs, SUM("freight") as freight,
+              SUM("expenseDocs") as expenseDocs, SUM("expenseAfn") as expenseAfn,
+              SUM("receiptDocs") as receiptDocs, SUM("receiptAmount") as receiptAmount
+       FROM (
+         SELECT COALESCE(NULLIF("contractorName",''),'بدون شاخه') as "branch",
+                COUNT(*) as "saleDocs", COALESCE(SUM("freightTotal"),0) as freight,
+                0 as "expenseDocs", 0 as "expenseAfn", 0 as "receiptDocs", 0 as "receiptAmount"
+         FROM "Sale" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=?
+         GROUP BY COALESCE(NULLIF("contractorName",''),'بدون شاخه')
+         UNION ALL
+         SELECT COALESCE(NULLIF("contractorName",''),'بدون شاخه'),
+                0, 0, COUNT(*), COALESCE(SUM("amountAfn"),0), 0, 0
+         FROM "Expense" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=?
+         GROUP BY COALESCE(NULLIF("contractorName",''),'بدون شاخه')
+         UNION ALL
+         SELECT COALESCE(NULLIF("sourceName",''),'بدون شاخه'),
+                0, 0, 0, 0, COUNT(*), COALESCE(SUM("amount"),0)
+         FROM "Receipt" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=?
+               AND ${receiptDebtSql('"sourceName"')}
+         GROUP BY COALESCE(NULLIF("sourceName",''),'بدون شاخه')
+       ) GROUP BY "branch" ORDER BY expenseAfn DESC, freight DESC`);
+    const relatedTotals = {
+      freight: num(byRelated.reduce((a: number, r: any) => a + num(r.freight), 0)),
+      expenseAfn: num(byRelated.reduce((a: number, r: any) => a + num(r.expenseAfn), 0)),
+      receiptAmount: num(byRelated.reduce((a: number, r: any) => a + num(r.receiptAmount), 0)),
+    };
     const salarySummary: any[] = await p.$queryRawUnsafe(
       `SELECT "periodLabel" as name, COUNT(*) as employees, COALESCE(SUM("total"),0) as total
        FROM "Salary" WHERE COALESCE("deletedAt",'')='' AND "payDate">=? AND "payDate"<=? GROUP BY "periodStart" ORDER BY "periodStart" DESC`, start, end);
     const debtors: any[] = await p.$queryRawUnsafe(
       `SELECT c."code", c."name", c."phone", c."openingBalance",
         (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE COALESCE(s."deletedAt",'')='' AND s."customerId"=c."id" AND s."paymentType"='credit') AS credit,
-        (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE COALESCE(r."deletedAt",'')='' AND r."customerId"=c."id" AND COALESCE(r."sourceName",'')<>'امانت') AS paid
+        (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE COALESCE(r."deletedAt",'')='' AND r."customerId"=c."id" AND ${receiptDebtSql('r."sourceName"')}) AS paid
        FROM "Customer" c ORDER BY c."name"`);
     const debts = debtors
       .map((d) => ({
@@ -466,6 +520,7 @@ export class ReportsController {
     return {
       from: start, to: end, calendar: mode,
       byMaterial, byCustomer, byCategory, byPayer, byContractor, salarySummary,
+      byRelated, relatedTotals,
       debtors: debts, debtTotal: r2(debts.reduce((a, d) => a + d.balance, 0)),
     };
   }
@@ -489,7 +544,7 @@ export class ReportsController {
     const debts: any[] = await p.$queryRawUnsafe(
       `SELECT c."id", c."code", c."name",
         c."openingBalance" + (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE COALESCE(s."deletedAt",'')='' AND s."customerId"=c."id" AND s."paymentType"='credit')
-        - (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE COALESCE(r."deletedAt",'')='' AND r."customerId"=c."id" AND COALESCE(r."sourceName",'')<>'امانت') AS balance
+        - (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE COALESCE(r."deletedAt",'')='' AND r."customerId"=c."id" AND ${receiptDebtSql('r."sourceName"')}) AS balance
        FROM "Customer" c`);
     const debtList = debts.map((d) => ({ ...d, balance: r2(num(d.balance)) })).sort((a, b) => b.balance - a.balance);
     const emp: any[] = await p.$queryRawUnsafe(
@@ -527,7 +582,7 @@ export class ReportsController {
         chartStart, today,
       ) as Promise<any[]>,
       q(
-        `SELECT "date" d, COALESCE(SUM(CASE WHEN COALESCE("sourceName",'')='امانت' THEN 0 ELSE "amount" END),0) t
+        `SELECT "date" d, COALESCE(SUM(CASE WHEN NOT (${receiptDebtSql('"sourceName"')}) THEN 0 ELSE "amount" END),0) t
          FROM "Receipt" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=? GROUP BY "date"`,
         chartStart, today,
       ) as Promise<any[]>,

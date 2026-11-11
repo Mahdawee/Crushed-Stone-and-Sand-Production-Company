@@ -42,6 +42,20 @@ const { mountApp } = await import(path.join(root, 'scripts/ui-check/.out-sidebar
 
 const act = React.act || ((fn) => fn());
 const tick = () => new Promise((r) => setTimeout(r, 25));
+/*
+ * گاهی React ‏(حالت concurrent) رندر مجدد را در چند نوبت انجام می‌دهد و
+ * ۲۵ms کافی نیست — نتیجه: تست هر چند اجرا یک بار «شکست» می‌داد در حالی که
+ * برنامه سالم بود (تست ناپایدار بدتر از نبود تست است: باگ واقعی را هم
+ * بی‌اعتبار می‌کند). این‌جا به‌جای خواب ثابت، تا آماده شدن شرط صبر می‌کنیم.
+ */
+const waitFor = async (fn, ms = 3000) => {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (fn()) return true;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  return Boolean(fn());
+};
 const host = document.getElementById('root');
 const rootReact = createRoot(host);
 const click = (el) => act(() => { el.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })); });
@@ -159,7 +173,7 @@ host.innerHTML = '';
 NARROW = true;
 const root2 = createRoot(host);
 act(() => { root2.render(mountApp()); });
-await tick();
+await waitFor(() => !!$('.drawer-btn') && document.body.classList.contains('is-drawer'));
 
 ok('دکمه سه‌خط حالا ساخته می‌شود', !!$('.drawer-btn'));
 ok('body کلاس is-drawer دارد', document.body.classList.contains('is-drawer'));

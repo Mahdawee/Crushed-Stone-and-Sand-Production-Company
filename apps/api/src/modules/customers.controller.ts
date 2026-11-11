@@ -4,6 +4,7 @@ import { ensureSchemaAsync } from '../schema';
 import { AuthGuard, ManagerOnly } from '../common/auth';
 import { logActivity } from '../common/activity';
 import { softDelete } from '../common/soft-delete';
+import { allocationForSource, canonicalReceiptSource, receiptDebtSql, reducesCustomerDebt } from '../common/domain';
 
 @UseGuards(AuthGuard)
 @Controller('customers')
@@ -32,12 +33,12 @@ export class CustomersController {
       lightMode
         ? `SELECT c."id", c."code", c."name", c."phone", c."openingBalance",
         (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND COALESCE(s."deletedAt",'')='' AND s."paymentType"='credit') AS creditSales,
-        (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE r."customerId"=c."id" AND COALESCE(r."deletedAt",'')='' AND COALESCE(r."sourceName",'') <> 'امانت') AS receipts
+        (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE r."customerId"=c."id" AND COALESCE(r."deletedAt",'')='' AND ${receiptDebtSql('r."sourceName"')}) AS receipts
        FROM "Customer" c ${where} ORDER BY c."name"`
         : `SELECT c.*,
         (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND COALESCE(s."deletedAt",'')='' AND s."paymentType"='credit') AS creditSales,
         (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND COALESCE(s."deletedAt",'')='') AS allSales,
-        (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE r."customerId"=c."id" AND COALESCE(r."deletedAt",'')='' AND COALESCE(r."sourceName",'') <> 'امانت') AS receipts
+        (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE r."customerId"=c."id" AND COALESCE(r."deletedAt",'')='' AND ${receiptDebtSql('r."sourceName"')}) AS receipts
        FROM "Customer" c ${where} ORDER BY c."name"`,
       ...args,
     );
@@ -82,11 +83,18 @@ export class CustomersController {
         id: `s${s.id}`,
       })),
       ...receipts.map((r) => ({
-        date: r.date, type: `رسید (${r.sourceName || 'باقی داری'})`, doc: r.no,
+        date: r.date,
+        type: `رسید (${canonicalReceiptSource(r.sourceName) || 'باقی داری'})`,
+        doc: r.no,
         detail: r.relatedBillNo ? `بل مربوط: ${r.relatedBillNo}` : '',
-        // «امانت» پولی است که نزد شرکت امانت است و از بدهی کم نمی‌شود
+        /*
+         * «امانت» پولی است که نزد شرکت امانت است و از بدهی کم نمی‌شود.
+         * تصمیم با `reducesCustomerDebt` گرفته می‌شود تا اگر روزی منبع
+         * تازه‌ای اضافه شد، کارت حساب و فهرست مشتریان یک حرف بزنند.
+         */
+        allocation: allocationForSource(r.sourceName),
         debit: 0,
-        credit: r.sourceName === 'امانت' ? 0 : Number(r.amount) || 0,
+        credit: reducesCustomerDebt(null, r.sourceName) ? Number(r.amount) || 0 : 0,
         amount: Number(r.amount) || 0,
         id: `r${r.id}`,
       })),

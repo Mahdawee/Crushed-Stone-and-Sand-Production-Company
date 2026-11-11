@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useToast } from '../components/ui';
 
 /**
@@ -24,12 +24,36 @@ export const BOOT_LICENSE_KEY = 'farday.boot.licenseAck';
 export const RENEW_WARN_DAYS = 30;
 export const RENEW_URGENT_DAYS = 7;
 
-export default function StartupLicense({ license, onContinue }: {
+export default function StartupLicense({ license, onContinue, onOpenLicense }: {
   license: any;
   onContinue: () => void;
+  /** باز کردن صفحه‌ی لایسنس — با مسیر برگشت ثبت‌شده */
+  onOpenLicense?: () => void;
 }) {
   const toast = useToast();
   const [leaving, setLeaving] = useState(false);
+
+  const goRef = React.useRef<() => void>(() => {});
+  goRef.current = () => {
+    setLeaving(true);
+    setTimeout(onContinue, 140);
+  };
+
+  /*
+   * Escape = «ادامه به برنامه».
+   *
+   * چرا لازم است: کاربری که صفحه‌ی شروع را نمی‌خواهد نباید مجبور به پیدا
+   * کردن ماوس باشد. این هم همان باگ «گیر کردن در صفحه‌ی لایسنس» را از یک
+   * راه دیگر می‌بندد.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); goRef.current(); }
+      if (e.key === 'Enter') { e.preventDefault(); goRef.current(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const info = useMemo(() => {
     const isTrial = license?.state === 'trial';
@@ -99,11 +123,19 @@ export default function StartupLicense({ license, onContinue }: {
         <div className="boot-lic-actions">
           <button className="btn primary lg" onClick={go}>ورود به برنامه</button>
           {(info.warn || info.isTrial) ? (
-            <a className="btn" href="#/license" onClick={go}>تمدید / فعال‌سازی</a>
+            <button className="btn" onClick={() => { sessionStorage.setItem(BOOT_LICENSE_KEY, '1'); onOpenLicense?.(); }}>
+              تمدید / فعال‌سازی
+            </button>
           ) : (
-            <a className="btn" href="#/license">جزئیات لایسنس</a>
+            <button className="btn" onClick={() => { sessionStorage.setItem(BOOT_LICENSE_KEY, '1'); onOpenLicense?.(); }}>
+              جزئیات لایسنس
+            </button>
           )}
         </div>
+
+        <p className="boot-lic-foot muted" style={{ textAlign: 'center' }}>
+          برای ادامه، <b>Enter</b> یا <b>Esc</b> هم کار می‌کند.
+        </p>
 
         {info.warn || info.isTrial ? (
           <p className="boot-lic-foot">

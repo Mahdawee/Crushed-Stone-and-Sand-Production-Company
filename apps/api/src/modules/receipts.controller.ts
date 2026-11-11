@@ -7,6 +7,26 @@ import { softDelete } from '../common/soft-delete';
 import { settingsService } from '../common/settings';
 import { nextDocNo } from '../common/sequence';
 import { parseUserDate, formatDate, todayISO } from '../common/calendar';
+import { allocationForSource, canonicalReceiptSource, receiptSourceVariants, reducesCustomerDebt } from '../common/domain';
+
+/**
+ * نام منبع رسید را از شناسه/نام بگیر و به نام رسمی تبدیل کن.
+ *
+ * باگ: اگر کلاینت فقط `sourceId` می‌فرستاد (یا برعکس، فقط نام)، رسید با
+ * منبع خالی ذخیره می‌شد و در گزارش‌ها زیر «—» می‌رفت؛ اثرش روی مانده هم
+ * تصادفی می‌شد. حالا شناسه به نام تبدیل می‌شود و نام همیشه رسمی است.
+ */
+async function resolveSourceName(sourceId: unknown, sourceName: unknown): Promise<string> {
+  const raw = String(sourceName ?? '').trim();
+  if (raw) return canonicalReceiptSource(raw);
+  const id = Number(sourceId);
+  if (!Number.isFinite(id) || id <= 0) return '';
+  const rows: any[] = await db().$queryRawUnsafe(
+    `SELECT "name" FROM "LookupItem" WHERE "type"='receipt_source' AND "id"=?`,
+    id,
+  );
+  return canonicalReceiptSource(rows?.[0]?.name);
+}
 
 @UseGuards(AuthGuard)
 @Controller('receipts')
@@ -32,7 +52,16 @@ export class ReceiptsController {
       if (to) { where.push(`"date" <= ?`); args.push(parseUserDate(to, mode)); }
     } catch (e: any) { throw new HttpException(e.message, 400); }
     if (customerId) { where.push(`"customerId"=?`); args.push(Number(customerId)); }
-    if (source) { where.push(`"sourceName"=?`); args.push(source); }
+    /*
+     * فیلتر «منبع» باید نام‌های قدیمی را هم بگیرد: اگر همه‌ی رسیدهای
+     * «بیانیه» را بخواهیم و کسی سال گذشته با «پیش پرداخت» ثبت کرده باشد،
+     * فیلتر ساده او را جا می‌گذاشت.
+     */
+    if (source) {
+      const variants = receiptSourceVariants(source);
+      where.push(`"sourceName" IN (${variants.map(() => '?').join(',')})`);
+      variants.forEach((v) => args.push(v));
+    }
     const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
     const total: any[] = await db().$queryRawUnsafe(`SELECT COUNT(*) as c, COALESCE(SUM("amount"),0) as sum FROM "Receipt" ${w}`, ...args);
     const p = Math.max(1, Number(page) || 1);
@@ -42,7 +71,16 @@ export class ReceiptsController {
       ...args, ps, (p - 1) * ps,
     );
     return {
-      rows: rows.map((r) => ({ ...r, dateDisplay: formatDate(r.date, mode) })),
+      rows: rows.map((r) => {
+        const sourceName = canonicalReceiptSource(r.sourceName);
+        return {
+          ...r,
+          sourceName,
+          allocation: allocationForSource(sourceName),
+          reducesDebt: reducesCustomerDebt(null, sourceName),
+          dateDisplay: formatDate(r.date, mode),
+        };
+      }),
       total: Number(total?.[0]?.c ?? 0), sum: Number(total?.[0]?.sum ?? 0),
       page: p, pageSize: ps, calendar: mode,
     };
@@ -72,12 +110,18 @@ export class ReceiptsController {
     if (!cust?.length) throw new HttpException('مشتری پیدا نشد.', 400);
     const prefix = await settingsService.get('docPrefixReceipt');
     const no = String(body.no || '').trim() || (await nextDocNo(prefix, mode, date));
+    /*
+     * نام منبع همیشه با نام رسمی ذخیره می‌شود.
+     * «بیانه» و «پیش‌پرداخت» یک مفهوم‌اند؛ اگر همان‌طور که کاربر تایپ
+     * کرده ذخیره شوند، گزارش «بیانیه» نصف رسیدها را جا می‌گذارد.
+     */
+    const sourceName = await resolveSourceName(body.sourceId, body.sourceName);
     try {
       await db().$executeRawUnsafe(
         `INSERT INTO "Receipt" ("no","date","customerId","customerName","amount","relatedBillNo","sourceId","sourceName","receivedBy","note")
          VALUES (?,?,?,?,?,?,?,?,?,?)`,
         no, date, Number(body.customerId), cust[0].name, amount, body.relatedBillNo || '',
-        body.sourceId ? Number(body.sourceId) : null, body.sourceName || '',
+        body.sourceId ? Number(body.sourceId) : null, sourceName,
         body.receivedBy || '', body.note || '',
       );
     } catch {
@@ -103,11 +147,12 @@ export class ReceiptsController {
     if (!body?.customerId) throw new HttpException('مشتری را انتخاب کنید.', 400);
     const cust: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Customer" WHERE "id"=?`, Number(body.customerId));
     if (!cust?.length) throw new HttpException('مشتری پیدا نشد.', 400);
+    const sourceName = await resolveSourceName(body.sourceId, body.sourceName);
     await db().$executeRawUnsafe(
       `UPDATE "Receipt" SET "date"=?, "customerId"=?, "customerName"=?, "amount"=?, "relatedBillNo"=?,
        "sourceId"=?, "sourceName"=?, "receivedBy"=?, "note"=? WHERE "id"=?`,
       date, Number(body.customerId), cust?.[0]?.name || body.customerName || '', amount,
-      body.relatedBillNo || '', body.sourceId ? Number(body.sourceId) : null, body.sourceName || '',
+      body.relatedBillNo || '', body.sourceId ? Number(body.sourceId) : null, sourceName,
       body.receivedBy || '', body.note || '', Number(id),
     );
     await logActivity({ action: 'update', entity: 'Receipt', entityId: Number(id) });
@@ -127,9 +172,12 @@ export class ReceiptsController {
      */
     const del = await softDelete("Receipt", Number(id));
     if (!del.ok) throw new HttpException('ردیف پیدا نشد.', 404);
-    return { ok: true, softDeleted: true, message: 'حذف شد — از «سطل بازیافت» قابل بازگرداندن است.' };
+    /*
+     * باگ: این لاگ بعد از `return` بود و هرگز اجرا نمی‌شد — یعنی حذف رسید
+     * در «سابقه فعالیت‌ها» ثبت نمی‌شد و قابل بازیابی نبود.
+     */
     await logActivity({ action: 'delete', entity: 'Receipt', entityId: Number(id), detail: rows?.[0]?.no || '' });
-    return { ok: true };
+    return { ok: true, softDeleted: true, message: 'حذف شد — از «سطل بازیافت» قابل بازگرداندن است.' };
   }
 
   @Get(':id')

@@ -138,7 +138,11 @@ export default function ReceiptsPage() {
                   </td>
                   <td className="num" style={{ fontWeight: 700, color: 'var(--ok)' }}>{money(r.amount)}</td>
                   <td className="mono muted-cell">{r.relatedBillNo || '—'}</td>
-                  <td><span className="badge info">{r.sourceName || '—'}</span></td>
+                  <td>
+                    <span className={`badge ${r.reducesDebt === false ? 'warn' : 'info'}`}>{r.sourceName || '—'}</span>
+                    {/* اثر منبع روی مانده — از سرور می‌آید، در UI حساب نمی‌شود */}
+                    {r.reducesDebt === false ? <div className="cell-sub">از بدهی کم نمی‌شود</div> : null}
+                  </td>
                   <td className="hide-sm">{r.receivedBy || '—'}</td>
                   <td className="small muted-cell hide-md">{r.note}</td>
                   <td><div className="actions hover-actions">
@@ -169,7 +173,13 @@ export default function ReceiptsPage() {
             </Field>
             <Field label="مبلغ رسید (افغانی)" required><Num value={form.amount} onChange={(v) => setForm({ ...form, amount: v })} /></Field>
             <Field label="شماره بل مربوط"><Text value={form.relatedBillNo} onChange={(v) => setForm({ ...form, relatedBillNo: v })} /></Field>
-            <Field label="از درک" hint="«امانت» در باقی مشتری حساب نمی‌شود.">
+            <Field
+              label="از درک"
+              hint={
+                '«امانت» در باقی مشتری حساب نمی‌شود · «بیانیه» اعتبار پیشین مشتری است و با نخستین بل تسویه می‌شود'
+                + ' · «مربوط» پولی است که از شاخه‌ی مصرف آمده'
+              }
+            >
               <Select value={form.sourceId} onChange={(v) => setForm({ ...form, sourceId: v })} placeholder="انتخاب…"
                 options={sources.map((s) => ({ value: s.id, label: s.name }))} />
             </Field>

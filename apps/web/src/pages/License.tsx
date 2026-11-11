@@ -21,7 +21,20 @@ import { useToast, Spinner, Field, Select, Num, InlineStat } from '../components
  *     نمی‌ماند که از کجا شروع کند
  *   • ورود از فایل و از متن، هر دو در یک جا
  */
-export default function LicensePage() {
+export default function LicensePage({ onBack, canContinue, onHelp }: {
+  /**
+   * برگشت به برنامه.
+   *
+   * ⚠ باگ رفع‌شده: صفحه‌ی لایسنس راه برگشت نداشت. کاربر واردش می‌شد و
+   * گیر می‌کرد — حتی وقتی لایسنسش سالم بود. حالا اگر برنامه باز است،
+   * همیشه دکمه‌ی «بازگشت به برنامه» بالای صفحه هست.
+   */
+  onBack?: () => void;
+  /** آیا برنامه باز است؟ (اگر قفل باشد، برگشتی وجود ندارد) */
+  canContinue?: boolean;
+  /** رفتن به راهنما — با ناوبری SPA نه href */
+  onHelp?: () => void;
+} = {}) {
   const toast = useToast();
   const [st, setSt] = useState<any | null>(null);
   const [text, setText] = useState('');
@@ -117,6 +130,16 @@ export default function LicensePage() {
       {/* ---------------- ستون ۱: وضعیت ---------------- */}
       <section className="lic-col">
         <div className="card">
+          {/*
+            نشانگر «قفل» — کاربر باید بداند چرا صفحه‌ی برنامه بسته است.
+            بدون این، صفحه‌ی لایسنس شبیه یک بن‌بست به نظر می‌رسید.
+          */}
+          {!canContinue ? (
+            <div className="lic-back" style={{ background: 'var(--warn-soft)', borderColor: 'color-mix(in srgb, var(--warn) 30%, transparent)' }}>
+              <b style={{ fontSize: '.82rem' }}>برنامه قفل است</b>
+              <span className="small muted">تا لایسنس معتبر فعال نشود، بخش‌های کاری باز نمی‌شوند.</span>
+            </div>
+          ) : null}
           <div className="lic-head">
             <div>
               <h1 className="lic-title">لایسنس برنامه</h1>
@@ -124,6 +147,22 @@ export default function LicensePage() {
             </div>
             {badge ? <span className={`badge ${badge.c}`}>{badge.t}</span> : null}
           </div>
+          {/*
+            راه برگشت — همیشه دیده می‌شود، نه پنهان در پایین صفحه.
+            ⚠ همین دکمه نبود که کاربر را در صفحه‌ی لایسنس زندانی می‌کرد.
+          */}
+          {canContinue && onBack ? (
+            <div className="lic-back">
+              <button className="btn primary" onClick={onBack}>
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+                  strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M15 6l-6 6 6 6" />
+                </svg>
+                بازگشت به برنامه
+              </button>
+              <span className="small muted">لایسنس معتبر است — می‌توانید کار کنید.</span>
+            </div>
+          ) : null}
           <div className="card-b">
             <p className={isActive ? 'lic-msg ok' : 'lic-msg warn'}>{st.message}</p>
 
@@ -160,8 +199,14 @@ export default function LicensePage() {
               لایسنس جدیدی که می‌گیرید، همین‌جا آن را وارد کنید — جایگزین قبلی می‌شود.
             </p>
             <div className="lic-links">
-              <a className="btn sm" href="#/help">راهنما</a>
-              <a className="btn sm" href="#/login">بازگشت به ورود</a>
+              {canContinue && onBack ? (
+                <button className="btn sm primary" onClick={onBack}>بازگشت به برنامه</button>
+              ) : null}
+              {/*
+                «راهنما» هم با دکمه باز می‌شود، نه href: ناوبری با href کل
+                سند را دوباره بارگذاری می‌کند و وضعیت صفحه را می‌ریزد.
+              */}
+              {onHelp ? <button className="btn sm" onClick={onHelp}>راهنما</button> : null}
             </div>
           </div>
         </div>

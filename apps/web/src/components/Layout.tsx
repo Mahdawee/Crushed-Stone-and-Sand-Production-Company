@@ -111,6 +111,24 @@ export default function Layout() {
   const { user, logout, isManager, settings, saveSettings, calendar } = useSession();
   const loc = useLocation();
   const nav = useNavigate();
+
+  /*
+   * «آخرین صفحه‌ی کاری» را نگه می‌داریم تا برگشت از صفحه‌ی لایسنس به همان
+   * جا باشد، نه به داشبورد.
+   *
+   * چرا: مدیر معمولاً وسط کار به لایسنس می‌رود (تمدید). اگر بعد از
+   * فعال‌سازی به داشبورد پرت شود، باید دوباره مسیرش را پیدا کند.
+   */
+  useEffect(() => {
+    const p = loc.pathname;
+    if (!p || p === '/license') return;
+    /*
+     * در try/catch، چون `sessionStorage` در حالت‌های خاص (حالت محرمانه،
+     * iframe، یا محیط تست) می‌تواند موجود نباشد یا خطا بدهد — و این کار
+     * هرگز نباید باز شدن برنامه را بشکند.
+     */
+    try { sessionStorage.setItem('farday.license.returnTo', p); } catch { /* بی‌اهمیت */ }
+  }, [loc.pathname]);
   /** تم فعلی (تیره/برجسته/روشن) — از data-theme خوانده می‌شود تا با Settings هم‌خوان بماند */
   const themeMode = (document.documentElement.dataset.theme || 'light') as 'light' | 'vivid' | 'dark';
 

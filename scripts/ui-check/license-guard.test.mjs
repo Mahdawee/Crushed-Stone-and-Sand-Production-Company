@@ -121,7 +121,15 @@ ok('پیام فارسی برای جابه‌جایی ساعت', /ساعت کمپ
 
 console.log('\n— رابط کاربری —');
 const app = read(path.join(web, 'App.tsx'));
-ok('مسیر /license وجود دارد', /path="\/license"/.test(app));
+/*
+ * صفحه‌ی لایسنس از دور ۱۷ پیش از دروازه‌ی بوت/قفل و با بررسی `pathname`
+ * سرو می‌شود (نه به‌عنوان یک `<Route>` عادی) — دقیقاً برای اینکه هرگز
+ * بن‌بست نشود. پس وجود مسیر را با همین نشانه می‌سنجیم.
+ */
+ok('مسیر /license بدون قید و شرط باز می‌شود',
+  /location\.pathname === '\/license'/.test(app) || /path="\/license"/.test(app));
+ok('صفحه‌ی لایسنس دکمه‌ی بازگشت دارد (بن‌بست نیست)',
+  /onBack=\{/.test(app) && /بازگشت به برنامه/.test(read(path.join(web, 'pages/License.tsx'))));
 ok('در حالت قفل، همه‌ی مسیرها به /license می‌روند', /license && !license\.ok/.test(app) && /Navigate to="\/license"/.test(app));
 const page = exists(path.join(web, 'pages/License.tsx')) ? read(path.join(web, 'pages/License.tsx')) : '';
 ok('صفحه‌ی لایسنس هست و کلید دستگاه را کاپی می‌کند', /machineKey/.test(page) && /clipboard/.test(page));

@@ -7,6 +7,7 @@ import { AuthGuard, ManagerOnly } from '../common/auth';
 import { settingsService } from '../common/settings';
 import { formatDate, CalendarMode } from '../common/calendar';
 import { toCsv, parseCsv, normalizeNumber } from '../common/csv';
+import { canonicalReceiptSource, receiptDebtSql } from '../common/domain';
 
 /**
  * خروجی و **ورودی** اکسل (CSV).
@@ -54,7 +55,7 @@ const EXPORTS: Record<string, ExportDef> = {
     sheet: 'Customers',
     sql: `SELECT c.*,
       (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND s."paymentType"='credit') AS credit,
-      (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE r."customerId"=c."id" AND COALESCE(r."sourceName",'')<>'امانت') AS paid
+      (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE r."customerId"=c."id" AND ${receiptDebtSql('r."sourceName"')}) AS paid
       FROM "Customer" c WHERE COALESCE(c."deletedAt",'')='' ORDER BY c."code"`,
     headers: ['کد مشتری', 'نام مشتری/شرکت', 'شخص رابط', 'شماره تماس', 'پلیت موتر', 'باقی مانده بدهی', 'توضیحات'],
     numeric: [5],
@@ -65,7 +66,7 @@ const EXPORTS: Record<string, ExportDef> = {
     title: 'فروشات',
     sheet: 'Sales',
     sql: `SELECT * FROM "Sale" WHERE COALESCE("deletedAt",'')='' ORDER BY "date", "id"`,
-    headers: ['شماره بل', 'تاریخ', 'نام مشتری', 'نام دریور', 'پلیت موتر', 'مقصد', 'نوع مواد', 'متراژ', 'قیمت فی متر', 'کرایه فی متر', 'مجموع کرایه', 'مجموع قیمت و کرایه', 'مربوط', 'نوع پرداخت', 'توضیحات'],
+    headers: ['شماره بل', 'تاریخ', 'نام مشتری', 'نام دریور', 'پلیت موتر', 'مقصد', 'نوع مواد', 'متراژ', 'قیمت فی متر', 'کرایه فی متر', 'مجموع کرایه', 'مجموع قیمت و کرایه', 'مربوط (شاخه مصرف)', 'نوع پرداخت', 'توضیحات'],
     numeric: [7, 8, 9, 10, 11],
     map: (r, mode) => [
       r.no, formatDate(r.date, mode), r.customerName, r.driverName, r.truckPlate, r.destination,
@@ -79,13 +80,14 @@ const EXPORTS: Record<string, ExportDef> = {
     sql: `SELECT * FROM "Receipt" WHERE COALESCE("deletedAt",'')='' ORDER BY "date", "id"`,
     headers: ['شماره رسید', 'تاریخ', 'نام مشتری', 'مبلغ رسید', 'شماره بل مربوط', 'از درک', 'توسط', 'توضیحات'],
     numeric: [3],
-    map: (r, mode) => [r.no, formatDate(r.date, mode), r.customerName, r.amount, r.relatedBillNo, r.sourceName, r.receivedBy, r.note],
+    map: (r, mode) => [r.no, formatDate(r.date, mode), r.customerName, r.amount, r.relatedBillNo,
+      canonicalReceiptSource(r.sourceName), r.receivedBy, r.note],
   },
   expenses: {
     title: 'مصارف',
     sheet: 'Expenses',
     sql: `SELECT * FROM "Expense" WHERE COALESCE("deletedAt",'')='' ORDER BY "date", "id"`,
-    headers: ['شماره', 'تاریخ', 'شرح', 'نوع مصرف', 'مربوط', 'نمبر بل خرید', 'نام فروشگاه', 'مبلغ افغانی', 'مبلغ دالری', 'پرداخت کننده', 'روش پرداخت', 'توضیحات'],
+    headers: ['شماره', 'تاریخ', 'شرح', 'نوع مصرف', 'مربوط (شاخه مصرف)', 'نمبر بل خرید', 'نام فروشگاه', 'مبلغ افغانی', 'مبلغ دالری', 'پرداخت کننده', 'روش پرداخت', 'توضیحات'],
     numeric: [7, 8],
     map: (r, mode) => [
       r.no, formatDate(r.date, mode), r.description, r.categoryName, r.contractorName,

@@ -16,6 +16,7 @@ const TABS = [
   { key: 'category', label: 'مصارف به نوع' },
   { key: 'payer', label: 'مصارف به پرداخت‌کننده' },
   { key: 'contractor', label: 'کرایه به باربری' },
+  { key: 'related', label: 'مربوط (شاخه مصرف)' },
   { key: 'debtors', label: 'باقی مانده بدهی' },
   { key: 'salary', label: 'خلاصه معاشات' },
 ];
@@ -164,12 +165,48 @@ export default function ReportsDetail() {
           )}
           {tab === 'contractor' && (
             <div className="card"><div className="card-h"><h3>کرایه پرداختی به باربری‌ها / دمترک‌ها</h3></div><div className="card-b tight">
-              <Table head={['باربری / مربوط', 'اسناد', 'مجموع کرایه']}>
+              <Table head={['مربوط (شاخه مصرف)', 'اسناد', 'مجموع کرایه']}>
                 {d.byContractor.map((r: any, i: number) => (
                   <tr key={i}><td>{r.name}</td><td className="num">{r.docs}</td><td className="num" style={{ fontWeight: 700 }}>{money(r.freight)}</td></tr>
                 ))}
               </Table>
             </div></div>
+          )}
+          {tab === 'related' && (
+            /* «مربوط» = شاخه‌ی مصرف: کرایه، مصرف و رسید هر شاخه در یک جدول */
+            <div className="card">
+              <div className="card-h">
+                <h3>مربوط (شاخه مصرف) — کرایه، مصرف و رسید هر شاخه</h3>
+                <div style={{ flex: 1 }} />
+                <span className="badge">کرایه: {money(d.relatedTotals?.freight || 0)}</span>
+                <span className="badge bad">مصرف: {money(d.relatedTotals?.expenseAfn || 0)}</span>
+                <span className="badge ok">رسید: {money(d.relatedTotals?.receiptAmount || 0)}</span>
+              </div>
+              <div className="card-b tight">
+                <Table head={['شاخه', 'بل فروش', 'مجموع کرایه', 'اسناد مصرف', 'مصرف افغانی', 'رسیدات', 'مبلغ رسید']}>
+                  {(d.byRelated || []).map((r: any, i: number) => (
+                    <tr key={i}>
+                      <td style={{ fontWeight: 600 }}>{r.name || '—'}</td>
+                      <td className="num">{r.saleDocs || '—'}</td>
+                      <td className="num">{money(r.freight)}</td>
+                      <td className="num">{r.expenseDocs || '—'}</td>
+                      <td className="num" style={{ fontWeight: 700 }}>{money(r.expenseAfn)}</td>
+                      <td className="num">{r.receiptDocs || '—'}</td>
+                      <td className="num">{money(r.receiptAmount)}</td>
+                    </tr>
+                  ))}
+                  <tr style={{ fontWeight: 800 }}>
+                    <td>جمع</td>
+                    <td className="num" />
+                    <td className="num">{money(d.relatedTotals?.freight || 0)}</td>
+                    <td className="num" />
+                    <td className="num">{money(d.relatedTotals?.expenseAfn || 0)}</td>
+                    <td className="num" />
+                    <td className="num">{money(d.relatedTotals?.receiptAmount || 0)}</td>
+                  </tr>
+                </Table>
+              </div>
+            </div>
           )}
           {tab === 'debtors' && (
             <div className="card">

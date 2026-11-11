@@ -169,8 +169,8 @@ export default function SettingsPage() {
               ['material', 'اقلام و مواد', 'نوع مواد شیت فروشات + واحد'],
               ['expense_category', 'انواع مصرف', 'کرایه، پیسکاری، خرید…'],
               ['payer', 'پرداخت‌کنندگان', 'دخل، احمد، بانک…'],
-              ['receipt_source', 'منابع رسیدات', 'باقی داری، امانت، بیانیه'],
-              ['contractor', 'باربری‌ها / دمترک‌ها', 'مربوط در فروشات'],
+              ['receipt_source', 'منابع رسیدات', 'باقی داری، امانت، بیانیه، مربوط'],
+              ['contractor', 'مربوط (شاخه مصرف)', 'شاخه‌ی هزینه در فروشات، مصارف و رسیدات'],
             ].map(([t, title, hint]) => (
               <Link key={t} to={`/settings/lookups/${t}`} className="card" style={{ padding: 14 }}>
                 <div style={{ fontWeight: 700, marginBottom: 4 }}>{title}</div>

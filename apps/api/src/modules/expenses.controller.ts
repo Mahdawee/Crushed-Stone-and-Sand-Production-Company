@@ -4,6 +4,7 @@ import { ensureSchemaAsync } from '../schema';
 import { AuthGuard, ManagerOnly } from '../common/auth';
 import { logActivity } from '../common/activity';
 import { softDelete } from '../common/soft-delete';
+import { resolveRelatedBranch } from '../common/related';
 import { settingsService } from '../common/settings';
 import { nextDocNo } from '../common/sequence';
 import { parseUserDate, formatDate, todayISO } from '../common/calendar';
@@ -78,13 +79,15 @@ export class ExpensesController {
     catch (e: any) { throw new HttpException(e.message, 400); }
     const prefix = await settingsService.get('docPrefixExpense');
     const no = String(body.no || '').trim() || (await nextDocNo(prefix, mode, date));
+    /* «مربوط» (شاخه‌ی مصرف): نام از شناسه خوانده می‌شود، نه از کلاینت */
+    const branch = await resolveRelatedBranch(body.contractorId, body.contractorName);
     try {
       await db().$executeRawUnsafe(
         `INSERT INTO "Expense" ("no","date","description","categoryId","categoryName","contractorId","contractorName",
           "purchaseBillNo","shopName","amountAfn","amountUsd","payerId","payerName","paymentType","note")
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         no, date, body.description || '', body.categoryId ? Number(body.categoryId) : null, body.categoryName || '',
-        body.contractorId ? Number(body.contractorId) : null, body.contractorName || '',
+        branch.contractorId, branch.contractorName,
         body.purchaseBillNo || '', body.shopName || '', amountAfn, amountUsd,
         body.payerId ? Number(body.payerId) : null, body.payerName || '',
         body.paymentType === 'credit' ? 'credit' : 'cash', body.note || '',
@@ -107,12 +110,13 @@ export class ExpensesController {
     const amountUsd = Number(body.amountUsd) || 0;
     if (amountAfn < 0 || amountUsd < 0) throw new HttpException('مبلغ مصرف نمی‌تواند منفی باشد.', 400);
     if (amountAfn <= 0 && amountUsd <= 0) throw new HttpException('مبلغ مصرف را وارد کنید (افغانی یا دالری).', 400);
+    const branch = await resolveRelatedBranch(body.contractorId, body.contractorName);
     await db().$executeRawUnsafe(
       `UPDATE "Expense" SET "date"=?, "description"=?, "categoryId"=?, "categoryName"=?, "contractorId"=?, "contractorName"=?,
        "purchaseBillNo"=?, "shopName"=?, "amountAfn"=?, "amountUsd"=?, "payerId"=?, "payerName"=?, "paymentType"=?, "note"=?
        WHERE "id"=?`,
       date, body.description || '', body.categoryId ? Number(body.categoryId) : null, body.categoryName || '',
-      body.contractorId ? Number(body.contractorId) : null, body.contractorName || '',
+      branch.contractorId, branch.contractorName,
       body.purchaseBillNo || '', body.shopName || '', amountAfn, amountUsd,
       body.payerId ? Number(body.payerId) : null, body.payerName || '',
       body.paymentType === 'credit' ? 'credit' : 'cash', body.note || '', Number(id),

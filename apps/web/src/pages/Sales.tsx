@@ -258,7 +258,8 @@ export default function SalesPage() {
             <Field label="مجموع بل" computed>
               <Computed value={money(calc.total)} suffix="؋" big />
             </Field>
-            <Field label="مربوط (باربری / دمترک)">
+            {/* «مربوط» = شاخه‌ی مصرف؛ همان مفهوم در مصارف و رسیدات هم همین است */}
+            <Field label="مربوط (شاخه مصرف)" hint="باربری / دمترک / شخصی که کرایه به آن تعلق دارد">
               <Select value={form.contractorId} placeholder="بدون / شخصی شرکت"
                 onChange={(v) => setForm({ ...form, contractorId: v })}
                 options={(lookups.contractor || []).map((c: any) => ({ value: c.id, label: c.name }))} />

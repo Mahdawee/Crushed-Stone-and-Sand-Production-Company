@@ -55,7 +55,7 @@ export default function PrintSale() {
     ['نام دریور', s.driverName || '—'],
     ['پلیت موتر', s.truckPlate || '—'],
     ['مقصد', s.destination || '—'],
-    ['مربوط', s.contractorName || 'شخصی شرکت'],
+    ['مربوط (شاخه مصرف)', s.contractorName || 'شخصی شرکت'],
     ['نوع پرداخت', s.paymentType === 'cash' ? 'نقده' : 'باقی'],
   ];
 

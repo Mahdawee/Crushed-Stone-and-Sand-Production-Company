@@ -143,7 +143,7 @@ export default function ExpensesPage() {
 
         <div className="card-b tight">
           {!data ? <Spinner /> : (<>
-            <Table head={['شماره', 'تاریخ', 'شرح', 'نوع', 'مربوط', 'فروشگاه', 'افغانی', 'دالری', 'پرداخت‌کننده', 'روش', '']}>
+            <Table head={['شماره', 'تاریخ', 'شرح', 'نوع', 'مربوط (شاخه مصرف)', 'فروشگاه', 'افغانی', 'دالری', 'پرداخت‌کننده', 'روش', '']}>
               {data.rows.map((r: any) => (
                 <tr key={r.id}>
                   <td className="mono" style={{ fontWeight: 700 }}>{r.no}</td>
@@ -183,7 +183,8 @@ export default function ExpensesPage() {
                 options={(lk.expense_category || []).map((c: any) => ({ value: c.id, label: c.name }))} />
             </Field>
             <Field label="شرح" span={3}><Text value={form.description} onChange={(v) => setForm({ ...form, description: v })} placeholder="توضیح کوتاه مصرف" /></Field>
-            <Field label="مربوط (باربری / شخص)">
+            {/* همان مفهوم «مربوط» در فروشات — شاخه‌ی مصرف */}
+            <Field label="مربوط (شاخه مصرف)" hint="باربری / دمترک / شخصی که این مصرف به آن تعلق دارد">
               <Select value={form.contractorId} placeholder="بدون" onChange={(v) => setForm({ ...form, contractorId: v })}
                 options={(lk.contractor || []).map((c: any) => ({ value: c.id, label: c.name }))} />
             </Field>

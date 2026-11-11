@@ -10,6 +10,7 @@ import { ensureSchemaAsync } from '../schema';
 import { ensureDefaultAdmin } from '../common/auth';
 import { settingsService } from '../common/settings';
 import { toCalendar, pad2, monthBucket, todayISO, CalendarMode } from '../common/calendar';
+import { RECEIPT_SOURCES as RECEIPT_SOURCE_DEFS, ALLOCATION_LABELS } from '../common/domain';
 
 const MATERIALS = [
   ['ماسه اول', 'متر مکعب'], ['ماسه دوم', 'متر مکعب'], ['ریگ', 'متر مکعب'],
@@ -28,9 +29,17 @@ const PAYERS = [
   ['دخل', 'صندوق'], ['احمد', 'شخص'], ['مدیر مالی', 'شخص'], ['سرپرست', 'شخص'],
   ['بانک', 'بانک'], ['شرکت', 'حساب شرکت'],
 ];
-const RECEIPT_SOURCES = [
-  ['باقی داری', 'کاهش بدهی'], ['امانت', 'امانت'], ['بیانیه', 'بیانیه'], ['پیش پرداخت', 'پیش پرداخت'],
-];
+/*
+ * منابع رسید از یک منبع واحد می‌آیند (`common/domain`).
+ *
+ * قبلاً «بیانیه» و «پیش پرداخت» هر دو جدا در این فهرست بودند؛ کاربر گفت
+ * یکی است و باید یکی بماند. حالا فهرست از همان تعریف رسمی ساخته می‌شود،
+ * پس فهرست کشویی و منطق مانده هرگز نمی‌توانند از هم جدا بیفتند.
+ */
+const RECEIPT_SOURCES: (string | number)[][] = RECEIPT_SOURCE_DEFS.map((s) => [
+  s.name,
+  ALLOCATION_LABELS[s.allocation] || s.kind,
+]);
 const CONTRACTORS = [
   ['اکتروز سبز شرکت', 'موتر شرکت'], ['باربری احمد', 'باربری'], ['دمترک شخصی', 'دمترک'],
   ['باربری کرایی', 'باربری'],
