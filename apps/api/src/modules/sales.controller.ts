@@ -8,7 +8,7 @@ import { resolveRelatedBranch } from '../common/related';
 import { settingsService } from '../common/settings';
 import { nextDocNo } from '../common/sequence';
 import { parseUserDate, formatDate, CalendarMode } from '../common/calendar';
-import { idParam } from '../common/params';
+import { idParam, MAX_MONEY, MAX_QUANTITY } from '../common/params';
 import { ensureWalkInCustomer } from '../schema';
 import { WALK_IN_SHORT } from '../common/domain';
 
@@ -30,6 +30,14 @@ function readNumbers(body: any) {
   const unitPrice = Number(body?.unitPrice) || 0;
   const freightPerUnit = Number(body?.freightPerUnit) || 0;
   if (volume <= 0) throw new HttpException('متراژ باید بزرگ‌تر از صفر باشد.', 400);
+  /*
+   * سقف متراژ و قیمت — `1e308` عدد متناهی است ولی در SQLite به `Infinity`
+   * گرد می‌شد؛ از آن لحظه جمع فروش و مانده‌ی مشتری برای همیشه `Infinity`
+   * می‌ماند و هیچ ویرایشی درستش نمی‌کرد (شکار باگ دور ۲۸).
+   */
+  if (volume > MAX_QUANTITY) throw new HttpException('متراژ از حد مجاز بزرگ‌تر است.', 400);
+  if (unitPrice > MAX_MONEY) throw new HttpException('قیمت واحد از حد مجاز بزرگ‌تر است.', 400);
+  if (freightPerUnit > MAX_MONEY) throw new HttpException('کرایه فی متر از حد مجاز بزرگ‌تر است.', 400);
   if (unitPrice < 0) throw new HttpException('قیمت واحد نمی‌تواند منفی باشد.', 400);
   if (freightPerUnit < 0) throw new HttpException('کرایه فی واحد نمی‌تواند منفی باشد.', 400);
   const freightTotal = Math.round(volume * freightPerUnit * 100) / 100;
@@ -204,6 +212,8 @@ export class SalesController {
         body.paymentType === 'credit' ? 'credit' : 'cash', body.note || '',
       );
     } catch (e: any) {
+      /* خطای اعتبارسنجی خودمان (۴۰۰) نباید به ۵۰۰ تبدیل شود */
+      if (e instanceof HttpException) throw e;
       /*
        * فقط تکراری‌بودن شماره بل پیام «تکراری» می‌گیرد؛ هر خطای دیگری
        * (دیسک پر، قید کلید خارجی، خطای داخلی) با متن واقعی برمی‌گردد —
@@ -284,6 +294,8 @@ export class SalesController {
         body.paymentType === 'credit' ? 'credit' : 'cash', body.note || '', sid,
       );
     } catch (e: any) {
+      /* خطای اعتبارسنجی خودمان (۴۰۰) نباید به ۵۰۰ تبدیل شود */
+      if (e instanceof HttpException) throw e;
       if (/UNIQUE|constraint failed/i.test(String(e?.message || ''))) {
         throw new HttpException('این شماره بل برای سند دیگری ثبت شده است.', 400);
       }

@@ -152,6 +152,8 @@ export class AuthController {
         body.active === false ? 0 : 1,
       );
     } catch (e: any) {
+      /* خطای اعتبارسنجی خودمان (۴۰۰) نباید به ۵۰۰ تبدیل شود */
+      if (e instanceof HttpException) throw e;
       if (/UNIQUE|constraint failed/i.test(String(e?.message || ''))) {
         throw new HttpException('این نام کاربری قبلاً ثبت شده است.', 400);
       }

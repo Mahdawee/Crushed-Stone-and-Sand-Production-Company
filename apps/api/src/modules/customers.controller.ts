@@ -9,7 +9,7 @@ import {
   allocationForSource, canonicalReceiptSource, receiptDebtSql, reducesCustomerDebt,
   realCustomerSql, isWalkInCustomer,
 } from '../common/domain';
-import { idParam } from '../common/params';
+import { idParam, moneyOrZero } from '../common/params';
 
 /**
  * ردیفی که در «سطل بازیافت» است نباید ویرایش شود — با پیام روشن (۴۰۹)،
@@ -170,9 +170,11 @@ export class CustomersController {
         `INSERT INTO "Customer" ("code","name","contactPerson","phone","truckPlate","openingBalance","note") VALUES (?,?,?,?,?,?,?)`,
         code, name, String(body.contactPerson ?? '').slice(0, 80), String(body.phone ?? '').slice(0, 60),
         String(body.truckPlate ?? '').slice(0, 40),
-        numOrZero(body.openingBalance), String(body.note ?? '').slice(0, 300),
+        moneyOrZero(body.openingBalance, 'باقی اولیه'), String(body.note ?? '').slice(0, 300),
       );
     } catch (e: any) {
+      /* خطای اعتبارسنجی خودمان (۴۰۰) نباید به ۵۰۰ تبدیل شود */
+      if (e instanceof HttpException) throw e;
       /*
        * ── باگ (شکار باگ دور ۲۸) ────────────────────────────────────────────
        * این `catch` **هر** خطایی را «کد تکراری» گزارش می‌کرد — از جمله خطای
@@ -216,10 +218,12 @@ export class CustomersController {
       await db().$executeRawUnsafe(
         `UPDATE "Customer" SET "code"=?, "name"=?, "contactPerson"=?, "phone"=?, "truckPlate"=?, "openingBalance"=?, "note"=? WHERE "id"=?`,
         code, name, String(body.contactPerson ?? '').slice(0, 80), String(body.phone ?? '').slice(0, 60),
-        String(body.truckPlate ?? '').slice(0, 40), numOrZero(body.openingBalance),
+        String(body.truckPlate ?? '').slice(0, 40), moneyOrZero(body.openingBalance, 'باقی اولیه'),
         String(body.note ?? '').slice(0, 300), cid,
       );
     } catch (e: any) {
+      /* خطای اعتبارسنجی خودمان (۴۰۰) نباید به ۵۰۰ تبدیل شود */
+      if (e instanceof HttpException) throw e;
       /* همان درس: فقط تکراری‌بودن کد، پیام «کد تکراری» می‌گیرد. */
       if (/UNIQUE|constraint failed/i.test(String(e?.message || ''))) {
         throw new HttpException('این کد برای مشتری دیگری ثبت شده است.', 400);

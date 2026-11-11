@@ -4,7 +4,7 @@ import { ensureSchemaAsync } from '../schema';
 import { AuthGuard, ManagerOnly, userOf } from '../common/auth';
 import { logActivity } from '../common/activity';
 import { softDelete } from '../common/soft-delete';
-import { idParam } from '../common/params';
+import { idParam, MAX_MONEY } from '../common/params';
 import { settingsService } from '../common/settings';
 import { nextDocNo } from '../common/sequence';
 import {
@@ -179,6 +179,9 @@ export class SalariesController {
         const n = Number(v);
         if (!Number.isFinite(n)) throw new HttpException(`«${label}» باید عدد باشد.`, 400);
         if (n < 0) throw new HttpException(`«${label}» نمی‌تواند منفی باشد.`, 400);
+        /* سقف: عددهای غول‌آسا در SQLite به Infinity گرد می‌شدند و جمع کل
+           معاش‌ها و راپورها را برای همیشه خراب می‌کردند (شکار باگ دور ۲۸). */
+        if (n > MAX_MONEY) throw new HttpException(`«${label}» از حد مجاز بزرگ‌تر است.`, 400);
         return n;
       };
       const base = amountOf(r.baseSalary, 'معاش ماهانه');

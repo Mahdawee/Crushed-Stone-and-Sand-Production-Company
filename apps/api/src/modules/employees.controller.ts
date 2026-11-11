@@ -7,7 +7,7 @@ import { logActivity } from '../common/activity';
 import { softDelete } from '../common/soft-delete';
 import { settingsService } from '../common/settings';
 import { parseUserDate, monthBucket, todayISO, CalendarMode, daysBetween } from '../common/calendar';
-import { idParam } from '../common/params';
+import { idParam, moneyOrZero } from '../common/params';
 
 /**
  * ردیفی که در «سطل بازیافت» است نباید ویرایش شود.
@@ -305,7 +305,7 @@ export class EmployeesController {
     const name = String(body?.name ?? '').trim();
     if (!name) throw new HttpException('نام کارمند لازم است.', 400);
     if (name.length > 120) throw new HttpException('نام کارمند حداکثر ۱۲۰ حرف باشد.', 400);
-    const baseSalary = numOrZero(body.baseSalary);
+    const baseSalary = moneyOrZero(body.baseSalary, 'معاش ثابت');
     if (baseSalary < 0) throw new HttpException('معاش ثابت نمی‌تواند منفی باشد.', 400);
     const code = String(body.code || '').trim() || await this.autoCode();
     const mode = await this.cal();
@@ -325,6 +325,8 @@ export class EmployeesController {
         body.status === 'inactive' ? 'inactive' : 'active', String(body.note ?? '').slice(0, 300),
       );
     } catch (e: any) {
+      /* خطای اعتبارسنجی خودمان (۴۰۰) نباید به ۵۰۰ تبدیل شود */
+      if (e instanceof HttpException) throw e;
       /* فقط تکراری‌بودن کد این پیام را می‌گیرد — نه هر خطای دیگری
          (شکار باگ دور ۲۸؛ پیش‌تر هر خطایی «کد تکراری» گزارش می‌شد). */
       if (/UNIQUE|constraint failed/i.test(String(e?.message || ''))) {
@@ -354,7 +356,7 @@ export class EmployeesController {
     const cur: any[] = await db().$queryRawUnsafe(`SELECT "code" FROM "Employee" WHERE "id"=?`, eid);
     const code = String(body?.code ?? '').trim() || String(cur?.[0]?.code ?? '');
     if (!code) throw new HttpException('کد کارمند لازم است.', 400);
-    const baseSalary = numOrZero(body.baseSalary);
+    const baseSalary = moneyOrZero(body.baseSalary, 'معاش ثابت');
     if (baseSalary < 0) throw new HttpException('معاش ثابت نمی‌تواند منفی باشد.', 400);
     const mode = await this.cal();
     let hireDate = body.hireDate || '';
@@ -373,6 +375,8 @@ export class EmployeesController {
         body.status === 'inactive' ? 'inactive' : 'active', String(body.note ?? '').slice(0, 300), eid,
       );
     } catch (e: any) {
+      /* خطای اعتبارسنجی خودمان (۴۰۰) نباید به ۵۰۰ تبدیل شود */
+      if (e instanceof HttpException) throw e;
       if (/UNIQUE|constraint failed/i.test(String(e?.message || ''))) {
         throw new HttpException('این کد برای کارمند دیگری ثبت شده است.', 400);
       }

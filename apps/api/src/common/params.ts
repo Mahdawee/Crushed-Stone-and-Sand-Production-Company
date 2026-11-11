@@ -32,3 +32,30 @@ export function optionalId(raw: unknown, label = 'شناسه'): number | null {
   if (!Number.isFinite(n) || n <= 0) throw new HttpException(`${label} نامعتبر است.`, 400);
   return Math.trunc(n);
 }
+
+/**
+ * سقف مبلغ/متراژ در یک فیلد.
+ *
+ * ## باگ (شکار باگ دور ۲۸)
+ * `POST /customers` با `openingBalance: 1e308` **پذیرفته** می‌شد. عدد متناهی
+ * است (`Number.isFinite` می‌گذرد) ولی SQLite آن را به `Infinity` گرد می‌کرد؛
+ * از آن لحظه مانده‌ی آن مشتری `Infinity` می‌شد و **همه‌ی** جمع‌ها و راپورهایی
+ * که آن مشتری در آن‌ها بود `Infinity`/`NaN` نشان می‌دادند — و با هیچ
+ * ویرایشی هم درست نمی‌شد. همین کلاس خطا در مبلغ رسید/مصرف/معاش هم ممکن بود.
+ *
+ * سقف ۱٬۰۰۰٬۰۰۰٬۰۰۰٬۰۰۰ (هزار میلیارد) از هر رقم واقعی این کسب‌وکار
+ * بزرگ‌تر است ولی از محدودهٔ دقت امن SQLite/JS بیرون نمی‌رود.
+ */
+export const MAX_MONEY = 1_000_000_000_000;
+
+/** سقف متراژ/تعداد (یک میلیون متر مکعب در یک سند). */
+export const MAX_QUANTITY = 1_000_000;
+
+/** عدد متناهی و در بازه‌ی مجاز؛ وگرنه ۴۰۰ با پیام فارسی. */
+export function moneyOrZero(raw: unknown, label: string, max = MAX_MONEY): number {
+  if (raw === undefined || raw === null || raw === '') return 0;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) throw new HttpException(`${label} باید عدد باشد.`, 400);
+  if (Math.abs(n) > max) throw new HttpException(`${label} از حد مجاز بزرگ‌تر است.`, 400);
+  return n;
+}

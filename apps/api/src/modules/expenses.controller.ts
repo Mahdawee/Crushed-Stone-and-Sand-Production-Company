@@ -8,7 +8,7 @@ import { resolveRelatedBranch } from '../common/related';
 import { settingsService } from '../common/settings';
 import { nextDocNo } from '../common/sequence';
 import { parseUserDate, formatDate, todayISO } from '../common/calendar';
-import { idParam } from '../common/params';
+import { idParam, MAX_MONEY } from '../common/params';
 
 /**
  * ردیفی که در «سطل بازیافت» است نباید ویرایش شود.
@@ -94,6 +94,11 @@ export class ExpensesController {
       throw new HttpException('مبلغ مصرف باید عدد باشد.', 400);
     }
     if (amountAfn < 0 || amountUsd < 0) throw new HttpException('مبلغ مصرف نمی‌تواند منفی باشد.', 400);
+    /* سقف مبلغ — عدد غول‌آسا در SQLite به Infinity گرد می‌شد و جمع دخل/مصرف
+       را برای همیشه خراب می‌کرد (شکار باگ دور ۲۸). */
+    if (amountAfn > MAX_MONEY || amountUsd > MAX_MONEY) {
+      throw new HttpException('مبلغ مصرف از حد مجاز بزرگ‌تر است.', 400);
+    }
     if (amountAfn <= 0 && amountUsd <= 0) throw new HttpException('مبلغ مصرف را وارد کنید (افغانی یا دالری).', 400);
     let date = '';
     try { date = body.date ? parseUserDate(body.date, mode) : todayISO(); }
@@ -114,6 +119,8 @@ export class ExpensesController {
         body.paymentType === 'credit' ? 'credit' : 'cash', body.note || '',
       );
     } catch (e: any) {
+      /* خطای اعتبارسنجی خودمان (۴۰۰) نباید به ۵۰۰ تبدیل شود */
+      if (e instanceof HttpException) throw e;
       if (/UNIQUE|constraint failed/i.test(String(e?.message || ''))) {
         throw new HttpException('این شماره سند قبلاً ثبت شده است.', 400);
       }
@@ -135,6 +142,11 @@ export class ExpensesController {
     const amountAfn = Number(body.amountAfn) || 0;
     const amountUsd = Number(body.amountUsd) || 0;
     if (amountAfn < 0 || amountUsd < 0) throw new HttpException('مبلغ مصرف نمی‌تواند منفی باشد.', 400);
+    /* سقف مبلغ — عدد غول‌آسا در SQLite به Infinity گرد می‌شد و جمع دخل/مصرف
+       را برای همیشه خراب می‌کرد (شکار باگ دور ۲۸). */
+    if (amountAfn > MAX_MONEY || amountUsd > MAX_MONEY) {
+      throw new HttpException('مبلغ مصرف از حد مجاز بزرگ‌تر است.', 400);
+    }
     if (amountAfn <= 0 && amountUsd <= 0) throw new HttpException('مبلغ مصرف را وارد کنید (افغانی یا دالری).', 400);
     const branch = await resolveRelatedBranch(body.contractorId, body.contractorName);
 

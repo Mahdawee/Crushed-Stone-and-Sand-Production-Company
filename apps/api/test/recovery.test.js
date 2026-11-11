@@ -277,7 +277,42 @@ async function main() {
     const nextE = await (await fetch(`${B3}/employees/next-code`, { headers: { 'x-auth-token': tk3 } })).json();
     check('کد بعدی کارمند عددی و آزاد است', /^\d{3,}$/.test(String(nextE.code)), JSON.stringify(nextE));
 
-    console.log('\n— ۸) وضعیت حضور و غیاب —');
+    console.log('\n— ۸) ورودی‌های مخرب/غیرمنطقی (نباید ۵۰۰ بدهند) —');
+    /*
+     * `1e308` عدد متناهی است ولی SQLite آن را به `Infinity` گرد می‌کرد؛ مانده‌ی
+     * مشتری و همه‌ی جمع‌ها برای همیشه خراب می‌شد (شکار باگ دور ۲۸). حالا سقف
+     * دارد و ۴۰۰ با پیام فارسی برمی‌گردد — نه ۵۰۰.
+     */
+    const huge = await post('/customers', { name: 'مشتری غول', openingBalance: 1e308 });
+    check('باقی اولیه‌ی غول‌آسا رد می‌شود (۴۰۰، نه ذخیره)', huge.status === 400, `${huge.status} ${JSON.stringify(huge.body).slice(0, 100)}`);
+    const hugeSale = await post('/sales', { date: '1404/06/15', volume: 1e308, unitPrice: 1e308, paymentType: 'cash' });
+    check('فروش با اعداد غول‌آسا رد می‌شود', hugeSale.status === 400, String(hugeSale.status));
+    const hugeExp = await post('/expenses', { date: '1404/06/15', amountAfn: 1e308, description: 'x' });
+    check('مصرف با مبلغ غول‌آسا رد می‌شود', hugeExp.status === 400, String(hugeExp.status));
+    const hugeRc = await post('/receipts', { date: '1404/06/15', amount: 1e308, customerId: 1 });
+    check('رسید با مبلغ غول‌آسا رد می‌شود', hugeRc.status === 400, String(hugeRc.status));
+
+    const probes = [
+      ['POST', '/sales', { date: 'garbage', volume: 1, unitPrice: 1 }],
+      ['POST', '/sales', { date: '1404/06/15', volume: 'abc', unitPrice: 1 }],
+      ['POST', '/employees', { name: '   ' }],
+      ['POST', '/employees', { name: 'x', hireDate: '1404/13/45' }],
+      ['GET', '/customers/abc/statement', undefined],
+      ['GET', '/reports/daily?from=1404/13/01&to=1404/01/01', undefined],
+      ['GET', '/reports/breakdown?from=xxx&to=yyy', undefined],
+      ['POST', '/lookups', { type: 'nope', name: 'x' }],
+      ['POST', '/system/restore', { file: '../../farday.db' }],
+    ];
+    let hard = [];
+    for (const [m, u, b] of probes) {
+      const r = m === 'GET'
+        ? await fetch(B3 + u, { headers: { 'x-auth-token': tk3 } })
+        : await post(u, b);
+      if (r.status >= 500) hard.push(`${m} ${u} → ${r.status}`);
+    }
+    check('هیچ ورودی نامعتبری خطای ۵۰۰ نمی‌دهد', hard.length === 0, hard.join(' | '));
+
+    console.log('\n— ۹) وضعیت حضور و غیاب —');
     const empList = async () => {
       const j = await (await fetch(`${B3}/employees`, { headers: { 'x-auth-token': tk3 } })).json();
       return Array.isArray(j) ? j : (j.rows || []);

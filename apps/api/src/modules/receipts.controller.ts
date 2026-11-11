@@ -8,7 +8,7 @@ import { settingsService } from '../common/settings';
 import { nextDocNo } from '../common/sequence';
 import { parseUserDate, formatDate, todayISO } from '../common/calendar';
 import { allocationForSource, canonicalReceiptSource, receiptSourceVariants, reducesCustomerDebt } from '../common/domain';
-import { idParam } from '../common/params';
+import { idParam, MAX_MONEY } from '../common/params';
 import { ensureWalkInCustomer } from '../schema';
 
 /**
@@ -152,6 +152,9 @@ export class ReceiptsController {
     const mode = await settingsService.calendar();
     const amount = Number(body.amount) || 0;
     if (amount <= 0) throw new HttpException('مبلغ رسید باید بزرگتر از صفر باشد.', 400);
+    /* سقف مبلغ — عدد غول‌آسا به Infinity گرد می‌شد و مانده‌ی مشتری را برای
+       همیشه خراب می‌کرد (شکار باگ دور ۲۸). */
+    if (amount > MAX_MONEY) throw new HttpException('مبلغ رسید از حد مجاز بزرگ‌تر است.', 400);
     let date = '';
     try { date = body.date ? parseUserDate(body.date, mode) : todayISO(); }
     catch (e: any) { throw new HttpException(e.message, 400); }
@@ -173,6 +176,8 @@ export class ReceiptsController {
         body.receivedBy || '', body.note || '',
       );
     } catch (e: any) {
+      /* خطای اعتبارسنجی خودمان (۴۰۰) نباید به ۵۰۰ تبدیل شود */
+      if (e instanceof HttpException) throw e;
       if (/UNIQUE|constraint failed/i.test(String(e?.message || ''))) {
         throw new HttpException('این شماره رسید قبلاً ثبت شده است.', 400);
       }
@@ -196,6 +201,9 @@ export class ReceiptsController {
     /* ویرایش هم نباید مبلغ صفر/منفی بسازد (ثبت، چنین چیزی را رد می‌کند) */
     const amount = Number(body.amount) || 0;
     if (amount <= 0) throw new HttpException('مبلغ رسید باید بزرگتر از صفر باشد.', 400);
+    /* سقف مبلغ — عدد غول‌آسا به Infinity گرد می‌شد و مانده‌ی مشتری را برای
+       همیشه خراب می‌کرد (شکار باگ دور ۲۸). */
+    if (amount > MAX_MONEY) throw new HttpException('مبلغ رسید از حد مجاز بزرگ‌تر است.', 400);
     /*
      * باگ: در ویرایش، مشتری ناموجود بررسی نمی‌شد؛ `customerId` به ردیفی اشاره
      * می‌کرد که وجود ندارد و نامِ قدیمی روی رسید می‌ماند (کارت حساب خراب).
