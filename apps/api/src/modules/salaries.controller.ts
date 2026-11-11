@@ -28,9 +28,19 @@ export class SalariesController {
       ref = fromCalendar(y, mo, 1, mode);
     }
     const bucket = monthBucket(ref, mode);
-    const employees: any[] = await db().$queryRawUnsafe(
+    /*
+     * ── باگ (شکار باگ دور ۳۲): کارمندِ آینده در ورق معاش ─────────────────
+     * فهرست کارمندان فعال گرفته می‌شد بدون توجه به تاریخ استخدام. کارمندی
+     * که قراردادش از ماه بعد شروع می‌شود در ورق معاش همین ماه می‌آمد و
+     * مدیر می‌توانست برای ماهی که کار نکرده معاش ثبت کند — و این مبلغ به
+     * صندوق و راپورها می‌رفت.
+     * قاعده: فقط کسی که تا **آخر** این ماه استخدام شده در ورق باشد.
+     * (`hireDate` خالی/نامعتبر = از قبل بوده؛ رد نمی‌شود.)
+     */
+    const activeEmployees: any[] = await db().$queryRawUnsafe(
       `SELECT * FROM "Employee" WHERE "status"='active' AND COALESCE("deletedAt",'')='' ORDER BY "code"`,
     );
+    const employees = activeEmployees.filter((e: any) => !e.hireDate || String(e.hireDate) <= bucket.end);
     const existing: any[] = await db().$queryRawUnsafe(
       `SELECT * FROM "Salary" WHERE "periodStart"=? AND COALESCE("deletedAt",'')=''`,
       bucket.start,

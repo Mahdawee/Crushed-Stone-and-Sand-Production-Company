@@ -114,7 +114,14 @@ export default function SalariesPage() {
                   <span className="sep" />
                   <InlineStat label="اضافه (ساعت)" value={rows.reduce((a, r) => a + Number(r.overtimeHours || 0), 0)} />
                   <span className="sep" />
+                  {/*
+                    جمعِ همین ورق، و جدا از آن آنچه «ثبت شده» است — وگرنه
+                    مدیر جمعی را می‌بیند که بخشی از آن هنوز فقط روی صفحه
+                    است و در صندوق/راپور نیامده.
+                  */}
                   <InlineStat label="مجموع پرداخت" value={money(total)} tone="ok" />
+                  <span className="sep" />
+                  <InlineStat label="ثبت‌شده این ماه" value={money(sheet.totalPaid || 0)} />
                 </div>
               </div>
               <div className="card-b tight">

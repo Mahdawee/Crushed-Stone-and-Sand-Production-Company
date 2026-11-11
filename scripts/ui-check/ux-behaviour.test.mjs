@@ -229,5 +229,12 @@ const dailyPage = read('apps/web/src/pages/ReportsDaily.tsx');
 ok('جمع ستون «موجودی دخل روز» با ستون خودش یکی است', /d\.rows\.reduce\(\(a: number, r: any\) => a \+ Number\(r\.cashBalance \|\| 0\), 0\)/.test(dailyPage));
 ok('کارت «متحرک» همان عدد ستون آخر را نشان می‌دهد', /const running = Number\(d\.rows\[0\]\?\.runningCash \?\? 0\)/.test(dailyPage));
 
+console.log('\n— ورق معاش: نه کارمند آینده، نه جمع گمراه‌کننده —');
+
+const salCtl = read('apps/api/src/modules/salaries.controller.ts');
+ok('ورق معاش کارمند آینده را نمی‌آورد', /filter\(\(e: any\) => !e\.hireDate \|\| String\(e\.hireDate\) <= bucket\.end\)/.test(salCtl));
+const salPage = read('apps/web/src/pages/Salaries.tsx');
+ok('«ثبت‌شده این ماه» از totalPaid نشان داده می‌شود', /sheet\.totalPaid/.test(salPage));
+
 console.log(`\n${fail === 0 ? '✅' : '⛔'} ${pass} موفق، ${fail} ناکام\n`);
 process.exit(fail === 0 ? 0 : 1);

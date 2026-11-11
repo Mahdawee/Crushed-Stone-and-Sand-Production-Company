@@ -117,6 +117,28 @@ const daily = (token, from, to) =>
   check('حالت دقیق هم بین بازه و کل سال یکی است', aFull === aWin, `${aFull} ≠ ${aWin}`);
   check('حالت دقیق مانده‌ی مثبت است', aFull > 0, String(aFull));
 
+  console.log('\n— ورق معاش: کارمند آینده و جمع ثبت‌شده —');
+  /*
+   * باگ دور ۳۲: کارمندی که تاریخ استخدامش از ماه بعد است در ورق معاش
+   * همین ماه می‌آمد (مدیر می‌توانست برای ماهی که کار نکرده معاش ثبت کند).
+   * و `totalPaid` فقط در API بود و در UI دیده نمی‌شد.
+   */
+  const rowsOf = (r) => (Array.isArray(r) ? r : (r.rows || []));
+  await api('POST', '/employees', { name: 'کارمند ماه قبل', position: 'دیور', baseSalary: 20000, hireDate: '2026-01-01' }, token);
+  await api('POST', '/employees', { name: 'کارمند ماه آینده', position: 'دیور', baseSalary: 20000, hireDate: '2027-06-01' }, token);
+  const emps = rowsOf((await api('GET', '/employees', undefined, token)).body);
+  const oldEmp = emps.find((e) => e.name === 'کارمند ماه قبل');
+  let sheet = (await api('GET', '/salaries/sheet?month=1405-08', undefined, token)).body;
+  const names = sheet.rows.map((r) => r.name);
+  check('کارمند استخدام‌شده در این ماه در ورق هست', names.includes('کارمند ماه قبل'), names.join(','));
+  check('کارمند آینده در ورق این ماه نیست', !names.includes('کارمند ماه آینده'), names.join(','));
+  check('totalPaid در پاسخ هست (برای نمایش «ثبت‌شده»)', typeof sheet.totalPaid === 'number', String(sheet.totalPaid));
+
+  await api('PUT', `/employees/${oldEmp.id}`, { ...oldEmp, status: 'inactive' }, token);
+  sheet = (await api('GET', '/salaries/sheet?month=1405-08', undefined, token)).body;
+  check('کارمند غیرفعال (رفته) از ورق ماه‌های بعد حذف می‌شود', !sheet.rows.some((r) => r.name === 'کارمند ماه قبل'),
+    sheet.rows.map((r) => r.name).join(','));
+
   console.log('\n— سلامت —');
   check('سرور خطای داخلی نداده', !/Internal server error|Unhandled/i.test(log));
   const empty = await daily(token, '2026-12-25', '2026-12-26');
