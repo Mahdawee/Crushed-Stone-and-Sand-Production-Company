@@ -9,6 +9,7 @@ import { settingsService } from '../common/settings';
 import { dataDir } from '../db';
 import { ensureSqliteEngine, nativePackageName, type EngineStatus } from '../common/sqlite-engine';
 import { checkBackupFile } from '../common/backup-check';
+import { SOFT_TABLES } from '../common/soft-delete';
 import { demoCounts, hasRealData, installDemo, removeDemo } from '../common/demo';
 import {
   RESET_PHRASE, dataInventory, resetMark, resetPlan, resetSystem, workingRowCount, type ResetOptions,
@@ -123,7 +124,14 @@ export class SystemController {
     );
 
     /* ردیف‌هایی که واقعاً در سطل بازیافت‌اند — برای پرچم «قابل بازگرداندن» */
-    const labels = ['Sale', 'Receipt', 'Expense', 'Customer', 'Employee', 'Salary', 'Attendance', 'Machinery'];
+    /*
+     * ── باگ منطقی (شکار باگ دور ۲۹) ────────────────────────────────────────
+     * این فهرست باید **همه‌ی** جدول‌های حذف‌نرم را داشته باشد، ولی
+     * `RecycleController` از `SOFT_TABLES` استفاده می‌کند. اگر جدولی فقط در
+     * یک‌جا باشد، ردیفِ حذف‌شده‌اش در «سابقه فعالیت» دکمه‌ی «بازگرداندن»
+     * نمی‌گیرد (یا برعکس). حالا هر دو از همان یک منبع می‌خوانند.
+     */
+    const labels = Object.keys(SOFT_TABLES);
     const trashed = new Set<string>();
     const titles = new Map<string, { label: string; title: string }>();
     for (const table of labels) {
@@ -139,16 +147,8 @@ export class SystemController {
      * (مثلاً «بل فروش #۱۲» به‌جای فقط «حذف»). یک کوئری به‌ازای هر جدول،
      * فقط برای شناسه‌هایی که در سابقه آمده‌اند.
      */
-    const SOFT: Record<string, { label: string; titleCol: string }> = {
-      Sale: { label: 'بل فروش', titleCol: 'no' },
-      Receipt: { label: 'رسید', titleCol: 'no' },
-      Expense: { label: 'مصرف', titleCol: 'no' },
-      Customer: { label: 'مشتری', titleCol: 'name' },
-      Employee: { label: 'کارمند', titleCol: 'name' },
-      Salary: { label: 'سند معاش', titleCol: 'no' },
-      Attendance: { label: 'حضور و غیاب', titleCol: 'date' },
-      Machinery: { label: 'ماشین', titleCol: 'name' },
-    };
+    /* عنوان/برچسب از همان منبع سطل بازیافت — نه یک کاپی دوم که از آن جدا می‌افتد */
+    const SOFT = SOFT_TABLES;
     const idsByTable = new Map<string, number[]>();
     for (const l of logs) {
       if (!SOFT[l.entity]) continue;
