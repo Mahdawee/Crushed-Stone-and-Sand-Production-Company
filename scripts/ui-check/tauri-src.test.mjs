@@ -165,6 +165,50 @@ ok('خودآزمایی زمان اجرا در /system/info هست (باینری 
 ok('صفحه تنظیمات وضعیت «اجرای بدون نصب اضافی» را نشان می‌دهد',
   /اجرای بدون نصب اضافی/.test(fs.readFileSync(path.join(root, 'apps/web/src/pages/Settings.tsx'), 'utf8')));
 
+console.log('\n— ابزارهای بیرونی در نصب‌کننده (باگ دور ۳۴) —');
+{
+  /*
+   * باگ: `tools/` در `bundle.resources` نبود. یعنی نصب‌کننده هیچ‌وقت ابزار
+   * «صفر کردن» و ابزار لایسنس را همراه نمی‌برد و روی کمپیوتر مشتری اصلاً
+   * وجود نداشت — در حالی که کل کاربرد این دو ابزار «تحویل سیستم به مشتری
+   * بعدی» و «صدور لایسنس» است و روی همان کمپیوتر لازم می‌شوند.
+   */
+  const conf = JSON.parse(fs.readFileSync(path.join(root, 'src-tauri/tauri.conf.json'), 'utf8'));
+  const res = conf?.bundle?.resources || [];
+  ok('پوشه‌ی tools در منابع نصب‌کننده هست', res.some((r) => String(r).startsWith('tools/')), res.join(','));
+  ok('پوشه‌ی api در منابع هست', res.some((r) => String(r).startsWith('api/')), res.join(','));
+  ok('کلید عمومی در منابع هست', res.some((r) => String(r).startsWith('public-key/')), res.join(','));
+  for (const need of ['tools/reset-ui/server.mjs', 'tools/reset-ui/reset-core.mjs', 'tools/reset-ui/ui.html',
+    'tools/reset-ui/start.cmd', 'tools/reset-ui/start.sh', 'tools/license/server.mjs', 'tools/license/start.cmd']) {
+    ok(`فایل ${need} برای بسته‌بندی موجود است`, fs.existsSync(path.join(root, need)));
+  }
+  /* اجراکننده‌ها نباید به «ریشه‌ی مخزن» تکیه کنند — در نصب وجود ندارد */
+  for (const f of ['tools/reset-ui/start.cmd', 'tools/license/start.cmd']) {
+    const body = fs.readFileSync(path.join(root, f), 'utf8');
+    ok(`${f} ریشه‌ی مخزن را cd نمی‌کند`, !/cd \/d "%~dp0\.\.\\\.\."/.test(body));
+    ok(`${f} node.exe همراه بسته را در ..\api می‌گیرد`, /\.\.\\api\\node\.exe/.test(body));
+    /*
+     * باگ دور ۳۴: `where node` **قبل از** جست‌وجوی node.exe همراه بسته اجرا
+     * می‌شد؛ روی کمپیوتری که برنامه نصب است ولی Node نصب نیست، ابزار می‌رفت
+     * به پیام «Node.js پیدا نشد» — درست همان حالتی که node.exe برایش بسته
+     * شده است. حالا اول همراه بسته، بعد نود سیستم.
+     */
+    {
+      const iBundled = body.indexOf('NODE_EXE');
+      /* فقط خطِ فرمان، نه اشاره‌ی داخل توضیح */
+      const iWhere = body.search(/^\s*where node/m);
+      ok(`${f} اول node.exe همراه بسته را می‌گیرد، بعد نود سیستم`,
+        iBundled > -1 && iWhere > -1 && iWhere > iBundled, `bundled=${iBundled} where=${iWhere}`);
+      ok(`${f} نبودِ نود را با پیام فارسی می‌گوید`, /:no_node/.test(body) && /Node\.js/.test(body));
+    }
+  }
+  for (const f of ['tools/reset-ui/start.sh', 'tools/license/start.sh']) {
+    const body = fs.readFileSync(path.join(root, f), 'utf8');
+    ok(`${f} به ریشه‌ی مخزن cd نمی‌کند`, !/^cd "\$root"$/m.test(body));
+    ok(`${f} مسیر node همراه بسته را می‌گیرد`, /\$here\/\.\.\/api\/node/.test(body));
+  }
+}
+
 console.log('\n— هم‌خوانی با API —');
 ok('API همان پورت 4317 را می‌خواند', /FD_PORT/.test(apiMain) && /4317/.test(side));
 ok('API مسیر داده را از FD_DATA_DIR می‌گیرد', /FD_DATA_DIR/.test(apiMain) || /FD_DATA_DIR/.test(fs.readFileSync(path.join(root, 'apps/api/src/db.ts'), 'utf8')));

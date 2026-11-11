@@ -30,6 +30,7 @@
     ],
     "resources": [
       "api/**/*",
+      "tools/**/*",
       "public-key/**/*"
     ],
     "windows": {

@@ -42,9 +42,29 @@ const keysDir = process.env.FD_LICENSE_KEYS_DIR
 const privatePath = path.join(keysDir, 'private.key');
 const publicPath = path.join(keysDir, 'public.key');
 const ledgerPath = path.join(keysDir, 'issued.json');
-const bundledPublic = path.join(root, 'src-tauri', 'public-key', 'farday-public.b64');
-const apiPublic = path.join(root, 'apps', 'api', 'public-key', 'farday-public.b64');
-const sealSource = path.join(root, 'src-tauri', 'seal', 'public-key.txt');
+/*
+ * ── کلید عمومی لایسنس (باگ دور ۳۴) ──────────────────────────────────────
+ * این ابزار داخل مخزن کار می‌کند، ولی حالا همراه نصب‌کننده هم می‌رود
+ * (پوشه‌ی tools در tauri.conf.json) تا مشتری/فروشنده بتواند بدون مخزن هم
+ * لایسنس را بررسی کند. مسیرهای بسته‌بندی‌شده هم بررسی می‌شوند، وگرنه ابزار
+ * روی نسخه‌ی نصب‌شده می‌گفت «کلید عمومی پیدا نشد».
+ *   • مخزن: `<root>/src-tauri/public-key/farday-public.b64`
+ *   • بسته:  `_up_/public-key/farday-public.b64` یا `_up_/api/public-key/…`
+ */
+const firstExisting = (list) => list.find((f) => { try { return fs.existsSync(f); } catch { return false; } }) || '';
+const bundledPublic = firstExisting([
+  path.join(root, 'src-tauri', 'public-key', 'farday-public.b64'),
+  path.join(here, '..', 'public-key', 'farday-public.b64'),
+  path.join(here, '..', 'api', 'public-key', 'farday-public.b64'),
+]);
+const apiPublic = firstExisting([
+  path.join(root, 'apps', 'api', 'public-key', 'farday-public.b64'),
+  path.join(here, '..', 'api', 'public-key', 'farday-public.b64'),
+]);
+const sealSource = firstExisting([
+  path.join(root, 'src-tauri', 'seal', 'public-key.txt'),
+  path.join(here, '..', 'public-key', 'farday-public.b64'),
+]);
 
 const PORT = Number(process.env.FD_LICENSE_UI_PORT || 4321);
 const HOST = '127.0.0.1';
@@ -468,7 +488,13 @@ const server = http.createServer(async (req, res) => {
       fs.writeFileSync(privatePath, priv + '\n', { encoding: 'utf8', mode: 0o600 });
       fs.writeFileSync(publicPath, pub + '\n', 'utf8');
       if (!isolated) {
+        /*
+         * روی نسخه‌ی نصب‌شده مسیر «بسته» پیدا نشد (`firstExisting` رشته‌ی خالی
+         * داد) — باید صریح رد شود، وگرنه `path.dirname('')` مسیر نسبی می‌سازد
+         * و فایل کلید جای غلطی نوشته می‌شود.
+         */
         for (const dst of [bundledPublic, apiPublic, sealSource]) {
+          if (!dst) continue;
           fs.mkdirSync(path.dirname(dst), { recursive: true });
           fs.writeFileSync(dst, pub + '\n', 'utf8');
         }

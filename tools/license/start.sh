@@ -8,9 +8,11 @@
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
-cd "$root"
+# ⚠ در نسخه‌ی نصب‌شده «ریشه‌ی مخزن» وجود ندارد؛ به آن تکیه نمی‌کنیم.
+cd "$here"
 
-PORT="${1:-4321}"
+PORT="${FD_LICENSE_UI_PORT:-4321}"
+if [ $# -gt 0 ] && [[ "${1}" =~ ^[0-9]+$ ]]; then PORT="$1"; shift; fi
 export FD_LICENSE_UI_PORT="$PORT"
 
 if ! command -v node >/dev/null 2>&1; then
@@ -19,7 +21,7 @@ if ! command -v node >/dev/null 2>&1; then
   echo "     اگر نسخه‌ی نصب‌شده‌ی برنامه را دارید: src-tauri/api/node"
   echo
   # اگر نود همراه بسته باشد، از همان استفاده کن
-  for cand in "$root/src-tauri/api/node" "$HOME/.local/share/af.farday.roshan/node"; do
+  for cand in "$root/src-tauri/api/node" "$here/../api/node" "$here/node" "$HOME/.local/share/af.farday.roshan/node"; do
     if [ -x "$cand" ]; then exec "$cand" "$here/server.mjs"; fi
   done
   exit 1
@@ -52,4 +54,4 @@ echo
   fi
 ) &
 
-exec node "$here/server.mjs"
+exec node "$here/server.mjs" "$@"

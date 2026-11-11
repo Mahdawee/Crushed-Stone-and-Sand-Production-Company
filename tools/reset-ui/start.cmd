@@ -13,16 +13,27 @@ REM  ⚠ در نسخه‌ی نصب‌شده پوشه‌ی tools کنار فای�
 REM  پس به ریشه‌ی مخزن تکیه نمی‌کنیم (باگ دور ۳۴).
 cd /d "%~dp0"
 
-where node >nul 2>nul
-if errorlevel 1 goto no_node
-
-REM  اگر نود همراه نسخه‌ی نصب‌شده هست، از همان استفاده کن (بدون نیاز به نصب چیزی)
-set "NODE_EXE=node"
+REM  ── باگ (شکار باگ دور ۳۴): نود همراه بسته نادیده گرفته می‌شد ─────────
+REM  نسخه‌ی نصب‌شده `node.exe` خودش را دارد و کاربر «هیچ چیز اضافه» نصب
+REM  نمی‌کند. ولی این‌جا اول `where node` اجرا می‌شد و اگر Node روی سیستم
+REM  نبود، مستقیم می‌رفت به پیام «Node.js پیدا نشد» — پیامی که خودش می‌گفت
+REM  «node.exe همراه نصب‌کننده هست». یعنی ابزار روی **همان** کمپیوتری که
+REM  برنامه رویش نصب شده بود کار نمی‌کرد.
+REM  حالا اول نودِ همراه بسته جست‌وجو می‌شود، بعد نودِ سیستم.
+set "NODE_EXE="
 if exist "%~dp0..\..\src-tauri\api\node.exe" set "NODE_EXE=%~dp0..\..\src-tauri\api\node.exe"
+if exist "%~dp0..\api\node.exe" set "NODE_EXE=%~dp0..\api\node.exe"
+if exist "%~dp0..\..\api\node.exe" set "NODE_EXE=%~dp0..\..\api\node.exe"
 if exist "%~dp0..\node.exe" set "NODE_EXE=%~dp0..\node.exe"
 if exist "%~dp0node.exe" set "NODE_EXE=%~dp0node.exe"
 if exist "%LOCALAPPDATA%\Programs\Farday Roshan\api\node.exe" set "NODE_EXE=%LOCALAPPDATA%\Programs\Farday Roshan\api\node.exe"
 if exist "%LOCALAPPDATA%\Programs\Farday Roshan\_up_\api\node.exe" set "NODE_EXE=%LOCALAPPDATA%\Programs\Farday Roshan\_up_\api\node.exe"
+REM  اگر هیچ نسخه‌ی همراهی نبود، نودِ نصب‌شده روی سیستم
+if not defined NODE_EXE (
+  where node >nul 2>nul
+  if not errorlevel 1 set "NODE_EXE=node"
+)
+if not defined NODE_EXE goto no_node
 
 set "PORT=4322"
 REM  اگر گزینه داده شده (مثل --data-dir)، پورت را از آن نمی‌گیریم (باگ دور ۳۴)

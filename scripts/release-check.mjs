@@ -108,6 +108,39 @@ else warn('تاریخچه‌ی بروزرسانی در پنل نشان داده 
 if (fs.existsSync(path.join(root, 'docs', 'UPGRADE.md'))) ok('سند قاعده‌های بروزرسانی موجود است (docs/UPGRADE.md)');
 else bad('docs/UPGRADE.md نیست', 'قاعده‌های مهاجرت را مستند کنید');
 
+/* ------------------------------------------------- ۵) همراهی ابزارهای بیرونی */
+/*
+ * ── باگ (شکار باگ دور ۳۴) ────────────────────────────────────────────────
+ * نصب‌کننده هیچ‌وقت `tools/` را همراه نمی‌برد: روی کمپیوتر مشتری نه ابزار
+ * «صفر کردن» بود و نه ابزار لایسنس — در حالی که هر دو دقیقاً همان‌جا لازم
+ * می‌شوند (تحویل سیستم به مشتری بعدی / صدور لایسنس). این بررسی جلوی تکرارش
+ * را می‌گیرد؛ بدون آن، «آماده برای انتشار» می‌گفتیم و بسته ناقص می‌رفت.
+ */
+console.log('\n— ۵) ابزارهای بیرونی در بسته —');
+{
+  let conf = null;
+  try { conf = JSON.parse(read('src-tauri/tauri.conf.json') || '{}'); } catch { /* پایین گزارش می‌شود */ }
+  const res = conf?.bundle?.resources || [];
+  const has = (prefix) => res.some((r) => String(r).startsWith(prefix));
+  if (has('tools/')) ok('پوشه‌ی tools در منابع نصب‌کننده هست');
+  else bad('tools در bundle.resources نیست — ابزار صفر کردن/لایسنس روی نصب مشتری وجود ندارد',
+    'در src-tauri/tauri.conf.json مقدار "tools/**/*" را به bundle.resources اضافه کنید');
+  if (has('api/') && has('public-key/')) ok('سرویس API و کلید عمومی هم در منابع هستند');
+  else bad('api یا public-key در منابع نصب‌کننده نیست', 'bundle.resources را کامل کنید');
+
+  for (const f of ['tools/reset-ui/server.mjs', 'tools/reset-ui/reset-core.mjs', 'tools/reset-ui/ui.html',
+    'tools/reset-ui/start.cmd', 'tools/license/server.mjs', 'tools/license/start.cmd']) {
+    if (fs.existsSync(path.join(root, f))) ok(`فایل ${f} موجود است`);
+    else bad(`${f} پیدا نشد`, 'ابزار بیرونی ناقص است؛ بسته‌ی نصب نمی‌تواند صفر کردن/لایسنس را اجرا کند');
+  }
+  /* اجراکننده‌ها نباید به «ریشه‌ی مخزن» تکیه کنند — در نصب وجود ندارد */
+  for (const f of ['tools/reset-ui/start.sh', 'tools/license/start.sh']) {
+    const body = read(f);
+    if (!/^cd "\$root"$/m.test(body)) ok(`${f} مستقل از ریشه‌ی مخزن کار می‌کند`);
+    else bad(`${f} به ریشه‌ی مخزن cd می‌کند — روی نسخه‌ی نصب‌شده شکست می‌خورد`, 'cd "$here" بگذارید');
+  }
+}
+
 /* ---------------------------------------------------------------- جمع‌بندی */
 console.log('');
 if (problems.length === 0) {

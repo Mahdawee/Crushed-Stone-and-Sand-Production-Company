@@ -22,7 +22,7 @@ if ! command -v node >/dev/null 2>&1; then
   echo "     اگر نسخه‌ی نصب‌شده‌ی برنامه را دارید: src-tauri/api/node"
   echo
   # اگر نود همراه بسته باشد، از همان استفاده کن
-  for cand in "$root/src-tauri/api/node" "$here/../node" "$here/node" "$HOME/.local/share/af.farday.roshan/node"; do
+  for cand in "$root/src-tauri/api/node" "$here/../api/node" "$here/../node" "$here/node" "$HOME/.local/share/af.farday.roshan/node"; do
     if [ -x "$cand" ]; then exec "$cand" "$here/server.mjs"; fi
   done
   exit 1
