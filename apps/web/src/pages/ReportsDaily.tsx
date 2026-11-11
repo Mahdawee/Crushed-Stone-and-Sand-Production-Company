@@ -2,10 +2,12 @@ import { IconPrint } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
-import { useToast, Table, Spinner, Stat } from '../components/ui';
+import { useToast, Table, Spinner, Stat, ExportButton,
+} from '../components/ui';
 import { DatePicker } from '../components/DatePicker';
-import { money, todayISO, toCalendar, pad2, fromCalendar, addDaysISO } from '../lib/calendar';
+import { money, todayISO, toCalendar, pad2, fromCalendar, addDaysISO, formatDate } from '../lib/calendar';
 import '../styles/print.css';
+import { PrintReportHeader, PrintReportFooter } from '../components/DocHeader';
 
 
 /* بازه‌های آماده — کمتر کلیک، کمتر تایپ */
@@ -60,6 +62,11 @@ export default function ReportsDaily() {
 
   return (
     <div className="col" style={{ gap: 14 }}>
+      {/* سرصفحه و پانوشت چاپ — فقط روی کاغذ دیده می‌شوند */}
+      <PrintReportHeader
+        title="راپور روزانه"
+        period={`از ${formatDate(range.from, calendar)} تا ${formatDate(range.to, calendar)}`}
+      />
       <div className="card no-print">
         <div className="list-head">
           <div className="pill-tabs">
@@ -74,6 +81,7 @@ export default function ReportsDaily() {
           <div style={{ flex: 1 }} />
           <div className="list-actions">
             <button className="btn" onClick={() => window.print()}><IconPrint size={15} /> چاپ</button>
+            <ExportButton type="sales" label="خروجی" />
           </div>
         </div>
       </div>
@@ -127,6 +135,9 @@ export default function ReportsDaily() {
           </div>
         </div>
       </>)}
+
+      {/* پانوشت چاپ: تاریخ چاپ + خط امضا — فقط روی کاغذ */}
+      <PrintReportFooter />
     </div>
   );
 }

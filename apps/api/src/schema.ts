@@ -263,6 +263,46 @@ const UPGRADES: { table: string; column: string; ddl: string }[] = [
   { table: 'Salary', column: 'payDate', ddl: "TEXT NOT NULL DEFAULT ''" },
   { table: 'Sale', column: 'contractorId', ddl: 'INTEGER' },
   { table: 'Sale', column: 'contractorName', ddl: "TEXT NOT NULL DEFAULT ''" },
+
+  /*
+   * ---- حذف نرم (soft delete) ----
+   *
+   * درخواست کاربر: «حذف‌ها نرم باشند، یعنی فقط از ظاهر حذف شوند ولی از
+   * سابقه‌ی فعالیت‌ها قابل بازیابی باشند، بدون آسیب».
+   *
+   * `deletedAt` خالی = ردیف فعال. وقتی «حذف» می‌شود، فقط همین ستون پر
+   * می‌شود؛ ردیف در دیتابیس می‌ماند و گزارش‌ها/مانده‌ها دست‌نخورده‌اند.
+   * «سطل بازیافت» ردیف‌ها را با همین ستون پیدا و برمی‌گرداند.
+   *
+   * چرا TEXT و نه DATETIME: SQLite با ستون DATETIME و مقدار '' مشکل
+   * مقایسه دارد؛ با TEXT همه‌چیز ساده و قابل خواندن است:
+   *   deletedAt = NULL  → فعال
+   *   deletedAt = '2026-11-10T08:00:00.000Z' → حذف‌شده
+   */
+  { table: 'Customer', column: 'deletedAt', ddl: 'TEXT' },
+  { table: 'Employee', column: 'deletedAt', ddl: 'TEXT' },
+  { table: 'Sale', column: 'deletedAt', ddl: 'TEXT' },
+  { table: 'Receipt', column: 'deletedAt', ddl: 'TEXT' },
+  { table: 'Expense', column: 'deletedAt', ddl: 'TEXT' },
+  { table: 'Salary', column: 'deletedAt', ddl: 'TEXT' },
+  { table: 'Attendance', column: 'deletedAt', ddl: 'TEXT' },
+  /* چه کسی حذف کرد و چرا — برای بازیابی مطمئن */
+  { table: 'Customer', column: 'deletedBy', ddl: 'TEXT' },
+  { table: 'Employee', column: 'deletedBy', ddl: 'TEXT' },
+  { table: 'Sale', column: 'deletedBy', ddl: 'TEXT' },
+  { table: 'Receipt', column: 'deletedBy', ddl: 'TEXT' },
+  { table: 'Expense', column: 'deletedBy', ddl: 'TEXT' },
+  { table: 'Salary', column: 'deletedBy', ddl: 'TEXT' },
+  { table: 'Attendance', column: 'deletedBy', ddl: 'TEXT' },
+  /*
+   * ماشینری هم حذف نرم دارد.
+   *
+   * چرا مهم است: ماشین‌ها در گزارش تولید و در قیمت تمام‌شده نقش دارند.
+   * حذف سخت یک «کمپرسی» یعنی پرسیدن «این بل با کدام ماشین حمل شد؟» دیگر
+   * جواب ندارد. با حذف نرم، نامش از فهرست می‌رود ولی سابقه سالم می‌ماند.
+   */
+  { table: 'Machinery', column: 'deletedAt', ddl: 'TEXT' },
+  { table: 'Machinery', column: 'deletedBy', ddl: 'TEXT' },
 ];
 
 let schemaPromise: Promise<void> | null = null;
@@ -280,7 +320,7 @@ let schemaPromise: Promise<void> | null = null;
  * خود دیتابیس است، پس بعد از ری‌استارت هم دوباره کامل بررسی می‌شود اگر
  * نسخه‌ی برنامه تغییر کرده باشد.
  */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 let schemaReadyFor: string | null = null;
 let schemaReadyVersion = -1;
 

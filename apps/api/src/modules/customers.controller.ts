@@ -3,6 +3,7 @@ import { db } from '../db';
 import { ensureSchemaAsync } from '../schema';
 import { AuthGuard, ManagerOnly } from '../common/auth';
 import { logActivity } from '../common/activity';
+import { softDelete } from '../common/soft-delete';
 
 @UseGuards(AuthGuard)
 @Controller('customers')
@@ -19,22 +20,24 @@ export class CustomersController {
   async list(@Query('q') q?: string, @Query('light') light?: string) {
     await ensureSchemaAsync();
     const args: any[] = [];
-    let where = '';
+    /* حذف‌نرم: مشتری حذف‌شده در فهرست نیاید (پرانتز لازم است، وگرنه OR
+       بقیه‌ی شرط‌ها را بی‌اثر می‌کند — باگ کلاسیک SQL). */
+    let where = `WHERE COALESCE(c."deletedAt",'')=''`;
     if (q) {
-      where = `WHERE c."name" LIKE ? OR c."code" LIKE ? OR c."phone" LIKE ? OR c."contactPerson" LIKE ?`;
+      where += ` AND (c."name" LIKE ? OR c."code" LIKE ? OR c."phone" LIKE ? OR c."contactPerson" LIKE ?)`;
       args.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
     }
     const lightMode = light === '1' || light === 'true';
     const rows: any[] = await db().$queryRawUnsafe(
       lightMode
         ? `SELECT c."id", c."code", c."name", c."phone", c."openingBalance",
-        (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND s."paymentType"='credit') AS creditSales,
-        (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE r."customerId"=c."id" AND COALESCE(r."sourceName",'') <> 'امانت') AS receipts
+        (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND COALESCE(s."deletedAt",'')='' AND s."paymentType"='credit') AS creditSales,
+        (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE r."customerId"=c."id" AND COALESCE(r."deletedAt",'')='' AND COALESCE(r."sourceName",'') <> 'امانت') AS receipts
        FROM "Customer" c ${where} ORDER BY c."name"`
         : `SELECT c.*,
-        (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND s."paymentType"='credit') AS creditSales,
-        (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id") AS allSales,
-        (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE r."customerId"=c."id" AND COALESCE(r."sourceName",'') <> 'امانت') AS receipts
+        (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND COALESCE(s."deletedAt",'')='' AND s."paymentType"='credit') AS creditSales,
+        (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND COALESCE(s."deletedAt",'')='') AS allSales,
+        (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE r."customerId"=c."id" AND COALESCE(r."deletedAt",'')='' AND COALESCE(r."sourceName",'') <> 'امانت') AS receipts
        FROM "Customer" c ${where} ORDER BY c."name"`,
       ...args,
     );
@@ -141,7 +144,14 @@ export class CustomersController {
     if (Number(s?.[0]?.c) + Number(r?.[0]?.c) > 0) {
       throw new HttpException('این مشتری دارای فروش یا رسید است و حذف نمی‌شود.', 400);
     }
-    await db().$executeRawUnsafe(`DELETE FROM "Customer" WHERE "id"=?`, Number(id));
+    /*
+     * حذف «نرم» — درخواست کاربر: «حذف‌ها نرم باشند... از سابقه فعالیت‌ها
+     * قابل بازیابی بدون آسیب». ردیف می‌ماند، فقط از همه‌ی فهرست‌ها و
+     * گزارش‌ها پنهان می‌شود و از «سطل بازیافت» برمی‌گردد.
+     */
+    const del = await softDelete("Customer", Number(id));
+    if (!del.ok) throw new HttpException('ردیف پیدا نشد.', 404);
+    return { ok: true, softDeleted: true, message: 'حذف شد — از «سطل بازیافت» قابل بازگرداندن است.' };
     await logActivity({ action: 'delete', entity: 'Customer', entityId: Number(id) });
     return { ok: true };
   }

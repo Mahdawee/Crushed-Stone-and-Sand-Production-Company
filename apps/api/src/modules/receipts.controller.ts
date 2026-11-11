@@ -3,6 +3,7 @@ import { db } from '../db';
 import { ensureSchemaAsync } from '../schema';
 import { AuthGuard, ManagerOnly } from '../common/auth';
 import { logActivity } from '../common/activity';
+import { softDelete } from '../common/soft-delete';
 import { settingsService } from '../common/settings';
 import { nextDocNo } from '../common/sequence';
 import { parseUserDate, formatDate, todayISO } from '../common/calendar';
@@ -20,6 +21,8 @@ export class ReceiptsController {
     const mode = await settingsService.calendar();
     const where: string[] = [];
     const args: any[] = [];
+    /* حذف‌شده‌ها هرگز در فهرست/جمع نباشند */
+    where.push(`COALESCE("deletedAt",'')=''`);
     if (q) {
       where.push(`("no" LIKE ? OR "customerName" LIKE ? OR "relatedBillNo" LIKE ? OR "receivedBy" LIKE ? OR "note" LIKE ?)`);
       for (let i = 0; i < 5; i++) args.push(`%${q}%`);
@@ -117,7 +120,14 @@ export class ReceiptsController {
     const rows: any[] = await db().$queryRawUnsafe(`SELECT "no" FROM "Receipt" WHERE "id"=?`, Number(id));
     /* باگ: حذف شناسه‌ی ناموجود ۲۰۰ و یک ردیف ساختگی در «فعالیت‌ها» */
     if (!rows?.length) throw new HttpException('رسید پیدا نشد.', 404);
-    await db().$executeRawUnsafe(`DELETE FROM "Receipt" WHERE "id"=?`, Number(id));
+    /*
+     * حذف «نرم» — درخواست کاربر: «حذف‌ها نرم باشند... از سابقه فعالیت‌ها
+     * قابل بازیابی بدون آسیب». ردیف می‌ماند، فقط از همه‌ی فهرست‌ها و
+     * گزارش‌ها پنهان می‌شود و از «سطل بازیافت» برمی‌گردد.
+     */
+    const del = await softDelete("Receipt", Number(id));
+    if (!del.ok) throw new HttpException('ردیف پیدا نشد.', 404);
+    return { ok: true, softDeleted: true, message: 'حذف شد — از «سطل بازیافت» قابل بازگرداندن است.' };
     await logActivity({ action: 'delete', entity: 'Receipt', entityId: Number(id), detail: rows?.[0]?.no || '' });
     return { ok: true };
   }

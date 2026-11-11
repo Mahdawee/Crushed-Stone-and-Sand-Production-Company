@@ -29,47 +29,112 @@ const noNode = process.argv.includes('--no-node');
  * (`--require-node`). فقط تست‌های داخل مخزن از حالت سست استفاده می‌کنند.
  */
 const requireNode = process.argv.includes('--require-node');
+
+
+
 /**
- * تضمین باینری ویندوزی libSQL.
+ * کش آفلاین باینری ویندوزی libSQL.
  *
- * چرا: نصب‌کننده روی ویندوز اجرا می‌شود، ولی ساخت ممکن است روی لینوکس انجام
- * شود (همان چیزی که در CI رخ می‌دهد). `npm install` در آن حالت فقط باینری
- * لینوکسی `@libsql/linux-x64-gnu` را نصب می‌کند و بسته‌ی ویندوزی
- * (`@libsql/win32-x64-msvc`) اصلاً وجود ندارد — نتیجه: نصب‌کننده روی ویندوز
- * با «Cannot find module @libsql/win32-x64-msvc» و صفحه‌ی سفید بالا نمی‌آمد.
- * این تابع آن بسته را (اگر نبود) از npm می‌گیرد و داخل بسته می‌گذارد.
+ * درخواست کاربر: «نصب و اجرا روی هر لپ‌تاپی بدون انترنت؛ بیلد هم آفلاین باشد».
+ *
+ * مشکل قبلی: این تابع **همیشه** از registry.npmjs.org دانلود می‌کرد. روی
+ * کمپیوتر بدون انترنت، ساخت با پیام «باینری گرفته نشد» ادامه می‌داد و
+ * نصب‌کننده‌ای می‌ساخت که روی ویندوز با «Cannot find module
+ * @libsql/win32-x64-msvc» بالا نمی‌آمد — یعنی باگ در **زمان ساخت** ظاهر
+ * نمی‌شد، در زمان اجرا.
+ *
+ * حالا ترتیب جست‌وجو:
+ *   1. اگر بسته از قبل هست → هیچ کاری (سریع‌ترین، رایج‌ترین در ساخت دوم)
+ *   2. کش محلی `.cache/libsql/…tgz` → استخراج بدون انترنت
+ *   3. دانلود + **ذخیره در همان کش** تا ساخت بعدی آفلاین کار کند
+ *   4. اگر هیچ‌کدام و `--offline` فعال بود → خطای روشن و **توقف** ساخت
+ *      (به‌جای ساختن نصب‌کننده‌ی خراب)
  */
 const WINDOWS_LIBSQL = '@libsql/win32-x64-msvc';
+const libsqlCacheDir = path.join(root, '.cache', 'libsql');
 
-function ensureWindowsLibsql(nmDir) {
-  const dest = path.join(nmDir, ...WINDOWS_LIBSQL.split('/'));
-  if (fs.existsSync(path.join(dest, 'index.node'))) return true;
+/** آیا علم `--offline` داده شده؟ (هم مستقیم، هم از متغیر محیطی) */
+const offlineMode = process.argv.includes('--offline')
+  || process.env.FARDAY_OFFLINE === '1'
+  || process.env.npm_config_offline === 'true';
 
-  let version = '';
-  try {
-    version = JSON.parse(
-      fs.readFileSync(path.join(root, 'node_modules', '@libsql', 'linux-x64-gnu', 'package.json'), 'utf8'),
-    ).version;
-  } catch { /* ignore */ }
-  if (!version) {
+function windowsLibsqlVersion() {
+  for (const probe of [
+    path.join(root, 'node_modules', '@libsql', 'linux-x64-gnu', 'package.json'),
+    path.join(root, 'node_modules', '@libsql', 'win32-x64-msvc', 'package.json'),
+    path.join(root, 'node_modules', '@libsql', 'client', 'package.json'),
+  ]) {
     try {
-      version = JSON.parse(fs.readFileSync(path.join(root, 'node_modules', '@libsql', 'client', 'package.json'), 'utf8')).version;
-    } catch { /* ignore */ }
+      const v = JSON.parse(fs.readFileSync(probe, 'utf8')).version;
+      if (v) return v;
+    } catch { /* بعدی */ }
   }
-  if (!version) version = '0.5.29';
+  return '0.5.29';
+}
 
-  const url = `https://registry.npmjs.org/${WINDOWS_LIBSQL}/-/win32-x64-msvc-${version}.tgz`;
+function extractLibsqlTgz(tgz, dest) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'farday-libsql-'));
-  const tgz = path.join(tmp, 'win.tgz');
   try {
-    run(`curl -fL --retry 3 --connect-timeout 20 -o "${tgz}" "${url}"`, tmp);
     /* tarball npm = tar.gz با مسیرهای package/... — با tar سیستمی باز می‌شود */
     run(`tar -xzf "${tgz}" -C "${tmp}"`, tmp);
     const src = path.join(tmp, 'package');
     if (!fs.existsSync(path.join(src, 'index.node'))) throw new Error('index.node در بسته نبود');
     fs.mkdirSync(dest, { recursive: true });
     fs.cpSync(src, dest, { recursive: true });
-    console.log(`   ✔ باینری ویندوزی libSQL اضافه شد (${WINDOWS_LIBSQL}@${version})`);
+    return true;
+  } finally {
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+}
+
+function ensureWindowsLibsql(nmDir) {
+  const dest = path.join(nmDir, ...WINDOWS_LIBSQL.split('/'));
+  if (fs.existsSync(path.join(dest, 'index.node'))) return true;
+
+  const version = windowsLibsqlVersion();
+  const cacheFile = path.join(libsqlCacheDir, `win32-x64-msvc-${version}.tgz`);
+
+  /* ۱) کش محلی — بدون انترنت */
+  if (fs.existsSync(cacheFile)) {
+    try {
+      extractLibsqlTgz(cacheFile, dest);
+      console.log(`   ✔ باینری ویندوزی libSQL از کش محلی نصب شد (${version})`);
+      return true;
+    } catch (e) {
+      console.error(`   ⚠ کش libSQL خراب است: ${e instanceof Error ? e.message : e}`);
+      /* کش خراب را پاک کن تا در مرحله‌ی دانلود دوباره تلاش شود */
+      try { fs.rmSync(cacheFile, { force: true }); } catch { /* ignore */ }
+    }
+  }
+
+  /* ۲) اگر آفلاین هستیم، دانلود فایده‌ای ندارد */
+  if (offlineMode) {
+    console.error('');
+    console.error('   ⛔ ساخت آفلاین متوقف شد: باینری ویندوزی libSQL موجود نیست.');
+    console.error(`      فایل لازم: ${path.relative(root, cacheFile)}`);
+    console.error('      راه‌حل: روی کمپیوتری با انترنت یک بار اجرا کنید:');
+    console.error('        npm run desktop:prefetch');
+    console.error('      و سپس پوشه‌ی .cache را با خود بیاورید.');
+    console.error('');
+    return false;
+  }
+
+  /* ۳) دانلود + ذخیره در کش */
+  const url = `https://registry.npmjs.org/${WINDOWS_LIBSQL}/-/win32-x64-msvc-${version}.tgz`;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'farday-libsql-'));
+  const tgz = path.join(tmp, 'win.tgz');
+  try {
+    run(`curl -fL --retry 3 --connect-timeout 20 -o "${tgz}" "${url}"`, tmp);
+    /* اول از همه در کش بگذار — حتی اگر استخراج بعداً شکست بخورد،
+       دانلود بعدی لازم نیست */
+    fs.mkdirSync(libsqlCacheDir, { recursive: true });
+    fs.copyFileSync(tgz, cacheFile);
+    fs.mkdirSync(dest, { recursive: true });
+    run(`tar -xzf "${tgz}" -C "${tmp}"`, tmp);
+    const src = path.join(tmp, 'package');
+    if (!fs.existsSync(path.join(src, 'index.node'))) throw new Error('index.node در بسته نبود');
+    fs.cpSync(src, dest, { recursive: true });
+    console.log(`   ✔ باینری ویندوزی libSQL اضافه شد (${WINDOWS_LIBSQL}@${version}) و در .cache ذخیره شد`);
     return true;
   } catch (e) {
     console.error(`   ⚠ باینری ویندوزی libSQL گرفته نشد: ${e instanceof Error ? e.message : e}`);
@@ -253,8 +318,21 @@ for (const scope of ['@libsql', '@prisma']) {
   }
 }
 
-/* باینری ویندوزی libSQL — بدون آن نصب‌کننده روی ویندوز بالا نمی‌آید */
+/*
+ * باینری ویندوزی libSQL — بدون آن نصب‌کننده روی ویندوز بالا نمی‌آید.
+ *
+ * ⚠ در حالت `--offline` اگر این باینری نباشد، ساخت **متوقف** می‌شود.
+ * چرا: قبلاً فقط هشدار می‌داد و ادامه می‌داد؛ نتیجه یک نصب‌کننده بود که
+ * مراحل ساختش «موفق» گزارش می‌شد ولی روی ویندوز صفحه‌ی سفید می‌داد.
+ * خطای زمان ساخت با پیام روشن، بی‌نهایت بهتر از خطای زمان اجرا است.
+ */
 const libsqlOk = ensureWindowsLibsql(nm);
+if (!libsqlOk && offlineMode) {
+  console.error('\n⛔ ساخت آفلاین بدون باینری ویندوزی libSQL ممکن نیست.');
+  console.error('   یک بار با انترنت اجرا کنید:  npm run desktop:prefetch');
+  console.error('   سپس پوشه‌ی .cache/libsql را به کمپیوتر آفلاین منتقل کنید.\n');
+  process.exit(1);
+}
 
 // the built React app is served by the same local process
 // tauri.conf.json منابع «binaries/*» را اعلام می‌کند؛ اگر پوشه نباشد ساخت با خطا

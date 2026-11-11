@@ -2,11 +2,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useSession, applyThemeToDocument } from '../lib/session';
 import { formatDate, todayISO } from '../lib/calendar';
+import Notifications from './Notifications';
 import {
   IconBuilding, IconCalendar, IconCash, IconChart, IconChevron, IconClose, IconCoins,
   IconContact, IconContrast, IconDashboard, IconDatabase, IconHelp, IconHistory, IconLock, IconLogout,
   IconMenu, IconMoon, IconPanel, IconPlus, IconReceipt, IconSearchDoc, IconSettings, IconSun,
-  IconTrend, IconTruck, IconUsers, IconWallet,
+  IconTrend, IconTruck, IconTrash, IconUsers, IconWallet,
 } from './icons';
 
 type NavItem = { to: string; label: string; icon: React.FC<{ size?: number }>; managerOnly?: boolean };
@@ -67,6 +68,7 @@ const NAV: NavGroup[] = [
       { to: '/users', label: 'کاربران', icon: IconLock, managerOnly: true },
       { to: '/backup', label: 'پشتیبان‌گیری', icon: IconDatabase, managerOnly: true },
       { to: '/activity', label: 'سابقه فعالیت', icon: IconHistory },
+      { to: '/recycle', label: 'سطل بازیافت', icon: IconTrash, managerOnly: true },
       { to: '/help', label: 'راهنما', icon: IconHelp },
     ],
   },
@@ -92,6 +94,7 @@ const PAGE_TITLES: Record<string, { t: string; s: string }> = {
   '/users': { t: 'کاربران سیستم', s: 'سطح دسترسی مدیر و کارمند' },
   '/backup': { t: 'پشتیبان‌گیری', s: 'کاپی، دانلود و بازگردانی' },
   '/activity': { t: 'سابقه فعالیت', s: 'چه کسی، چه وقت، چه کرد' },
+  '/recycle': { t: 'سطل بازیافت', s: 'بازگرداندن ردیف‌های حذف‌شده' },
   '/help': { t: 'راهنمای سیستم', s: 'کار با هر شیت و فرمول‌ها' },
 };
 
@@ -388,6 +391,8 @@ export default function Layout() {
             <span className="dot" />
             {formatDate(todayISO(), calendar, true)}
           </span>
+
+          <Notifications />
 
           <button type="button" className={`btn ghost icon theme-btn th-${themeMode}`} onClick={toggleTheme}
             title={`تم فعلی: ${themeLabel} — کلیک: تم بعدی`}

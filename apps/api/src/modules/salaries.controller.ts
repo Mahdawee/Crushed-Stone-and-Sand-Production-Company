@@ -3,6 +3,7 @@ import { db } from '../db';
 import { ensureSchemaAsync } from '../schema';
 import { AuthGuard, ManagerOnly } from '../common/auth';
 import { logActivity } from '../common/activity';
+import { softDelete } from '../common/soft-delete';
 import { settingsService } from '../common/settings';
 import { nextDocNo } from '../common/sequence';
 import {
@@ -103,6 +104,8 @@ export class SalariesController {
     const mode = await settingsService.calendar();
     const where: string[] = [];
     const args: any[] = [];
+    /* حذف‌شده‌ها هرگز در فهرست/جمع نباشند */
+    where.push(`COALESCE("deletedAt",'')=''`);
     if (month) {
       const m = String(month).match(/^(\d{4})[\/\-](\d{1,2})$/);
       if (m) {
@@ -220,7 +223,14 @@ export class SalariesController {
     const rows: any[] = await db().$queryRawUnsafe(`SELECT "no" FROM "Salary" WHERE "id"=?`, Number(id));
     /* باگ: حذف شناسه‌ی ناموجود ۲۰۰ و ردیف ساختگی در «فعالیت‌ها» */
     if (!rows?.length) throw new HttpException('سند معاش پیدا نشد.', 404);
-    await db().$executeRawUnsafe(`DELETE FROM "Salary" WHERE "id"=?`, Number(id));
+    /*
+     * حذف «نرم» — درخواست کاربر: «حذف‌ها نرم باشند... از سابقه فعالیت‌ها
+     * قابل بازیابی بدون آسیب». ردیف می‌ماند، فقط از همه‌ی فهرست‌ها و
+     * گزارش‌ها پنهان می‌شود و از «سطل بازیافت» برمی‌گردد.
+     */
+    const del = await softDelete("Salary", Number(id));
+    if (!del.ok) throw new HttpException('ردیف پیدا نشد.', 404);
+    return { ok: true, softDeleted: true, message: 'حذف شد — از «سطل بازیافت» قابل بازگرداندن است.' };
     await logActivity({ action: 'delete', entity: 'Salary', entityId: Number(id) });
     return { ok: true };
   }

@@ -1,9 +1,11 @@
-import { IconDownload, IconPlus } from '../components/icons';
+import { IconPlus } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, downloadCsv } from '../lib/api';
+import { api, listImportTypes } from '../lib/api';
 import { useSession } from '../lib/session';
-import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, ListHead, SearchBox, InlineStat } from '../components/ui';
+import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, ListHead, SearchBox, InlineStat, ImportDialog,
+  ExportButton,
+} from '../components/ui';
 import { money } from '../lib/calendar';
 import { useDebounced } from '../lib/useDebounced';
 import { useLatestRequest } from '../lib/useLatestRequest';
@@ -47,7 +49,9 @@ export default function CustomersPage() {
   };
 
   const remove = (r: any) => toast.confirm({
-    title: 'حذف مشتری؟', body: `«${r.name}» حذف شود؟ اگر فروش یا رسید دارد حذف نمی‌شود.`, confirmText: 'حذف کن',
+    title: 'حذف مشتری؟',
+    body: `«${r.name}» از فهرست کنار می‌رود. داده پاک نمی‌شود — از «سطل بازیافت» قابل بازگرداندن است.\nاگر فروش یا رسید ثبت‌شده داشته باشد، سیستم اجازه نمی‌دهد.`,
+    confirmText: 'حذف کن',
     onConfirm: async () => {
       try { await api.del(`/customers/${r.id}`); await load(); toast.success('حذف شد'); }
       catch (e: any) { toast.error('حذف نشد', e.message); }
@@ -55,6 +59,24 @@ export default function CustomersPage() {
   });
 
   const totalDebt = (rows || []).reduce((a, r) => a + Math.max(0, Number(r.balance)), 0);
+
+  /*
+   * ورود از اکسل — درخواست کاربر (مورد ۵): «ورود از اکسل هم باید کار کند و
+   * برای کاربر یک نمونه‌ی CSV بدهید».
+   * انواع ورودی‌ها از سرور خوانده می‌شود (نه لیست سخت‌کدشده در UI) تا
+   * قانون «چه چیزی مجاز است» فقط یک جا باشد.
+   */
+  const [importOpen, setImportOpen] = useState(false);
+  const [importTypes, setImportTypes] = useState<any[]>([]);
+  const openImport = async () => {
+    try {
+      if (!importTypes.length) {
+        const r = await listImportTypes();
+        setImportTypes(r.items);
+      }
+      setImportOpen(true);
+    } catch (e: any) { toast.error('فهرست ورودی خوانده نشد', e.message); }
+  };
 
   return (
     <div className="col" style={{ gap: 14 }}>
@@ -66,7 +88,8 @@ export default function CustomersPage() {
             <InlineStat label="مجموع بدهی" value={`${money(totalDebt)} ؋`} tone="bad" />
           </>}
           actions={<>
-            <button className="btn" onClick={() => downloadCsv('customers')}><IconDownload size={15} /> اکسل</button>
+            <ExportButton type="customers" />
+            <button className="btn" onClick={openImport} title="ورود گروهی از فایل اکسل/CSV">ورود از اکسل</button>
             <button className="btn primary" onClick={openNew}><IconPlus size={15} /> مشتری</button>
           </>}
         >
@@ -118,6 +141,13 @@ export default function CustomersPage() {
             <Field label="توضیحات" span={2}><TextArea value={form.note} onChange={(v) => setForm({ ...form, note: v })} /></Field>
           </div>
         </Modal>
+      ) : null}
+      {importOpen ? (
+        <ImportDialog
+          types={importTypes}
+          onClose={() => setImportOpen(false)}
+          onDone={load}
+        />
       ) : null}
     </div>
   );

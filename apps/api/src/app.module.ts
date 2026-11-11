@@ -15,14 +15,16 @@ import { SalariesController } from './modules/salaries.controller';
 import { LookupsController } from './modules/lookups.controller';
 import { ReportsController } from './modules/reports.controller';
 import { SystemController } from './modules/system.controller';
-import { ExportController } from './modules/importexport.controller';
+import { ExportController, ImportController } from './modules/importexport.controller';
+import { RecycleController } from './modules/recycle.controller';
 import { LicenseController } from './modules/license.controller';
 
 @Module({
   controllers: [
     RootController, AuthController, CompanyController, EmployeesController, CustomersController,
     SalesController, ReceiptsController, ExpensesController, SalariesController,
-    LookupsController, ReportsController, SystemController, ExportController, LicenseController,
+    LookupsController, ReportsController, SystemController, ExportController, ImportController,
+    RecycleController, LicenseController,
   ],
   providers: [
     PrismaService,

@@ -3,14 +3,39 @@ import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
-import { Spinner, Table, Empty, Stat } from '../components/ui';
+import { Spinner, Table, Empty, Stat, Modal, Field, Text, TextArea, Num, useToast } from '../components/ui';
+import { DatePicker } from '../components/DatePicker';
 import { money, formatDate } from '../lib/calendar';
 
 export default function EmployeeProfile() {
   const { id } = useParams();
   const { calendar } = useSession();
+  const toast = useToast();
   const [d, setD] = useState<any>(null);
-  useEffect(() => { api.get(`/employees/${id}`).then(setD).catch(() => setD(false)); }, [id]);
+  /* فرم ویرایش — درخواست کاربر: «در جاهای که نیاز است ویرایش اضافه شود» */
+  const [form, setForm] = useState<any>(null);
+  const [hire, setHire] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const reload = () => api.get(`/employees/${id}`).then(setD).catch(() => setD(false));
+  useEffect(() => { reload(); /* eslint-disable-next-line */ }, [id]);
+
+  const openEdit = () => {
+    setForm({ ...d.employee });
+    setHire(d.employee.hireDate || '');
+  };
+
+  const save = async () => {
+    if (!form.name?.trim()) { toast.warn('نام کارمند را وارد کنید.'); return; }
+    setBusy(true);
+    try {
+      await api.put(`/employees/${form.id}`, { ...form, hireDate: hire || '' });
+      toast.success('تغییرات ذخیره شد');
+      setForm(null);
+      await reload();
+    } catch (e: any) { toast.error('ذخیره نشد', e.message); }
+    finally { setBusy(false); }
+  };
   if (d === null) return <Spinner />;
   if (d === false) return <Empty icon={<IconAlert size={16} />} title="کارمند پیدا نشد" action={<Link className="btn" to="/employees">بازگشت</Link>} />;
 
@@ -34,6 +59,7 @@ export default function EmployeeProfile() {
           </div>
           <div style={{ flex: 1 }} />
           <div className="list-actions">
+            <button className="btn primary" onClick={openEdit}>ویرایش مشخصات</button>
             <Link className="btn" to="/employees"><IconChevron dir="start" size={14} /> بازگشت به فهرست</Link>
           </div>
         </div>
@@ -104,6 +130,37 @@ export default function EmployeeProfile() {
           </Table>
         </div>
       </div>
+
+      {form ? (
+        <Modal
+          title="ویرایش مشخصات کارمند"
+          onClose={() => setForm(null)}
+          onEnter={save}
+          size="md"
+          footer={
+            <>
+              <button className="btn" onClick={() => setForm(null)}>انصراف</button>
+              <button className="btn primary" disabled={busy} onClick={save}>{busy ? '…' : 'ذخیره'}</button>
+            </>
+          }
+        >
+          <div className="form-grid c2">
+            <Field label="نام" required><Text value={form.name} onChange={(v) => setForm({ ...form, name: v })} /></Field>
+            <Field label="نام پدر"><Text value={form.fatherName} onChange={(v) => setForm({ ...form, fatherName: v })} /></Field>
+            <Field label="وظیفه"><Text value={form.position} onChange={(v) => setForm({ ...form, position: v })} /></Field>
+            <Field label="تاریخ استخدام">
+              <DatePicker value={hire} onChange={setHire} calendar={calendar} clearable />
+            </Field>
+            <Field label="معاش ثابت (؋)"><Num value={form.baseSalary} onChange={(v) => setForm({ ...form, baseSalary: v })} /></Field>
+            <Field label="شماره تماس"><Text value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} /></Field>
+            <Field label="شماره تذکره"><Text value={form.nationalId} onChange={(v) => setForm({ ...form, nationalId: v })} /></Field>
+            <Field label="مدت قرارداد"><Text value={form.contractPeriod} onChange={(v) => setForm({ ...form, contractPeriod: v })} /></Field>
+            <Field label="آدرس" span={2}><TextArea value={form.address} onChange={(v) => setForm({ ...form, address: v })} /></Field>
+            <Field label="توضیحات" span={2}><TextArea value={form.note} onChange={(v) => setForm({ ...form, note: v })} /></Field>
+          </div>
+        </Modal>
+      ) : null}
+
     </div>
   );
 }

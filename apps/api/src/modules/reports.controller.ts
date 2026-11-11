@@ -29,7 +29,7 @@ export class ReportsController {
          COALESCE(SUM(CASE WHEN "paymentType"='credit' THEN "total" ELSE 0 END),0) AS creditSales,
          COALESCE(SUM("total"),0) AS allSales,
          COALESCE(SUM("volume"),0) AS volume
-       FROM "Sale" WHERE "date"=?`, dateISO);
+       FROM "Sale" WHERE COALESCE("deletedAt",'')='' AND "date"=?`, dateISO);
     const receipts: any[] = await p.$queryRawUnsafe(
       `SELECT COALESCE(SUM("amount"),0) AS total,
         COALESCE(SUM(CASE WHEN COALESCE("sourceName",'')='امانت' THEN "amount" ELSE 0 END),0) AS trust,
@@ -37,16 +37,16 @@ export class ReportsController {
         COALESCE(SUM(CASE WHEN COALESCE("sourceName",'')<>'امانت'
                           AND (COALESCE("receivedBy",'')='' OR "receivedBy"='دخل')
                      THEN "amount" ELSE 0 END),0) AS cashToBox
-       FROM "Receipt" WHERE "date"=?`, dateISO);
+       FROM "Receipt" WHERE COALESCE("deletedAt",'')='' AND "date"=?`, dateISO);
     const expenses: any[] = await p.$queryRawUnsafe(
       `SELECT COALESCE(SUM("amountAfn"),0) AS afn, COALESCE(SUM("amountUsd"),0) AS usd,
         COALESCE(SUM(CASE WHEN "paymentType"='cash' AND "payerName"='دخل' THEN "amountAfn" ELSE 0 END),0) AS cashFromBox,
         COALESCE(SUM(CASE WHEN "paymentType"='credit' THEN "amountAfn" ELSE 0 END),0) AS credit
-       FROM "Expense" WHERE "date"=?`, dateISO);
+       FROM "Expense" WHERE COALESCE("deletedAt",'')='' AND "date"=?`, dateISO);
     const salaries: any[] = await p.$queryRawUnsafe(
       `SELECT COALESCE(SUM("total"),0) AS total,
         COALESCE(SUM(CASE WHEN "paymentType"='cash' AND "payerName"='دخل' THEN "total" ELSE 0 END),0) AS cashFromBox
-       FROM "Salary" WHERE "payDate"=?`, dateISO);
+       FROM "Salary" WHERE COALESCE("deletedAt",'')='' AND "payDate"=?`, dateISO);
 
     const cashSales = num(s[0]?.cashSales);
     const creditSales = num(s[0]?.creditSales);
@@ -119,7 +119,7 @@ export class ReportsController {
            COALESCE(SUM(CASE WHEN "paymentType"='credit' THEN "total" ELSE 0 END),0) credit,
            COALESCE(SUM("total"),0) allS,
            COALESCE(SUM("volume"),0) volume
-         FROM "Sale" WHERE "date">=? AND "date"<=? GROUP BY "date"`,
+         FROM "Sale" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=? GROUP BY "date"`,
       ),
       q(
         `SELECT "date" d,
@@ -128,17 +128,17 @@ export class ReportsController {
            COALESCE(SUM(CASE WHEN COALESCE("sourceName",'')<>'امانت'
                              AND (COALESCE("receivedBy",'')='' OR "receivedBy"='دخل')
                         THEN "amount" ELSE 0 END),0) toBox
-         FROM "Receipt" WHERE "date">=? AND "date"<=? GROUP BY "date"`,
+         FROM "Receipt" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=? GROUP BY "date"`,
       ),
       q(
         `SELECT "date" d, COALESCE(SUM("amountAfn"),0) afn, COALESCE(SUM("amountUsd"),0) usd,
            COALESCE(SUM(CASE WHEN "paymentType"='cash' AND "payerName"='دخل' THEN "amountAfn" ELSE 0 END),0) fromBox
-         FROM "Expense" WHERE "date">=? AND "date"<=? GROUP BY "date"`,
+         FROM "Expense" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=? GROUP BY "date"`,
       ),
       q(
         `SELECT "payDate" d, COALESCE(SUM("total"),0) total,
            COALESCE(SUM(CASE WHEN "paymentType"='cash' AND "payerName"='دخل' THEN "total" ELSE 0 END),0) fromBox
-         FROM "Salary" WHERE "payDate">=? AND "payDate"<=? GROUP BY "payDate"`,
+         FROM "Salary" WHERE COALESCE("deletedAt",'')='' AND "payDate">=? AND "payDate"<=? GROUP BY "payDate"`,
       ),
     ]);
 
@@ -258,13 +258,13 @@ export class ReportsController {
       const s: any[] = await p.$queryRawUnsafe(
         `SELECT COALESCE(SUM(CASE WHEN "paymentType"='cash' THEN "total" ELSE 0 END),0) cash,
                 COALESCE(SUM(CASE WHEN "paymentType"='credit' THEN "total" ELSE 0 END),0) credit,
-                COALESCE(SUM("volume"),0) volume FROM "Sale" WHERE "date">=? AND "date"<=?`, start, end);
+                COALESCE(SUM("volume"),0) volume FROM "Sale" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=?`, start, end);
       const r: any[] = await p.$queryRawUnsafe(
-        `SELECT COALESCE(SUM("amount"),0) t FROM "Receipt" WHERE "date">=? AND "date"<=?`, start, end);
+        `SELECT COALESCE(SUM("amount"),0) t FROM "Receipt" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=?`, start, end);
       const e: any[] = await p.$queryRawUnsafe(
-        `SELECT COALESCE(SUM("amountAfn"),0) afn, COALESCE(SUM("amountUsd"),0) usd FROM "Expense" WHERE "date">=? AND "date"<=?`, start, end);
+        `SELECT COALESCE(SUM("amountAfn"),0) afn, COALESCE(SUM("amountUsd"),0) usd FROM "Expense" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=?`, start, end);
       const sa: any[] = await p.$queryRawUnsafe(
-        `SELECT COALESCE(SUM("total"),0) t FROM "Salary" WHERE "payDate">=? AND "payDate"<=?`, start, end);
+        `SELECT COALESCE(SUM("total"),0) t FROM "Salary" WHERE COALESCE("deletedAt",'')='' AND "payDate">=? AND "payDate"<=?`, start, end);
       const cash = num(s[0]?.cash); const credit = num(s[0]?.credit);
       const exp = num(e[0]?.afn); const sal = num(sa[0]?.t);
       const net = cash + credit - exp - sal;
@@ -300,14 +300,14 @@ export class ReportsController {
      */
     const span: any[] = await p.$queryRawUnsafe(
       `SELECT MIN(d) AS lo, MAX(d) AS hi FROM (
-         SELECT MIN("date") AS d FROM "Sale"
-         UNION ALL SELECT MAX("date") FROM "Sale"
-         UNION ALL SELECT MIN("date") FROM "Expense"
-         UNION ALL SELECT MAX("date") FROM "Expense"
-         UNION ALL SELECT MIN("date") FROM "Receipt"
-         UNION ALL SELECT MAX("date") FROM "Receipt"
-         UNION ALL SELECT MIN("payDate") FROM "Salary"
-         UNION ALL SELECT MAX("payDate") FROM "Salary"
+         SELECT MIN("date") AS d FROM "Sale" WHERE COALESCE("deletedAt",'')=''
+         UNION ALL SELECT MAX("date") FROM "Sale" WHERE COALESCE("deletedAt",'')=''
+         UNION ALL SELECT MIN("date") FROM "Expense" WHERE COALESCE("deletedAt",'')=''
+         UNION ALL SELECT MAX("date") FROM "Expense" WHERE COALESCE("deletedAt",'')=''
+         UNION ALL SELECT MIN("date") FROM "Receipt" WHERE COALESCE("deletedAt",'')=''
+         UNION ALL SELECT MAX("date") FROM "Receipt" WHERE COALESCE("deletedAt",'')=''
+         UNION ALL SELECT MIN("payDate") FROM "Salary" WHERE COALESCE("deletedAt",'')=''
+         UNION ALL SELECT MAX("payDate") FROM "Salary" WHERE COALESCE("deletedAt",'')=''
        ) WHERE d IS NOT NULL AND d <> ''`);
     const currentYear = toCalendar(todayISO(), mode).jy;
     const years = new Set<number>([currentYear]);
@@ -321,13 +321,13 @@ export class ReportsController {
       /* سال کامل: اسفند ۳۰ در سال کبیسه، دسمبر ۳۱ — نه ۲۹/۳۱ ثابت */
       const end = fromCalendar(y, 12, monthLength(y, 12, mode), mode);
       const s: any[] = await p.$queryRawUnsafe(
-        `SELECT COALESCE(SUM("total"),0) t FROM "Sale" WHERE "date">=? AND "date"<=?`, start, end);
+        `SELECT COALESCE(SUM("total"),0) t FROM "Sale" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=?`, start, end);
       const e: any[] = await p.$queryRawUnsafe(
-        `SELECT COALESCE(SUM("amountAfn"),0) afn, COALESCE(SUM("amountUsd"),0) usd FROM "Expense" WHERE "date">=? AND "date"<=?`, start, end);
+        `SELECT COALESCE(SUM("amountAfn"),0) afn, COALESCE(SUM("amountUsd"),0) usd FROM "Expense" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=?`, start, end);
       const sa: any[] = await p.$queryRawUnsafe(
-        `SELECT COALESCE(SUM("total"),0) t FROM "Salary" WHERE "payDate">=? AND "payDate"<=?`, start, end);
+        `SELECT COALESCE(SUM("total"),0) t FROM "Salary" WHERE COALESCE("deletedAt",'')='' AND "payDate">=? AND "payDate"<=?`, start, end);
       const r: any[] = await p.$queryRawUnsafe(
-        `SELECT COALESCE(SUM("amount"),0) t FROM "Receipt" WHERE "date">=? AND "date"<=?`, start, end);
+        `SELECT COALESCE(SUM("amount"),0) t FROM "Receipt" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=?`, start, end);
       const sales = num(s[0]?.t); const exp = num(e[0]?.afn); const sal = num(sa[0]?.t);
       const net = sales - exp - sal;
       rows.push({
@@ -350,13 +350,13 @@ export class ReportsController {
     const p = db();
     const entries: any[] = [];
     const sales: any[] = await p.$queryRawUnsafe(
-      `SELECT "no","date","customerName","total" FROM "Sale" WHERE "date">=? AND "date"<=? AND "paymentType"='cash'`, start, end);
+      `SELECT "no","date","customerName","total" FROM "Sale" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=? AND "paymentType"='cash'`, start, end);
     const receipts: any[] = await p.$queryRawUnsafe(
-      `SELECT "no","date","customerName","amount","sourceName","receivedBy" FROM "Receipt" WHERE "date">=? AND "date"<=?`, start, end);
+      `SELECT "no","date","customerName","amount","sourceName","receivedBy" FROM "Receipt" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=?`, start, end);
     const expenses: any[] = await p.$queryRawUnsafe(
-      `SELECT "no","date","description","amountAfn","payerName","paymentType" FROM "Expense" WHERE "date">=? AND "date"<=?`, start, end);
+      `SELECT "no","date","description","amountAfn","payerName","paymentType" FROM "Expense" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=?`, start, end);
     const salaries: any[] = await p.$queryRawUnsafe(
-      `SELECT "no","payDate" as date,"employeeName","total","payerName","paymentType" FROM "Salary" WHERE "payDate">=? AND "payDate"<=?`, start, end);
+      `SELECT "no","payDate" as date,"employeeName","total","payerName","paymentType" FROM "Salary" WHERE COALESCE("deletedAt",'')='' AND "payDate">=? AND "payDate"<=?`, start, end);
     /*
      * حرکت دخل باید با راپور روزانه/داشبورد یکی باشد — قبلاً نبود:
      *  • رسید «امانت» (پول امانت) به عنوان ورودی دخل حساب می‌شد، در حالی که
@@ -433,28 +433,28 @@ export class ReportsController {
     const byMaterial = await q(
       `SELECT "materialName" as name, COUNT(*) as docs, COALESCE(SUM("volume"),0) as volume,
               COALESCE(SUM("total"),0) as total, COALESCE(SUM("freightTotal"),0) as freight
-       FROM "Sale" WHERE "date">=? AND "date"<=? GROUP BY "materialName" ORDER BY total DESC`);
+       FROM "Sale" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=? GROUP BY "materialName" ORDER BY total DESC`);
     const byCustomer = await q(
       `SELECT "customerName" as name, COUNT(*) as docs, COALESCE(SUM("volume"),0) as volume,
               COALESCE(SUM("total"),0) as total,
               COALESCE(SUM(CASE WHEN "paymentType"='credit' THEN "total" ELSE 0 END),0) as credit
-       FROM "Sale" WHERE "date">=? AND "date"<=? GROUP BY "customerName" ORDER BY total DESC`);
+       FROM "Sale" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=? GROUP BY "customerName" ORDER BY total DESC`);
     const byCategory = await q(
       `SELECT "categoryName" as name, COUNT(*) as docs, COALESCE(SUM("amountAfn"),0) as afn, COALESCE(SUM("amountUsd"),0) as usd
-       FROM "Expense" WHERE "date">=? AND "date"<=? GROUP BY "categoryName" ORDER BY afn DESC`);
+       FROM "Expense" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=? GROUP BY "categoryName" ORDER BY afn DESC`);
     const byPayer = await q(
       `SELECT "payerName" as name, COUNT(*) as docs, COALESCE(SUM("amountAfn"),0) as afn
-       FROM "Expense" WHERE "date">=? AND "date"<=? GROUP BY "payerName" ORDER BY afn DESC`);
+       FROM "Expense" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=? GROUP BY "payerName" ORDER BY afn DESC`);
     const byContractor = await q(
       `SELECT "contractorName" as name, COUNT(*) as docs, COALESCE(SUM("freightTotal"),0) as freight
-       FROM "Sale" WHERE "date">=? AND "date"<=? AND COALESCE("contractorName",'') <> '' GROUP BY "contractorName" ORDER BY freight DESC`);
+       FROM "Sale" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=? AND COALESCE("contractorName",'') <> '' GROUP BY "contractorName" ORDER BY freight DESC`);
     const salarySummary: any[] = await p.$queryRawUnsafe(
       `SELECT "periodLabel" as name, COUNT(*) as employees, COALESCE(SUM("total"),0) as total
-       FROM "Salary" WHERE "payDate">=? AND "payDate"<=? GROUP BY "periodStart" ORDER BY "periodStart" DESC`, start, end);
+       FROM "Salary" WHERE COALESCE("deletedAt",'')='' AND "payDate">=? AND "payDate"<=? GROUP BY "periodStart" ORDER BY "periodStart" DESC`, start, end);
     const debtors: any[] = await p.$queryRawUnsafe(
       `SELECT c."code", c."name", c."phone", c."openingBalance",
-        (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND s."paymentType"='credit') AS credit,
-        (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE r."customerId"=c."id" AND COALESCE(r."sourceName",'')<>'امانت') AS paid
+        (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE COALESCE(s."deletedAt",'')='' AND s."customerId"=c."id" AND s."paymentType"='credit') AS credit,
+        (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE COALESCE(r."deletedAt",'')='' AND r."customerId"=c."id" AND COALESCE(r."sourceName",'')<>'امانت') AS paid
        FROM "Customer" c ORDER BY c."name"`);
     const debts = debtors
       .map((d) => ({
@@ -481,23 +481,33 @@ export class ReportsController {
     const mEnd = endOfMonth(today, mode);
     const p = db();
     const monthSales: any[] = await p.$queryRawUnsafe(
-      `SELECT COALESCE(SUM("total"),0) t, COALESCE(SUM("volume"),0) v FROM "Sale" WHERE "date">=? AND "date"<=?`, mStart, mEnd);
+      `SELECT COALESCE(SUM("total"),0) t, COALESCE(SUM("volume"),0) v FROM "Sale" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=?`, mStart, mEnd);
     const monthExp: any[] = await p.$queryRawUnsafe(
-      `SELECT COALESCE(SUM("amountAfn"),0) t FROM "Expense" WHERE "date">=? AND "date"<=?`, mStart, mEnd);
+      `SELECT COALESCE(SUM("amountAfn"),0) t FROM "Expense" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=?`, mStart, mEnd);
     const monthSal: any[] = await p.$queryRawUnsafe(
-      `SELECT COALESCE(SUM("total"),0) t FROM "Salary" WHERE "payDate">=? AND "payDate"<=?`, mStart, mEnd);
+      `SELECT COALESCE(SUM("total"),0) t FROM "Salary" WHERE COALESCE("deletedAt",'')='' AND "payDate">=? AND "payDate"<=?`, mStart, mEnd);
     const debts: any[] = await p.$queryRawUnsafe(
       `SELECT c."id", c."code", c."name",
-        c."openingBalance" + (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND s."paymentType"='credit')
-        - (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE r."customerId"=c."id" AND COALESCE(r."sourceName",'')<>'امانت') AS balance
+        c."openingBalance" + (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE COALESCE(s."deletedAt",'')='' AND s."customerId"=c."id" AND s."paymentType"='credit')
+        - (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE COALESCE(r."deletedAt",'')='' AND r."customerId"=c."id" AND COALESCE(r."sourceName",'')<>'امانت') AS balance
        FROM "Customer" c`);
     const debtList = debts.map((d) => ({ ...d, balance: r2(num(d.balance)) })).sort((a, b) => b.balance - a.balance);
-    const emp: any[] = await p.$queryRawUnsafe(`SELECT COUNT(*) c FROM "Employee" WHERE "status"='active'`);
-    const cust: any[] = await p.$queryRawUnsafe(`SELECT COUNT(*) c FROM "Customer"`);
+    const emp: any[] = await p.$queryRawUnsafe(
+      `SELECT COUNT(*) c FROM "Employee" WHERE COALESCE("deletedAt",'')='' AND "status"='active'`);
+    const cust: any[] = await p.$queryRawUnsafe(
+      `SELECT COUNT(*) c FROM "Customer" WHERE COALESCE("deletedAt",'')=''`);
     const salaryPending: any[] = await p.$queryRawUnsafe(
-      `SELECT COUNT(*) c FROM "Salary" WHERE "periodStart"=?`, mStart);
+      `SELECT COUNT(*) c FROM "Salary" WHERE COALESCE("deletedAt",'')='' AND "periodStart"=?`, mStart);
+    /*
+     * ⚠ باگ واقعی (که تست «سناریو» گرفت): ترتیب `ORDER BY … LIMIT … WHERE …`
+     * در SQLite خطای نحوی است، پس این کوئری همیشه می‌شکست → `dashboard`
+     * استثنا می‌داد → داشبورد «undefined» برمی‌گرداند و برگه‌ی داشبورد خالی
+     * می‌ماند. ترتیب درست: WHERE → ORDER BY → LIMIT.
+     */
     const recent: any[] = await p.$queryRawUnsafe(
-      `SELECT "no","date","customerName","materialName","volume","total","paymentType" FROM "Sale" ORDER BY "id" DESC LIMIT 7`);
+      `SELECT "no","date","customerName","materialName","volume","total","paymentType"
+         FROM "Sale" WHERE COALESCE("deletedAt",'')=''
+        ORDER BY "id" DESC LIMIT 7`);
     /*
      * کارایی: قبلاً برای هر یک از ۱۴ روز، `dayFigures` صدا زده می‌شد و هر
      * بار **۴ کوئری + ۲ کوئری تنظیمات** اجرا می‌شد — یعنی ۸۴ رفت‌وبرگشت به
@@ -513,22 +523,22 @@ export class ReportsController {
         `SELECT "date" d,
            COALESCE(SUM(CASE WHEN "paymentType"='cash' THEN "total" ELSE 0 END),0) cash,
            COALESCE(SUM(CASE WHEN "paymentType"='credit' THEN "total" ELSE 0 END),0) credit
-         FROM "Sale" WHERE "date">=? AND "date"<=? GROUP BY "date"`,
+         FROM "Sale" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=? GROUP BY "date"`,
         chartStart, today,
       ) as Promise<any[]>,
       q(
         `SELECT "date" d, COALESCE(SUM(CASE WHEN COALESCE("sourceName",'')='امانت' THEN 0 ELSE "amount" END),0) t
-         FROM "Receipt" WHERE "date">=? AND "date"<=? GROUP BY "date"`,
+         FROM "Receipt" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=? GROUP BY "date"`,
         chartStart, today,
       ) as Promise<any[]>,
       q(
         `SELECT "date" d, COALESCE(SUM("amountAfn"),0) t
-         FROM "Expense" WHERE "date">=? AND "date"<=? GROUP BY "date"`,
+         FROM "Expense" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=? GROUP BY "date"`,
         chartStart, today,
       ) as Promise<any[]>,
       q(
         `SELECT "payDate" d, COALESCE(SUM("total"),0) t
-         FROM "Salary" WHERE "payDate">=? AND "payDate"<=? GROUP BY "payDate"`,
+         FROM "Salary" WHERE COALESCE("deletedAt",'')='' AND "payDate">=? AND "payDate"<=? GROUP BY "payDate"`,
         chartStart, today,
       ) as Promise<any[]>,
     ]);

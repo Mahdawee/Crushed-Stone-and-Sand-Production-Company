@@ -1,14 +1,14 @@
-import { IconCheck, IconClock, IconCoins, IconDownload, IconUsers } from '../components/icons';
+import { IconCheck, IconClock, IconCoins, IconUsers } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, downloadCsv } from '../lib/api';
+import { api } from '../lib/api';
 import { useSession } from '../lib/session';
-import { useToast, Num, Table, Spinner, Select, Stat, InlineStat } from '../components/ui';
+import { useToast, Num, Table, Spinner, Select, Stat, InlineStat, ExportButton, Computed } from '../components/ui';
 import { DatePicker, MonthPicker } from '../components/DatePicker';
 import { money, monthKey, todayISO, formatDate } from '../lib/calendar';
 
 export default function SalariesPage() {
-  const { calendar } = useSession();
+  const { calendar, isManager } = useSession();
   const toast = useToast();
   const [month, setMonth] = useState(monthKey(calendar));
   const [sheet, setSheet] = useState<any>(null);
@@ -17,6 +17,26 @@ export default function SalariesPage() {
   const [payers, setPayers] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
   const [history, setHistory] = useState<any>(null);
+
+  /**
+   * حذف سند معاش — نرم: سند از فهرست و جمع‌ها بیرون می‌رود ولی در «سطل
+   * بازیافت» می‌ماند و کامل برمی‌گردد (درخواست کاربر: حذف بدون از دست رفتن داده).
+   */
+  const removeSalary = (r: any) => {
+    toast.confirm({
+      title: 'حذف سند معاش',
+      body: `سند ${r.no} مربوط به «${r.employeeName}» از فهرست حذف می‌شود. با «سطل بازیافت» قابل بازگرداندن است.`,
+      confirmText: 'حذف کن',
+      onConfirm: async () => {
+        try {
+          await api.del(`/salaries/${r.id}`);
+          setHistory(null);
+          await loadHistory();
+          toast.success('حذف شد', 'از سطل بازیافت قابل بازگرداندن است.');
+        } catch (e: any) { toast.error('حذف نشد', e.message); }
+      },
+    });
+  };
   const [tab, setTab] = useState<'sheet' | 'history'>('sheet');
   const [y, m] = month.split('-').map(Number);
 
@@ -27,9 +47,13 @@ export default function SalariesPage() {
   };
   useEffect(() => { load().catch((e) => toast.error('بارگذاری نشد', e.message)); }, [month]);
   useEffect(() => { api.get('/lookups').then((r) => setPayers(r.items.payer || [])).catch(() => {}); }, []);
+  const loadHistory = React.useCallback(
+    () => api.get(`/salaries?month=${month}&pageSize=200`).then(setHistory).catch(() => setHistory({ rows: [], total: 0 })),
+    [month],
+  );
   useEffect(() => {
-    if (tab === 'history') api.get(`/salaries?month=${month}&pageSize=200`).then(setHistory).catch(() => {});
-  }, [tab, month]);
+    if (tab === 'history') loadHistory();
+  }, [tab, loadHistory]);
 
   const edit = (i: number, patch: any) => {
     setRows((prev) => prev.map((r, idx) => {
@@ -65,7 +89,7 @@ export default function SalariesPage() {
           <span className="badge muted">{sheet?.label || ''}</span>
           <div style={{ flex: 1 }} />
           <div className="list-actions">
-            <button className="btn" onClick={() => downloadCsv('salaries')}><IconDownload size={15} /> اکسل</button>
+            <ExportButton type="salaries" />
             {tab === 'sheet' ? (
               <>
                 <DatePicker compact value={payDate} onChange={setPayDate} calendar={calendar} width={140} title="تاریخ پرداخت" />
@@ -98,7 +122,8 @@ export default function SalariesPage() {
                   <table className="tbl compact">
                     <thead><tr>
                       <th>#</th><th>کد</th><th>نام</th><th>معاش ثابت</th><th>پاداش</th><th>جریمه</th>
-                      <th>ساعت اضافه</th><th>روز کسر</th><th>مبلغ اضافه کاری</th><th>مجموع پرداخت</th><th className="hide-sm">پرداخت‌کننده</th><th>نوع</th><th>سند</th>
+                      <th>ساعت اضافه</th><th>روز کسر</th><th>مبلغ اضافه کاری</th>
+                      <th title="مجموع = معاش + پاداش + اضافه‌کاری − جریمه (خودکار)">مجموع پرداخت <span className="auto-tag">خودکار</span></th><th className="hide-sm">پرداخت‌کننده</th><th>نوع</th><th>سند</th>
                     </tr></thead>
                     <tbody>
                       {rows.map((r, i) => (
@@ -114,7 +139,9 @@ export default function SalariesPage() {
                             {r.deductionDays ? <span className="badge bad" title="غیبت، رخصت یا مریضی — در جریمه دستی حساب کنید">{r.deductionDays}</span> : <span className="muted">—</span>}
                           </td>
                           <td style={{ width: 110 }}><Num value={r.overtimeAmount} onChange={(v) => edit(i, { overtimeAmount: v })} /></td>
-                          <td className="num" style={{ fontWeight: 800 }}>{money(r.total)}</td>
+                          <td>
+                            <Computed value={money(r.total)} suffix="؋" />
+                          </td>
                           <td style={{ width: 130 }} className="hide-sm">
                             <Select value={r.payerName} placeholder="—" onChange={(v) => {
                               const p = payers.find((x) => x.name === v);
@@ -131,7 +158,7 @@ export default function SalariesPage() {
                     </tbody>
                     <tfoot><tr>
                       <td colSpan={9}>مجموع</td>
-                      <td className="num">{money(total)}</td>
+                      <td><Computed value={money(total)} suffix="؋" big /></td>
                       <td colSpan={3} />
                     </tr></tfoot>
                   </table>
@@ -159,7 +186,14 @@ export default function SalariesPage() {
                     <td>{r.payerName}</td>
                     <td><span className="badge info">{r.paymentType === 'cash' ? 'نقد' : 'حواله'}</span></td>
                     <td className="mono">{r.payDateDisplay}</td>
-                    <td><Link className="btn sm" to={`/print/salary/${r.id}`}>رسید</Link></td>
+                    <td>
+                      <div className="actions hover-actions">
+                        <Link className="btn sm" to={`/print/salary/${r.id}`}>رسید</Link>
+                        {isManager ? (
+                          <button className="btn sm danger" onClick={() => removeSalary(r)} title="حذف نرم — از سطل بازیافت برمی‌گردد">حذف</button>
+                        ) : null}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </Table>

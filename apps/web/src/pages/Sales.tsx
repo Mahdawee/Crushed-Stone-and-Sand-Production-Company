@@ -1,14 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { api, downloadCsv } from '../lib/api';
+import { api } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useDebounced } from '../lib/useDebounced';
 import { useLatestRequest } from '../lib/useLatestRequest';
 import {
   useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, Pager,
   ListHead, SearchBox, FilterButton, FilterPanel, FilterChip, InlineStat,
+  Computed, ExportButton, validateRequired,
 } from '../components/ui';
-import { IconDownload, IconPlus } from '../components/icons';
+import { IconPlus } from '../components/icons';
 import { DatePicker } from '../components/DatePicker';
 import { money, num, todayISO, formatDate, addDaysISO } from '../lib/calendar';
 
@@ -73,7 +74,32 @@ export default function SalesPage() {
     return { freightTotal, total: Math.round((v * p + freightTotal) * 100) / 100 };
   }, [form]);
 
+  /*
+   * فیلدهای اجباری این فرم — درخواست کاربر: «فیلدهای حیاتی که منطقاً برای
+   * محاسبه و مدیریت ضروری‌اند باید اجباری باشند».
+   *
+   * چرا این‌ها؟
+   *   • مشتری و تاریخ  → بدون‌شان بل در هیچ گزارش/مانده‌ای جا نمی‌گیرد
+   *   • متراژ          → مبنای همه‌ی محاسبات؛ صفر یعنی بل بی‌معنا
+   *   • قیمت فی متر    → مبنای مبلغ بل؛ خالی گذاشتنش یعنی «رایگان» ناخواسته
+   *   • کرایه فی متر   → اگر ۰ بمانَد، هزینه‌ی حمل در محاسبه‌ی سود گم می‌شود
+   *
+   * «مقصد»، «دریور»، «پلیت» اختیاری می‌مانند: روی هیچ محاسبه‌ای اثر ندارند.
+   */
+  const REQUIRED = [
+    { label: 'مشتری', filled: Boolean(form?.customerId) },
+    { label: 'تاریخ', filled: Boolean(dateISO) },
+    { label: 'متراژ', filled: String(form?.volume ?? '').trim() !== '', valid: num(form?.volume) > 0,
+      invalidMessage: '«متراژ» باید بزرگ‌تر از صفر باشد.' },
+    { label: 'قیمت فی متر', filled: String(form?.unitPrice ?? '').trim() !== '', valid: num(form?.unitPrice) > 0,
+      invalidMessage: '«قیمت فی متر» باید بزرگ‌تر از صفر باشد. اگر مواد رایگان است، ۰ ثبت نکنید — از «مصرف» استفاده کنید.' },
+    { label: 'کرایه فی متر', filled: String(form?.freightPerUnit ?? '').trim() !== '', valid: num(form?.freightPerUnit) >= 0,
+      invalidMessage: '«کرایه فی متر» نباید منفی باشد. اگر کرایه ندارد، ۰ بگذارید.' },
+  ];
+
   const save = async () => {
+    const err = validateRequired(REQUIRED as any);
+    if (err) { toast.warn('فیلد اجباری', err); return; }
     if (!form.customerId) { toast.warn('مشتری را انتخاب کنید.'); return; }
     if (!dateISO) { toast.error('تاریخ بل', 'تاریخ را انتخاب یا وارد کنید.'); return; }
     if (!(num(form.volume) > 0)) { toast.warn('متراژ باید بزرگ‌تر از صفر باشد.'); return; }
@@ -95,7 +121,7 @@ export default function SalesPage() {
   };
 
   const remove = (r: any) => toast.confirm({
-    title: 'حذف بل فروش؟', body: `بل ${r.no} برای «${r.customerName}» به مبلغ ${money(r.total)} افغانی حذف شود؟`,
+    title: 'حذف بل فروش؟', body: `بل ${r.no} برای «${r.customerName}» به مبلغ ${money(r.total)} افغانی از فهرست کنار می‌رود.\nداده پاک نمی‌شود — از «سطل بازیافت» قابل بازگرداندن است.`,
     confirmText: 'حذف کن',
     onConfirm: async () => {
       try { await api.del(`/sales/${r.id}`); await load(); toast.success('حذف شد'); }
@@ -114,7 +140,7 @@ export default function SalesPage() {
             {data?.volumeSum ? <><span className="sep" /><InlineStat label="متراژ" value={`${money(data.volumeSum)} م³`} /></> : null}
           </>}
           actions={<>
-            <button className="btn" onClick={() => downloadCsv('sales')} title="خروجی اکسل"><IconDownload size={15} /> اکسل</button>
+            <ExportButton type="sales" />
             <button className="btn primary" onClick={openNew}><IconPlus size={15} /> بل فروش</button>
           </>}
         >
@@ -220,10 +246,18 @@ export default function SalesPage() {
                 options={(lookups.material || []).map((m: any) => ({ value: m.id, label: m.name }))} />
             </Field>
             <Field label="متراژ (متر مکعب)" required><Num value={form.volume} onChange={(v) => setForm({ ...form, volume: v })} /></Field>
-            <Field label="قیمت فی متر (افغانی)"><Num value={form.unitPrice} onChange={(v) => setForm({ ...form, unitPrice: v })} /></Field>
-            <Field label="کرایه فی متر"><Num value={form.freightPerUnit} onChange={(v) => setForm({ ...form, freightPerUnit: v })} /></Field>
-            <Field label="مجموع کرایه (خودکار)"><div className="computed">{money(calc.freightTotal)}</div></Field>
-            <Field label="مجموع قیمت و کرایه (خودکار)"><div className="computed">{money(calc.total)}</div></Field>
+            <Field label="قیمت فی متر (افغانی)" required hint="مبلغ فروش هر متر مکعب">
+              <Num value={form.unitPrice} onChange={(v) => setForm({ ...form, unitPrice: v })} />
+            </Field>
+            <Field label="کرایه فی متر (افغانی)" required hint="هزینه‌ی حمل هر متر مکعب">
+              <Num value={form.freightPerUnit} onChange={(v) => setForm({ ...form, freightPerUnit: v })} />
+            </Field>
+            <Field label="مجموع کرایه" computed>
+              <Computed value={money(calc.freightTotal)} suffix="؋" />
+            </Field>
+            <Field label="مجموع بل" computed>
+              <Computed value={money(calc.total)} suffix="؋" big />
+            </Field>
             <Field label="مربوط (باربری / دمترک)">
               <Select value={form.contractorId} placeholder="بدون / شخصی شرکت"
                 onChange={(v) => setForm({ ...form, contractorId: v })}
@@ -235,8 +269,13 @@ export default function SalesPage() {
             </Field>
             <Field label="توضیحات" span={3}><TextArea value={form.note} onChange={(v) => setForm({ ...form, note: v })} /></Field>
           </div>
-          <div className="small muted" style={{ marginTop: 12, padding: 10, background: 'var(--surface-2)', borderRadius: 9 }}>
-            مجموع کرایه = متراژ × کرایه فی متر — مجموع بل = (متراژ × قیمت فی متر) + مجموع کرایه
+          <div className="calc-note">
+            <span aria-hidden="true">🧮</span>
+            <span>
+              <b>مجموع کرایه</b> = متراژ × کرایه فی متر · <b>مجموع بل</b> = (متراژ × قیمت فی متر) + مجموع کرایه
+              <br />
+              <span className="muted">این دو مقدار خودکار محاسبه می‌شوند و قابل تایپ نیستند.</span>
+            </span>
           </div>
         </Modal>
       ) : null}

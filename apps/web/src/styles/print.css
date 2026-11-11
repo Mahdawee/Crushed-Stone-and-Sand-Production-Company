@@ -30,3 +30,60 @@
   .doc-page { padding: 6mm 10mm; max-width: none; }
   @page { size: A4; margin: 10mm; }
 }
+
+/* ================================================================== *
+ * سرصفحه/پانوشت چاپ برای راپورها
+ * ================================================================== *
+ * قاعده‌ی کلی: در چاپ، «کروم برنامه» (سایدبار، نوار بالا، فیلترها، دکمه‌ها)
+ * چاپ نمی‌شود؛ ولی یک برگه‌ی بی‌نام و بی‌تاریخ هم بی‌اعتبار است. این
+ * بلوک‌ها فقط در چاپ دیده می‌شوند.
+ */
+.print-report-head {
+  border-bottom: 2.5px solid #111;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+}
+.prh-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.prh-brand { display: flex; align-items: center; gap: 10px; }
+.prh-logo {
+  width: 38px; height: 38px; border-radius: 9px; background: #135e55; color: #fff;
+  display: grid; place-items: center; font-weight: 800; font-size: 17px;
+}
+.prh-name { font-size: 1.02rem; font-weight: 800; }
+.prh-sub { font-size: .72rem; color: #555; }
+.prh-title-box { text-align: left; }
+.prh-title { font-size: .98rem; font-weight: 800; border: 1.5px solid #111; padding: 4px 14px; border-radius: 7px; }
+.prh-period { font-size: .74rem; color: #444; margin-top: 5px; }
+.prh-subtitle { font-size: .78rem; color: #333; margin-top: 8px; }
+.prh-note { font-size: .72rem; color: #666; margin-top: 4px; }
+
+.print-report-foot { margin-top: 16px; page-break-inside: avoid; }
+.prf-line { font-size: .84rem; margin-bottom: 10px; }
+.prf-row {
+  display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  font-size: .74rem; color: #444; border-top: 1px solid #bbb; padding-top: 8px;
+}
+
+@media print {
+  /* جدول‌های بلند: سرستون در هر صفحه تکرار شود و ردیف‌ها نصف نشوند */
+  table.tbl thead { display: table-header-group; }
+  table.tbl tfoot { display: table-footer-group; }
+  table.tbl tr { page-break-inside: avoid; }
+  /* عنوان صفحه‌ی برنامه چاپ نشود (سرصفحه‌ی خودمان جایش را می‌گیرد) */
+  .list-head, .pager, .chip-row, .filter-panel, .tb-panel { display: none !important; }
+  /* کارت‌های آمار در راپور چاپ نشوند مگر صریحاً خواسته شود */
+  .grid.c4 > .stat, .grid.c3 > .stat { display: none !important; }
+  .card { border: none !important; box-shadow: none !important; background: #fff !important; }
+  .card-h { border-bottom: 1px solid #999; }
+  /* رنگ‌های تیره در چاپ سیاه‌وسفید خوانا باشند */
+  .badge { border: 1px solid #999 !important; background: transparent !important; color: #111 !important; }
+  a { color: #111 !important; text-decoration: none !important; }
+  /*
+   * ⚠ کاغذ را **پرتره** نگه می‌داریم: سند رسمی (بل فروش/معاش) با پرتره
+   * طراحی شده و قبلاً همین بود. تغییرش به افقی، فاکتور را نصف صفحه می‌کرد.
+   * برای جدول‌های پهن، فونت را کمی کوچک می‌کنیم تا در همان A4 جا شود.
+   */
+  @page { size: A4; margin: 10mm; }
+  table.tbl td, table.tbl th { font-size: .72rem !important; padding: 4px 5px !important; }
+  .table-wrap { overflow: visible !important; }
+}

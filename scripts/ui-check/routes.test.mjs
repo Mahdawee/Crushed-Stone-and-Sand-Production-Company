@@ -27,19 +27,35 @@ let checked = 0;
 
 for (const f of files) {
   const src = fs.readFileSync(path.join(dir, f), 'utf8');
-  /* فقط دکوراتورهای سطح کنترلر (دو فاصله تودرتویی) */
+  /*
+   * ⚠ یک فایل می‌تواند **چند** کنترلر داشته باشد (مثلاً
+   * `importexport.controller.ts` هم `ExportController` و هم `ImportController`).
+   * ترتیب مسیرها فقط **داخل همان کنترلر** معنا دارد؛ اگر مرزها را در نظر
+   * نگیریم، `GET /export` با `GET /import/types` به‌غلط «تعارض» شمرده
+   * می‌شود و تست باگی را گزارش می‌کند که وجود ندارد.
+   */
+  const bounds = [];
+  const cre = /^@Controller\(([^)]*)\)/gm;
+  let cm;
+  while ((cm = cre.exec(src))) bounds.push(cm.index);
+  if (!bounds.length) bounds.push(0);
+  bounds.push(src.length);
+
+  let anyRoutes = false;
+  for (let b = 0; b + 1 < bounds.length; b++) {
   const routes = [];
   const re = /^  @(Get|Post|Put|Patch|Delete)\(([^)]*)\)/gm;
+  re.lastIndex = bounds[b];
   let m;
-  while ((m = re.exec(src))) {
+  while ((m = re.exec(src)) && m.index < bounds[b + 1]) {
     const method = m[1].toUpperCase();
     const raw = m[2].trim();
-    const pathPart = raw.replace(/^['"`]|['"`]$/g, '');
+    const pathPart = raw.replace(/^['\"`]|['\"`]$/g, '');
     const line = src.slice(0, m.index).split('\n').length;
     routes.push({ method, path: pathPart, line });
   }
   if (!routes.length) continue;
-  checked++;
+  anyRoutes = true;
 
   /*
    * تعارض واقعی زمانی رخ می‌دهد که یک مسیر **ثابت** بعد از یک مسیر
@@ -62,6 +78,8 @@ for (const f of files) {
         `${clash.map((c) => `«${c.path}» خط ${c.line}`).join(', ')} — این مسیر هرگز اجرا نمی‌شود`);
     }
   }
+  }
+  if (anyRoutes) checked++;
 }
 
 ok('همه‌ی کنترلرها بررسی شدند', checked >= 8, String(checked));
@@ -72,6 +90,44 @@ const idx = (needle) => emp.indexOf(needle);
 ok('«attendance» قبل از «employees/:id» ثبت شده (ترتیب ایمن برای ویرایش‌های بعدی)',
   idx("@Get('attendance')") < idx("@Get('employees/:id')"));
 ok('«attendance/summary» ثبت شده است', idx("@Get('attendance/summary')") > 0);
+
+/* ------------------------------------------------------------------ *
+ * مسیرهای دور ۱۶: خروجی/ورودی اکسل، سطل بازیافت، لایسنس
+ * ------------------------------------------------------------------ */
+{
+  const ie = fs.readFileSync(path.join(dir, 'importexport.controller.ts'), 'utf8');
+  ok('خروجی: GET /export قبل از GET /export/types ثبت شده (وگرنه types هرگز اجرا نمی‌شود)',
+    ie.indexOf("@Get()") < ie.indexOf("@Get('types')"), '');
+  ok('ورودی: نوع از مسیر خوانده می‌شود (باگ @Query/«نوع ناشناخته»)',
+    /@Param\('type'\)\s*type/.test(ie), 'باید @Param باشد نه @Query');
+
+  const rc = fs.readFileSync(path.join(dir, 'recycle.controller.ts'), 'utf8');
+  ok('سطل بازیافت: فقط برای مدیر', /@ManagerOnly\(\)/.test(rc));
+  ok('سطل بازیافت: بازیابی از مسیر POST /:table/:id/restore', /:table\/:id\/restore/.test(rc));
+
+  const lic = fs.readFileSync(path.join(dir, 'license.controller.ts'), 'utf8');
+  ok('تمدید: مسیر ساخت درخواست وجود دارد', /license\/renew-request/.test(lic));
+  ok('تمدید: درخواست با checksum همراه است', /SUM:/.test(lic));
+  ok('فایل: فعال‌سازی از فایل وجود دارد', /license\/activate-file/.test(lic));
+  ok('فایل: فقط فایل لایسنس/تمدید پذیرفته می‌شود', /BEGIN FARDAY \(LICENSE\|RENEW\)/.test(lic));
+
+  /* حذف نرم در همه‌ی کنترلرهای داده */
+  const softFiles = ['sales', 'receipts', 'expenses', 'customers', 'employees', 'salaries'];
+  const missing = softFiles.filter((f) => {
+    const src = fs.readFileSync(path.join(dir, `${f}.controller.ts`), 'utf8');
+    return !/softDelete\(/.test(src);
+  });
+  ok('همه‌ی کنترلرهای داده حذف نرم دارند', missing.length === 0, missing.join(', '));
+
+  const hardDeletes = softFiles.filter((f) => {
+    const src = fs.readFileSync(path.join(dir, `${f}.controller.ts`), 'utf8');
+    return /DELETE FROM "(Sale|Receipt|Expense|Customer|Employee|Salary)"/.test(src);
+  });
+  ok('هیچ حذف سختی روی جداول داده نمانده', hardDeletes.length === 0, hardDeletes.join(', '));
+
+  const mach = fs.readFileSync(path.join(dir, 'company.controller.ts'), 'utf8');
+  ok('ماشینری هم حذف نرم دارد', /softDelete\('Machinery'/.test(mach));
+}
 
 console.log(`\n${fail === 0 ? '✅' : '⛔'} ${pass} موفق، ${fail} ناکام\n`);
 process.exit(fail === 0 ? 0 : 1);

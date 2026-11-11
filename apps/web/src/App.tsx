@@ -1,10 +1,11 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useState as useReactState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { SessionProvider, useSession } from './lib/session';
 import { ToastProvider, Spinner } from './components/ui';
 import Layout from './components/Layout';
 import LoginPage from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import StartupLicense, { BOOT_LICENSE_KEY } from './pages/StartupLicense';
 
 /*
  * کارایی: قبلاً **همه‌ی** صفحه‌ها (و کتابخانه‌ی نمودار recharts با ~۴۰۰KB) در
@@ -34,6 +35,7 @@ const LookupsPage = lazy(() => import('./pages/Lookups'));
 const UsersPage = lazy(() => import('./pages/Users'));
 const BackupPage = lazy(() => import('./pages/Backup'));
 const ActivityPage = lazy(() => import('./pages/Activity'));
+const RecyclePage = lazy(() => import('./pages/Recycle'));
 const HelpPage = lazy(() => import('./pages/Help'));
 const PrintSale = lazy(() => import('./pages/PrintSale'));
 const PrintSalary = lazy(() => import('./pages/PrintSalary'));
@@ -49,6 +51,9 @@ function Guard({ children, managerOnly }: { children: React.ReactNode; managerOn
 
 function Shell() {
   const { ready, license } = useSession();
+  /* شمارنده‌ی «تأیید شروع»: بعد از کلیک «ورود به برنامه» دوباره رندر می‌شویم */
+  const [, setAck] = useReactState(0);
+  const [bootKey] = useReactState(() => sessionStorage.getItem(BOOT_LICENSE_KEY));
   if (!ready) return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}><Spinner label="آماده‌سازی سیستم…" /></div>;
   /*
    * قفل لایسنس — **قبل از** هر مسیر دیگری.
@@ -56,6 +61,36 @@ function Shell() {
    * فقط خانه‌ی لایسنس باز می‌ماند؛ این کار جلوی «صفحه‌ی سفید» و «چرخیدن
    * بی‌پایان اسپینر» را می‌گیرد و کاربر را مستقیم به راه‌حل می‌برد.
    */
+  /*
+   * درخواست کاربر: «صفحه لایسنس باید در شروع برنامه ظاهر شود».
+   *
+   * ## چرا «هر بار باز شدن» و نه «فقط وقتی قفل است»
+   * نسخه‌ی قبلی صفحه‌ی لایسنس را فقط در حالت نامعتبر نشان می‌داد؛ کاربرِ
+   * با لایسنس سالم هیچ‌وقت نمی‌فهمید چند روز مانده تا منقضی شود. حالا در هر
+   * اجرای برنامه یک **صفحه‌ی شروع** نمایش داده می‌شود: وضعیت، روزهای
+   * باقی‌مانده، هشدار تمدید و دکمه‌ی «ادامه به برنامه».
+   *
+   * ولی هر بار رفتن به یک صفحه، این را تکرار نمی‌کند (فقط یک بار در هر
+   * اجرای برنامه — `sessionStorage`).
+   */
+  const acknowledged = bootKey === '1' || sessionStorage.getItem(BOOT_LICENSE_KEY) === '1';
+  if (license && license.ok && !acknowledged) {
+    return (
+      <Suspense fallback={<div style={{ padding: 24 }}><Spinner label="بارگذاری…" /></div>}>
+        <Routes>
+          <Route
+            path="*"
+            element={
+              <StartupLicense
+                license={license}
+                onContinue={() => { sessionStorage.setItem(BOOT_LICENSE_KEY, '1'); setAck((n) => n + 1); }}
+              />
+            }
+          />
+        </Routes>
+      </Suspense>
+    );
+  }
   if (license && !license.ok) {
     return (
       <Suspense fallback={<div style={{ padding: 24 }}><Spinner label="بارگذاری…" /></div>}>
@@ -95,6 +130,7 @@ function Shell() {
         <Route path="/users" element={<UsersPage />} />
         <Route path="/backup" element={<BackupPage />} />
         <Route path="/activity" element={<ActivityPage />} />
+        <Route path="/recycle" element={<RecyclePage />} />
         <Route path="/help" element={<HelpPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

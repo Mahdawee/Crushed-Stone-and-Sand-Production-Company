@@ -15,6 +15,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+const root = path.resolve(__dirname, '..', '..', '..');
 const PORT = 4398;
 const BASE = `http://127.0.0.1:${PORT}/api`;
 let token = '';
@@ -427,12 +428,32 @@ async function main() {
     /* ---------------- خروجی CSV ---------------- */
     console.log('\n— خروجی —');
     const csv = await api('GET', '/export?type=sales');
-    const lines = String(csv.body).trim().split('\n');
-    check('خروجی CSV فروشات ردیف دارد', lines.length > 10, String(lines.length));
-    check('هر خط CSV به تعداد ستون‌های سرصفحه کاما دارد', (() => {
-      const header = (lines[0].match(/,/g) || []).length;
-      return lines.slice(1).every((l) => Math.abs((l.match(/,/g) || []).length - header) <= 1);
-    })());
+    /*
+     * قالب CSV در دور ۱۶ عوض شد (BOM + خط `sep=,` + CRLF) تا اکسل فارسی
+     * درست بخواند. پس این تست هم قالب جدید را می‌سنجد — و این بار با
+     * **همان تجزیه‌کننده‌ی واقعی برنامه**، نه شمردن کاما در متن (که با
+     * خانه‌ی گیومه‌دار می‌شکست).
+     */
+    const { parseCsv } = require(path.join(root, 'apps/api/dist/common/csv.js'));
+    const text = String(csv.body);
+    /*
+     * BOM را باید روی **بایت خام** سنجید: `res.text()` آن را می‌بلعد (رفتار
+     * استاندارد TextDecoder). پس یک درخواست خام می‌زنیم.
+     */
+    const rawRes = await fetch(`${BASE}/export?type=sales`, { headers: { 'x-auth-token': token } });
+    const rawBuf = Buffer.from(await rawRes.arrayBuffer());
+    check('خروجی با BOM شروع می‌شود (اکسل فارسی)',
+      rawBuf[0] === 0xef && rawBuf[1] === 0xbb && rawBuf[2] === 0xbf,
+      rawBuf.subarray(0, 3).toString('hex'));
+    check('خط `sep=,` برای اکسل هست', /sep=,/.test(text.slice(0, 10)), JSON.stringify(text.slice(0, 10)));
+    const parsed = parseCsv(text);
+    check('خروجی CSV فروشات ردیف دارد', parsed.rows.length > 10, String(parsed.rows.length));
+    const cols = parsed.rows[0].length;
+    check('همه‌ی ردیف‌ها همان تعداد ستون سرصفحه را دارند',
+      cols > 3 && parsed.rows.every((r) => r.length === cols), `سرصفحه ${cols} ستون`);
+    check('بدون هشدار ستون‌شماری', parsed.warnings.length === 0, parsed.warnings.join(' | '));
+    const xls = await api('GET', '/export?type=sales&format=xls');
+    check('خروجی اکسل (.xls) هم ساخته می‌شود', /urn:schemas-microsoft-com:office:excel/.test(String(xls.body)));
 
     /* ---------------- داده بزرگ: کارایی ---------------- */
     console.log('\n— کارایی با داده چند ماهه —');

@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { api, downloadCsv } from '../lib/api';
+import { api } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useDebounced } from '../lib/useDebounced';
 import { useLatestRequest } from '../lib/useLatestRequest';
 import {
   useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, Pager,
   ListHead, SearchBox, FilterButton, FilterPanel, FilterChip, InlineStat,
+  ExportButton,
 } from '../components/ui';
-import { IconDownload, IconPlus } from '../components/icons';
+import { IconPlus } from '../components/icons';
 import { DatePicker } from '../components/DatePicker';
 import { money, todayISO, formatDate } from '../lib/calendar';
 
@@ -83,7 +84,7 @@ export default function ExpensesPage() {
   };
 
   const remove = (r: any) => toast.confirm({
-    title: 'حذف مصرف؟', body: `سند ${r.no} — ${r.description || r.categoryName} به مبلغ ${money(r.amountAfn)} افغانی حذف شود؟`,
+    title: 'حذف مصرف؟', body: `سند ${r.no} — ${r.description || r.categoryName} به مبلغ ${money(r.amountAfn)} افغانی از فهرست کنار می‌رود.\nداده پاک نمی‌شود — از «سطل بازیافت» قابل بازگرداندن است.`,
     confirmText: 'حذف کن',
     onConfirm: async () => { try { await api.del(`/expenses/${r.id}`); await load(); toast.success('حذف شد'); } catch (e: any) { toast.error('حذف نشد', e.message); } },
   });
@@ -99,7 +100,7 @@ export default function ExpensesPage() {
             {data?.sumUsd ? <><span className="sep" /><InlineStat label="دالری" value={`$${money(data.sumUsd)}`} tone="warn" /></> : null}
           </>}
           actions={<>
-            <button className="btn" onClick={() => downloadCsv('expenses')}><IconDownload size={15} /> اکسل</button>
+            <ExportButton type="expenses" />
             <button className="btn primary" onClick={openNew}><IconPlus size={15} /> مصرف</button>
           </>}
         >

@@ -29,7 +29,16 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
-const keysDir = path.join(root, 'license-keys');
+/*
+ * پوشه‌ی کلیدها — قابل تغییر با `FD_LICENSE_KEYS_DIR`.
+ *
+ * چرا: تست‌ها نباید به کلید خصوصی **واقعی** پروژه دست بزنند. با این متغیر،
+ * تست یک جفت‌کلید موقت می‌سازد و امضاها با کلید تولید قاطی نمی‌شوند.
+ * در استفاده‌ی روزمره همان `license-keys/` است.
+ */
+const keysDir = process.env.FD_LICENSE_KEYS_DIR
+  ? path.resolve(process.env.FD_LICENSE_KEYS_DIR)
+  : path.join(root, 'license-keys');
 const privatePath = path.join(keysDir, 'private.key');
 const publicPath = path.join(keysDir, 'public.key');
 const ledgerPath = path.join(keysDir, 'issued.json');
@@ -135,6 +144,49 @@ function readLedger() {
 function writeLedger(l) {
   fs.mkdirSync(keysDir, { recursive: true });
   fs.writeFileSync(ledgerPath, JSON.stringify(l, null, 2), 'utf8');
+}
+
+/**
+ * خواندن «درخواست تمدید» که خودِ برنامه ساخته است.
+ *
+ * قالب:
+ *   -----BEGIN FARDAY RENEW REQUEST-----
+ *   <base64url JSON>
+ *   SUM:<16 hex>
+ *   -----END FARDAY RENEW REQUEST-----
+ *
+ * checksum فقط دست‌کاری تصادفی/ناقص‌شدن را می‌گیرد؛ مرجع واقعی هویت،
+ * کلید خصوصیِ امضای لایسنس است.
+ */
+function parseRenewRequest(raw) {
+  const text = String(raw || '').trim();
+  if (!text) throw new Error('متن درخواست خالی است.');
+  if (!/BEGIN FARDAY RENEW REQUEST/.test(text)) {
+    throw new Error('این متن، درخواست تمدید «فردای روشن» نیست.');
+  }
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const i = lines.findIndex((l) => /BEGIN FARDAY RENEW REQUEST/.test(l));
+  const j = lines.findIndex((l) => /END FARDAY RENEW REQUEST/.test(l));
+  if (i < 0 || j <= i) throw new Error('ساختار فایل درخواست ناقص است.');
+  const payloadLine = lines.slice(i + 1, j).find((l) => !/^SUM:/.test(l));
+  const sumLine = lines.slice(i + 1, j).find((l) => /^SUM:/.test(l));
+  if (!payloadLine) throw new Error('بدنه‌ی درخواست پیدا نشد.');
+
+  let obj;
+  try { obj = JSON.parse(Buffer.from(payloadLine, 'base64url').toString('utf8')); }
+  catch { throw new Error('بدنه‌ی درخواست خوانا نیست.'); }
+  if (obj?.kind !== 'farday-renew-request') throw new Error('نوع درخواست نامعتبر است.');
+
+  const want = sha256(payloadLine).slice(0, 16);
+  const got = sumLine ? sumLine.replace(/^SUM:/, '') : '';
+  if (got && got !== want) {
+    /* هشدار می‌دهیم ولی متوقف نمی‌کنیم: درخواست تنها «راهنما»ی اپراتور است */
+    obj.checksumMismatch = true;
+  }
+  if (!/^[A-Z0-9]{5}(-[A-Z0-9]{5}){4}$/.test(String(obj.machineKey || ''))) {
+    throw new Error('کلید دستگاه در درخواست معتبر نیست.');
+  }
+  return obj;
 }
 
 /* ---------- issue / inspect ---------- */
@@ -272,6 +324,18 @@ const server = http.createServer(async (req, res) => {
     /* ساخت جفت‌کلید */
     if (req.method === 'POST' && p === '/api/keygen') {
       guardMutation(req);
+      /*
+       * ⚠ حفاظ امنیتی (دور ۱۶): اگر این سرور با پوشه‌ی کلید **جایگزین**
+       * (`FD_LICENSE_KEYS_DIR`) بالا آمده باشد، هرگز نباید کلید عمومی داخل
+       * بسته را عوض کند.
+       *
+       * چه اتفاقی افتاده بود: تست خودکار ابزار را با کلید موقت بالا می‌آورد
+       * و `keygen force` می‌زد؛ کد بی‌توجه به `keysDir`، کلید عمومی داخل
+       * `apps/api/public-key/` و `src-tauri/public-key/` را هم بازنویسی
+       * می‌کرد. نتیجه: لایسنس‌های واقعی مشتریان با کلید جدید نمی‌خواندند.
+       * حالا در این حالت فقط پوشه‌ی موقت تغییر می‌کند.
+       */
+      const isolated = Boolean(process.env.FD_LICENSE_KEYS_DIR);
       const body = await readBody(req);
       if (fs.existsSync(privatePath) && !body.force) {
         json(res, 409, { ok: false, message: 'کلید خصوصی از قبل هست. برای ساخت مجدد، تأیید کنید.' });
@@ -286,11 +350,19 @@ const server = http.createServer(async (req, res) => {
       fs.mkdirSync(keysDir, { recursive: true });
       fs.writeFileSync(privatePath, priv + '\n', { encoding: 'utf8', mode: 0o600 });
       fs.writeFileSync(publicPath, pub + '\n', 'utf8');
-      for (const dst of [bundledPublic, apiPublic, sealSource]) {
-        fs.mkdirSync(path.dirname(dst), { recursive: true });
-        fs.writeFileSync(dst, pub + '\n', 'utf8');
+      if (!isolated) {
+        for (const dst of [bundledPublic, apiPublic, sealSource]) {
+          fs.mkdirSync(path.dirname(dst), { recursive: true });
+          fs.writeFileSync(dst, pub + '\n', 'utf8');
+        }
       }
-      json(res, 200, { ok: true, message: 'جفت‌کلید ساخته شد و کلید عمومی در بسته کاپی شد.', keys: keysState() });
+      json(res, 200, {
+        ok: true,
+        message: isolated
+          ? 'جفت‌کلید تست ساخته شد (کلید داخل بسته دست نخورد).'
+          : 'جفت‌کلید ساخته شد و کلید عمومی در بسته کاپی شد.',
+        keys: keysState(),
+      });
       return;
     }
 
@@ -362,6 +434,103 @@ const server = http.createServer(async (req, res) => {
       it.revokedAt = it.revoked ? new Date().toISOString() : null;
       writeLedger(ledger);
       json(res, 200, { ok: true, message: it.revoked ? `${it.id} باطل علامت خورد.` : `${it.id} دوباره فعال شد.` });
+      return;
+    }
+
+    /*
+     * ── تمدید ──
+     *
+     * درخواست کاربر: «ابزار مدیریت لایسنس باید قابلیت تمدید لایسنس مشتریان
+     * را داشته باشد و تمدید باید از داخل خود برنامه انجام شود».
+     *
+     * ورودی: متن درخواستی که خودِ برنامه ساخته (`POST /license/renew-request`)
+     * خروجی: لایسنس جدید که **جایگزین** قبلی می‌شود.
+     *
+     * چرا «جایگزینی» و نه «افزودن فایل دوم»: برنامه فقط یک لایسنس فعال
+     * نگه می‌دارد (`activeLicenseText`). اگر دو لایسنس داشته باشیم، ترتیب
+     * اعتبار مبهم می‌شود و کاربر باید بداند کدام را پاک کند. با جایگزینی،
+     * تمدید = همان عملِ فعال‌سازی با لایسنس تازه.
+     *
+     * منطق تاریخ:
+     *   • اگر لایسنس فعلی هنوز منقضی نشده → شروع تمدید = **فردای** پایان فعلی
+     *     (روزهای باقی‌مانده سوخت نمی‌شود).
+     *   • اگر منقضی شده یا ابدی است → شروع = امروز.
+     */
+    if (req.method === 'POST' && p === '/api/renew') {
+      guardMutation(req);
+      const body = await readBody(req);
+      const parsed = parseRenewRequest(String(body.request || ''));
+      const days = Math.max(1, Math.min(3650, Number(body.days) || parsed.requestedDays || 365));
+      const privateKey = loadPrivate();
+      const ledger = readLedger();
+
+      const currentId = parsed.currentLicenseId && /^FR-LIC-[A-Za-z0-9-]+$/.test(parsed.currentLicenseId)
+        ? parsed.currentLicenseId : null;
+      const current = currentId ? ledger.items.find((x) => x.id === currentId) : null;
+
+      /* تاریخ شروع: فردای پایان فعلی، یا امروز */
+      const today = todayISO();
+      let start = today;
+      let extendedFrom = null;
+      if (current?.end) {
+        const nextDay = addDays(current.end, 1);
+        if (nextDay > today) { start = nextDay; extendedFrom = current.end; }
+        else { start = today; extendedFrom = current.end; }
+      }
+
+      const id = `FR-LIC-${new Date().getFullYear()}-${String(ledger.nextId).padStart(4, '0')}`;
+      const end = addDays(start, days - 1);
+      const built = buildLicense({
+        id,
+        customer: String(body.customer || current?.customer || parsed.note || 'مشتری تمدیدشده').slice(0, 120),
+        kind: 'custom',
+        start,
+        end,
+        machineKey: parsed.machineKey || current?.machineKey || '',
+        seats: Number(body.seats || current?.seats || 1),
+        note: String(body.note || `تمدید ${days} روزه${extendedFrom ? ` از ${extendedFrom}` : ''}`).slice(0, 300),
+      }, privateKey);
+
+      fs.mkdirSync(keysDir, { recursive: true });
+      const file = path.join(keysDir, `${id}.lic`);
+      fs.writeFileSync(file, built.text + '\n', 'utf8');
+
+      ledger.items.push({
+        id, customer: built.payload.customer, kind: built.payload.kind,
+        start: built.payload.start, end: built.payload.end,
+        machineKey: built.payload.machineKey, seats: built.payload.seats,
+        note: built.payload.note, issuedAt: built.payload.issuedAt,
+        file: path.relative(root, file), revoked: false,
+        renewOf: currentId || null,
+      });
+      /* لایسنس قبلی «تمدیدشده» علامت می‌خورد تا در فهرست ابزار روشن باشد */
+      if (current) { current.renewedBy = id; current.renewedAt = new Date().toISOString(); }
+      ledger.nextId = Number(ledger.nextId || 1) + 1;
+      writeLedger(ledger);
+
+      json(res, 200, {
+        ok: true,
+        message: `لایسنس ${id} برای ${days} روز تمدید شد (${built.payload.start} تا ${built.payload.end}).`,
+        id,
+        text: built.text,
+        payload: built.payload,
+        startLabel: await jalaaliLabel(built.payload.start),
+        endLabel: built.payload.end ? await jalaaliLabel(built.payload.end) : 'ابد',
+        extendedFrom,
+        renewedFrom: currentId,
+        previous: current || null,
+      });
+      return;
+    }
+
+    /*
+     * خواندن یک فایل درخواست تمدید (قبل از تمدید) تا اپراتور ببیند
+     * درخواست از کدام دستگاه و کدام لایسنس است.
+     */
+    if (req.method === 'POST' && p === '/api/renew-parse') {
+      const body = await readBody(req);
+      const parsed = parseRenewRequest(String(body.request || ''));
+      json(res, 200, { ok: true, ...parsed });
       return;
     }
 

@@ -26,7 +26,7 @@
  * این اسکریپت هر سه مرحله را به ترتیب انجام می‌دهد و در پایان مسیر فایل
  * نصب را چاپ می‌کند؛ اگر مرحله‌ای شکست بخورد، پیام فارسی + راه‌حل می‌دهد.
  */
-import { spawn, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -491,10 +491,28 @@ if (wantPrefetch) {
     process.exit(fetch.status ?? 1);
   }
   const lock = path.join(root, 'src-tauri', 'Cargo.lock');
-  console.log(`  ۲/۲ Cargo.lock: ${fs.existsSync(lock) ? C.ok('موجود') : C.warn('ساخته نشد — یک بار cargo build لازم است')}`);
+  console.log(`  ۲/۳ Cargo.lock: ${fs.existsSync(lock) ? C.ok('موجود') : C.warn('ساخته نشد — یک بار cargo build لازم است')}`);
+
+  /*
+   * ۳) کش باینری ویندوزی libSQL.
+   *
+   * باگ واقعی که این مرحله حل می‌کند: ساخت روی لینوکس (یا هر جایی که
+   * `npm ci` باینری ویندوزی را نصب نکند) به `curl` نیاز داشت. روی کمپیوتر
+   * **بدون انترنت** این مرحله شکست می‌خورد و نصب‌کننده روی ویندوز با
+   * «Cannot find module @libsql/win32-x64-msvc» بالا نمی‌آمد.
+   * حالا در مرحله‌ی prefetch (که عمداً با انترنت اجرا می‌شود) همان فایل
+   * ذخیره می‌شود تا ساخت آفلاین کامل باشد.
+   */
+  console.log('  ۳/۳ آماده‌سازی باینری ویندوزی libSQL…');
+  try {
+    execFileSync(process.execPath, [path.join(root, 'scripts', 'prefetch-libsql.mjs')], { cwd: root, stdio: 'inherit' });
+  } catch (e) {
+    console.log(C.warn('     ⚠ کش libSQL آماده نشد — ساخت آفلاین بعداً از این مرحله رد نمی‌شود.'));
+  }
+
   console.log(C.ok('\n✔ آماده است. از حالا بدون انترنت:'));
   console.log(`   ${C.bold('npm run desktop:build -- --offline')}`);
-  console.log(`   ${C.dim('اگر قصد دارید روی کمپیوتر آفلاین بسازید، پوشه‌ی ' + cargoHome + ' و node_modules را هم منتقل کنید.')}\n`);
+  console.log(`   ${C.dim('اگر قصد دارید روی کمپیوتر آفلاین بسازید، پوشه‌های ' + cargoHome + ' و .cache و node_modules را هم منتقل کنید.')}\n`);
   process.exit(0);
 }
 

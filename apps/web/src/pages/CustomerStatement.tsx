@@ -7,6 +7,7 @@ import { Spinner, Table, Empty, Stat } from '../components/ui';
 import { money, formatDate } from '../lib/calendar';
 import { DatePicker } from '../components/DatePicker';
 import '../styles/print.css';
+import { PrintReportHeader, PrintReportFooter } from '../components/DocHeader';
 
 export default function CustomerStatement() {
   const { id } = useParams();
@@ -26,6 +27,11 @@ export default function CustomerStatement() {
   const lastInRange = shown.length ? shown[shown.length - 1].balance : d.opening;
   return (
     <div className="col" style={{ gap: 16 }}>
+      {/* سرصفحه و پانوشت چاپ — فقط روی کاغذ دیده می‌شوند */}
+      <PrintReportHeader
+        title="صورت‌حساب مشتری"
+        period="گردش کامل حساب"
+      />
       <div className="card no-print">
         <div className="list-head">
           <div style={{ minWidth: 0 }}>
@@ -81,6 +87,9 @@ export default function CustomerStatement() {
           </Table>
         </div>
       </div>
+
+      {/* پانوشت چاپ: تاریخ چاپ + خط امضا — فقط روی کاغذ */}
+      <PrintReportFooter />
     </div>
   );
 }

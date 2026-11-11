@@ -3,6 +3,7 @@ import { db } from '../db';
 import { ensureSchemaAsync } from '../schema';
 import { AuthGuard, ManagerOnly } from '../common/auth';
 import { logActivity } from '../common/activity';
+import { softDelete } from '../common/soft-delete';
 import { settingsService, SettingsService, isSettingError } from '../common/settings';
 
 @UseGuards(AuthGuard)
@@ -43,7 +44,10 @@ export class CompanyController {
   // ----------------------------- machinery --------------------------------
   @Get('machinery')
   async listMachinery() {
-    return db().$queryRawUnsafe(`SELECT * FROM "Machinery" ORDER BY "id"`);
+    /* حذف‌شده‌ها در فهرست نیایند (از «سطل بازیافت» برمی‌گردند) */
+    return db().$queryRawUnsafe(
+      `SELECT * FROM "Machinery" WHERE COALESCE("deletedAt",'')='' ORDER BY "id"`,
+    );
   }
 
   @Post('machinery')
@@ -68,12 +72,23 @@ export class CompanyController {
     return { ok: true };
   }
 
+  /**
+   * حذف ماشین — **نرم** (درخواست کاربر: حذف بدون از دست رفتن داده).
+   *
+   * قبلاً سخت حذف می‌شد؛ اگر ماشینی در بل‌ها/گزارش‌ها ارجاع داشت، سابقه
+   * بی‌نام و غیرقابل بازگشت می‌شد.
+   */
   @Delete('machinery/:id')
   @ManagerOnly()
   async removeMachinery(@Param('id') id: string) {
-    await db().$executeRawUnsafe(`DELETE FROM "Machinery" WHERE "id"=?`, Number(id));
-    await logActivity({ action: 'delete', entity: 'Machinery', entityId: Number(id) });
-    return { ok: true };
+    const del = await softDelete('Machinery', Number(id));
+    if (!del.ok) throw new HttpException('ماشین پیدا نشد.', 404);
+    return {
+      ok: true,
+      softDeleted: true,
+      already: del.already,
+      message: del.already ? 'این ماشین قبلاً حذف شده بود.' : 'حذف شد — از «سطل بازیافت» قابل بازگرداندن است.',
+    };
   }
 
   // ------------------------------ settings --------------------------------

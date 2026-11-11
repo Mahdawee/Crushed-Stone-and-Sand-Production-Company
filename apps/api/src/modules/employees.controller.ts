@@ -3,6 +3,7 @@ import { db } from '../db';
 import { ensureSchemaAsync } from '../schema';
 import { AuthGuard, ManagerOnly } from '../common/auth';
 import { logActivity } from '../common/activity';
+import { softDelete } from '../common/soft-delete';
 import { settingsService } from '../common/settings';
 import { parseUserDate, monthBucket, todayISO, CalendarMode, daysBetween } from '../common/calendar';
 
@@ -17,7 +18,7 @@ export class EmployeesController {
   @Get('employees')
   async list(@Query('q') q?: string, @Query('status') status?: string) {
     await ensureSchemaAsync();
-    const where: string[] = [];
+    const where: string[] = [`COALESCE("deletedAt",'')=''`];
     const args: any[] = [];
     if (q) {
       where.push(`("name" LIKE ? OR "code" LIKE ? OR "position" LIKE ? OR "phone" LIKE ?)`);
@@ -250,7 +251,14 @@ export class EmployeesController {
     if (Number(att?.[0]?.c) > 0) {
       throw new HttpException('این کارمند سابقه حضور و غیاب دارد؛ به جای حذف، وضعیت او را «غیر فعال» کنید.', 400);
     }
-    await db().$executeRawUnsafe(`DELETE FROM "Employee" WHERE "id"=?`, Number(id));
+    /*
+     * حذف «نرم» — درخواست کاربر: «حذف‌ها نرم باشند... از سابقه فعالیت‌ها
+     * قابل بازیابی بدون آسیب». ردیف می‌ماند، فقط از همه‌ی فهرست‌ها و
+     * گزارش‌ها پنهان می‌شود و از «سطل بازیافت» برمی‌گردد.
+     */
+    const del = await softDelete("Employee", Number(id));
+    if (!del.ok) throw new HttpException('ردیف پیدا نشد.', 404);
+    return { ok: true, softDeleted: true, message: 'حذف شد — از «سطل بازیافت» قابل بازگرداندن است.' };
     await logActivity({ action: 'delete', entity: 'Employee', entityId: Number(id) });
     return { ok: true };
   }

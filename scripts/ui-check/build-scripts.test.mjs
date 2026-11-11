@@ -28,7 +28,8 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
 
-const pkg = JSON.parse(read('package.json'));
+const pkgJson = read('package.json');
+const pkg = JSON.parse(pkgJson);
 const scripts = pkg.scripts || {};
 const build = read('scripts/build-desktop.mjs');
 const off = read('scripts/prepare-offline-desktop.mjs');
@@ -227,6 +228,40 @@ for (const f of ['scripts/build-desktop.mjs', 'scripts/prepare-offline-desktop.m
     if (!good) err = `بالانس آکولاد: ${depth}`;
   } catch (e) { good = false; err = e.message; }
   ok(`${f} ساختار سالم دارد`, good, err);
+}
+
+/* ------------------------------------------------------------------ *
+ * ساخت آفلاین (دور ۱۶) — باینری ویندوزی libSQL
+ *
+ * باگ واقعی: ساخت نصب‌کننده همیشه سعی می‌کرد از registry دانلود کند. روی
+ * کمپیوتر آفلاین این مرحله شکست می‌خورد ولی ساخت «موفق» گزارش می‌شد و
+ * نصب‌کننده روی ویندوز با «Cannot find module @libsql/win32-x64-msvc»
+ * صفحه‌ی سفید می‌داد. این تست‌ها تضمین می‌کنند مسیر کش و توقف سخت سر جایش
+ * بماند.
+ * ------------------------------------------------------------------ */
+console.log('\n— ساخت آفلاین: libSQL ویندوزی —');
+{
+  const prefetchPath = path.join(root, 'scripts', 'prefetch-libsql.mjs');
+  const hasPrefetch = fs.existsSync(prefetchPath);
+  ok('اسکریپت prefetch-libsql وجود دارد', hasPrefetch);
+  const prefetch = hasPrefetch ? fs.readFileSync(prefetchPath, 'utf8') : '';
+  ok('prefetch در .cache/libsql ذخیره می‌کند', /\.cache['"],\s*['"]libsql|libsqlCacheDir/.test(prefetch) || /'\.cache',\s*'libsql'/.test(prefetch));
+  ok('prefetch نسخه را از npm می‌پرسد', /npm.*view|resolveVersion/.test(prefetch));
+  ok('prefetch اگر بسته از قبل هست کاری نمی‌کند', /index\.node/.test(prefetch));
+  ok('prefetch خطا را به کاربر می‌گوید', /process\.exit\(1\)/.test(prefetch));
+
+  ok('ساخت API کش libSQL را می‌شناسد', /libsqlCacheDir|\.cache.*libsql/.test(apiPack));
+  ok('ساخت API اول از کش نصب می‌کند', /از کش محلی|extractLibsqlTgz/.test(apiPack));
+  ok('حالت آفلاین تشخیص داده می‌شود', /offlineMode|--offline/.test(apiPack));
+  ok('در حالت آفلاین بدون کش، ساخت متوقف می‌شود', /process\.exit\(1\)/.test(apiPack) && /offlineMode/.test(apiPack));
+  ok('پیام توقف راه‌حل prefetch را می‌دهد', /desktop:prefetch/.test(apiPack));
+
+  ok('npm script برای prefetch هست', /"desktop:prefetch"/.test(pkgJson));
+  ok('build-desktop هم prefetch-libsql را صدا می‌زند', /prefetch-libsql/.test(build));
+
+  /* مستندات */
+  ok('راهنمای ساخت آفلاین، کش libsql را توضیح می‌دهد', /libsql/i.test(docs) && /\.cache\/libsql/.test(docs));
+  ok('جدول خطاهای آفلاین ردیف libSQL دارد', /ساخت آفلاین بدون باینری ویندوزی libSQL/.test(docs));
 }
 
 console.log(`\n${fail === 0 ? '✅' : '⛔'} ${pass} موفق، ${fail} ناکام\n`);

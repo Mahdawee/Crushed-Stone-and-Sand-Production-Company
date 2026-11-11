@@ -176,7 +176,8 @@
   <!-- دفتر لایسنس‌ها -->
   <div class="card">
     <div class="card-h"><h2>۳) لایسنس‌های صادرشده</h2><div class="fill"></div>
-      <span class="small muted" id="listCount"></span></div>
+      <span class="small muted" id="listCount"></span>
+      <button class="btn sm" onclick="exportAll()" title="همه‌ی کلیدها در یک فایل">خروجی همه</button></div>
     <div class="card-b" style="padding:0">
       <table>
         <thead><tr>
@@ -188,9 +189,57 @@
     </div>
   </div>
 
+  <!-- تمدید — درخواستی که خود برنامه ساخته است -->
+  <div class="card">
+    <div class="card-h"><h2>۴) تمدید لایسنس</h2><div class="fill"></div>
+      <span class="small muted">بدون اینترنت · با فایل درخواست مشتری</span></div>
+    <div class="card-b">
+      <p class="hint" style="margin-top:0">
+        مشتری در برنامه، از صفحه‌ی «لایسنس» یک <b>درخواست تمدید</b> می‌سازد (یا فایل
+        <span class="mono">.req</span> ذخیره می‌کند) و برای شما می‌فرستد. اینجا آن را بچسبانید یا
+        فایل را انتخاب کنید؛ برنامه کلید دستگاه و شناسه‌ی لایسنس فعلی را از داخل آن می‌خواند.
+        لایسنسی که صادر می‌شود <b>جایگزین</b> لایسنس قبلی روی همان دستگاه می‌شود.
+      </p>
+
+      <label>متن درخواست تمدید</label>
+      <textarea id="renewReq" rows="4" dir="ltr" placeholder="-----BEGIN FARDAY RENEW REQUEST----- …"
+        oninput="onRenewInput()"></textarea>
+
+      <div class="row" style="margin-top:8px">
+        <input type="file" id="renewFile" accept=".req,.txt,text/plain" onchange="pickRenewFile(event)" style="flex:1">
+      </div>
+
+      <div id="renewParsed" class="grid g2" style="display:none;margin-top:12px">
+        <div><label>کلید دستگاه</label><input id="renewMachine" dir="ltr" readonly></div>
+        <div><label>لایسنس فعلی</label><input id="renewCurrent" dir="ltr" readonly></div>
+        <div><label>روزهای درخواستی</label><input id="renewAsked" dir="ltr" readonly></div>
+        <div><label>یادداشت درخواست</label><input id="renewNote" readonly></div>
+        <div class="fill2"><label>نام مشتری</label><input id="renewCustomer" placeholder="نام شرکت/شخص"></div>
+        <div class="fill2"><label>مدت تمدید (روز)</label>
+          <input id="renewDays" dir="ltr" inputmode="numeric" placeholder="۳۶۵"></div>
+      </div>
+      <p class="hint" id="renewWarn" style="display:none;color:#b45309"></p>
+
+      <div class="row" style="margin-top:12px">
+        <button class="btn" onclick="parseRenew()">خواندن درخواست</button>
+        <button class="btn primary" id="renewBtn" onclick="renew()" disabled>تمدید و صدور لایسنس</button>
+      </div>
+
+      <div id="renewOut" style="display:none;margin-top:14px">
+        <div class="out" id="renewMeta" style="margin-bottom:8px"></div>
+        <pre class="out" id="renewText"></pre>
+        <div class="row" style="margin-top:8px">
+          <button class="btn sm" onclick="copyText(document.getElementById('renewText').textContent,'متن لایسنس کاپی شد')">کاپی متن</button>
+          <button class="btn sm" onclick="downloadRenew()">ذخیره فایل .lic</button>
+          <span class="small muted" id="renewInfo"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- بازرسی -->
   <div class="card">
-    <div class="card-h"><h2>۴) بازرسی متن لایسنس</h2></div>
+    <div class="card-h"><h2>۵) بازرسی متن لایسنس</h2></div>
     <div class="card-b">
       <label>متن لایسنس را بچسبانید</label>
       <textarea id="verifyText" rows="5" dir="ltr" placeholder="-----BEGIN FARDAY LICENSE----- …"></textarea>
@@ -298,6 +347,100 @@ function onKindChange(){
   $('endHint').textContent = auto ? 'از تاریخ شروع محاسبه می‌شود' : (k === 'perpetual' || k === 'machine' ? 'بدون پایان' : 'به شمسی یا میلادی');
 }
 
+/* ---------- تمدید ---------- */
+let renewParsedData = null;
+let renewIssued = null;
+
+async function pickRenewFile(ev){
+  const f = ev.target.files && ev.target.files[0];
+  if (!f) return;
+  if (f.size > 200000) { toast('فایل بزرگ‌تر از حد است', 'bad'); return; }
+  try {
+    $('renewReq').value = await f.text();
+    await parseRenew();
+  } catch (e) { toast('فایل خوانده نشد', 'bad'); }
+}
+
+function onRenewInput(){
+  /* هر تغییر دستی → باید دوباره «خواندن» شود */
+  renewParsedData = null;
+  $('renewBtn').disabled = true;
+  $('renewParsed').style.display = 'none';
+  $('renewWarn').style.display = 'none';
+}
+
+async function parseRenew(){
+  const text = $('renewReq').value.trim();
+  if (!text) { toast('متن درخواست را بچسبانید یا فایل را انتخاب کنید', 'bad'); return; }
+  try {
+    const r = await api('/api/renew-parse', { request: text });
+    renewParsedData = r;
+    $('renewParsed').style.display = '';
+    $('renewMachine').value = r.machineKey || '';
+    $('renewCurrent').value = r.currentLicenseId || '(هیچ — نصب تازه)';
+    $('renewAsked').value = r.requestedDays ? `${r.requestedDays} روز` : '—';
+    $('renewNote').value = r.note || '';
+    $('renewDays').value = r.requestedDays || 365;
+
+    /* اگر نام مشتری از دفتر معلوم است، خودکار پرش کن */
+    if (!$('renewCustomer').value) {
+      const found = (state.items || []).find((x) => x.id === r.currentLicenseId);
+      $('renewCustomer').value = found ? found.customer : '';
+    }
+
+    if (r.checksumMismatch) {
+      $('renewWarn').style.display = '';
+      $('renewWarn').textContent =
+        '⚠ checksum این درخواست نمی‌خواند — فایل ممکن است در انتقال خراب شده باشد. ' +
+        'با احتیاط ادامه دهید (کلید دستگاه خوانده شده: ' + r.machineKey + ').';
+    } else {
+      $('renewWarn').style.display = 'none';
+    }
+    $('renewBtn').disabled = !state.keys.hasPrivate;
+    toast('درخواست خوانده شد', 'ok');
+  } catch (e){ toast(e.message, 'bad'); }
+}
+
+async function renew(){
+  if (!renewParsedData) { toast('اول درخواست را بخوانید', 'bad'); return; }
+  $('renewBtn').disabled = true;
+  try {
+    const r = await api('/api/renew', {
+      request: $('renewReq').value,
+      days: $('renewDays').value,
+      customer: $('renewCustomer').value,
+    });
+    renewIssued = r;
+    $('renewOut').style.display = 'block';
+    $('renewText').textContent = r.text;
+    $('renewMeta').textContent =
+      `${r.id} · ${r.startLabel} تا ${r.endLabel}` +
+      (r.extendedFrom ? ` · ادامه از فردای ${r.extendedFrom}` : '') +
+      (r.renewedFrom ? ` · جایگزین ${r.renewedFrom}` : '');
+
+    /*
+     * پیام روشن: اگر پایان قبلی هنوز نرسیده بود، روزهای باقی‌مانده نسوخته و
+     * تمدید از فردای آن شروع شده است. کاربر باید این را ببیند.
+     */
+    $('renewInfo').textContent = r.extendedFrom
+      ? 'روزهای باقی‌مانده‌ی لایسنس قبلی حفظ شد — تمدید از فردای تاریخ پایان قبلی شروع می‌شود.'
+      : 'لایسنس از امروز شروع می‌شود.';
+    toast(r.message, 'ok');
+    await load();
+  } catch (e){ toast(e.message, 'bad'); }
+  finally { $('renewBtn').disabled = !state.keys.hasPrivate; }
+}
+
+function downloadRenew(){
+  if (!renewIssued) return;
+  const blob = new Blob([renewIssued.text + '\n'], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = renewIssued.id + '.lic';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
 /* ---------- عملیات ---------- */
 async function keygen(force){
   if (force && !confirm('با ساخت کلید مجدد، همه‌ی لایسنس‌های صادرشده با کلید قبلی باطل می‌شوند و باید نسخه‌ی جدید بسازید. ادامه؟')) return;
@@ -346,7 +489,8 @@ function renderList(){
       <td class="mono small">${it.machineKey || '—'}</td>
       <td>${badge}</td>
       <td style="white-space:nowrap">
-        <button class="btn sm" onclick="copyFromFile('${it.id}')">کاپی متن</button>
+        <button class="btn sm" onclick="copyFromFile('${it.id}')" title="کاپی متن در حافظه">کاپی</button>
+        <button class="btn sm" onclick="downloadLicFile('${it.id}')" title="ذخیره فایل .lic برای ارسال به مشتری">فایل</button>
         <button class="btn sm ${it.revoked ? '' : 'danger'}" onclick="revoke('${it.id}', ${!it.revoked})">${it.revoked ? 'فعال‌سازی' : 'باطل'}</button>
       </td>
     </tr>`;
@@ -365,6 +509,54 @@ async function copyFromFile(id){
     const r = await api('/api/file?id=' + encodeURIComponent(id));
     await copyText(r.text, 'متن ' + id + ' کاپی شد');
   } catch (e){ toast(e.message, 'bad'); }
+}
+
+/**
+ * ذخیره‌ی یک لایسنس به‌صورت فایل `.lic`.
+ *
+ * درخواست کاربر (مورد ۱۱): «کلیدهای لایسنس باید علاوه بر متن، امکان ورود و
+ * خروج فایل هم داشته باشند». کاپی متن برای چت و تلفن خوب است؛ فایل برای
+ * ایمیل و فلش و آرشیو مطمئن‌تر است (متن چسبانده‌شده ممکن است خط بشکند).
+ */
+async function downloadLicFile(id){
+  try {
+    const r = await api('/api/file?id=' + encodeURIComponent(id));
+    saveTextFile(id + '.lic', r.text);
+    toast('فایل ' + id + '.lic ذخیره شد', 'ok');
+  } catch (e){ toast(e.message, 'bad'); }
+}
+
+/** خروجی همه‌ی لایسنس‌ها در یک فایل متنی (آرشیو/انتقال) */
+async function exportAll(){
+  if (!state.items.length) { toast('لایسنسی برای خروجی نیست', 'bad'); return; }
+  try {
+    const parts = [];
+    for (const it of state.items) {
+      const r = await api('/api/file?id=' + encodeURIComponent(it.id));
+      parts.push(r.text.trim());
+    }
+    const head = [
+      '# فردای روشن — بسته‌ی کلیدهای لایسنس',
+      '# تاریخ خروجی: ' + new Date().toISOString(),
+      '# تعداد: ' + state.items.length,
+      '# هر بلوک با BEGIN/END از هم جدا شده است.',
+      '',
+    ].join('\n');
+    saveTextFile('farday-licenses-' + new Date().toISOString().slice(0, 10) + '.txt',
+      head + parts.join('\n\n') + '\n');
+    toast(state.items.length + ' لایسنس در یک فایل ذخیره شد', 'ok');
+  } catch (e){ toast(e.message, 'bad'); }
+}
+
+function saveTextFile(name, text){
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
 
 async function revoke(id, val){

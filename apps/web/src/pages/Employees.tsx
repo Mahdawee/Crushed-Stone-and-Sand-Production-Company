@@ -1,9 +1,11 @@
-import { IconDownload, IconPlus } from '../components/icons';
+import { IconPlus } from '../components/icons';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, downloadCsv } from '../lib/api';
+import { api, listImportTypes } from '../lib/api';
 import { useSession } from '../lib/session';
-import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, ListHead, SearchBox, InlineStat } from '../components/ui';
+import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, Select, ListHead, SearchBox, InlineStat,
+  ExportButton, ImportDialog,
+} from '../components/ui';
 import { useDebounced } from '../lib/useDebounced';
 import { useLatestRequest } from '../lib/useLatestRequest';
 import { money, formatDate, todayISO } from '../lib/calendar';
@@ -53,7 +55,8 @@ export default function EmployeesPage() {
   };
 
   const remove = (r: any) => toast.confirm({
-    title: 'حذف کارمند؟', body: `«${r.name}» کاملاً حذف شود؟ اگر سابقه معاش دارد، سیستم اجازه حذف نمی‌دهد.`,
+    title: 'حذف کارمند؟',
+    body: `«${r.name}» از فهرست کنار می‌رود. داده پاک نمی‌شود — از «سطل بازیافت» قابل بازگرداندن است.\nاگر سابقه معاش دارد، سیستم اجازه نمی‌دهد.`,
     confirmText: 'حذف کن',
     onConfirm: async () => {
       try { await api.del(`/employees/${r.id}`); await load(); toast.success('حذف شد'); }
@@ -67,6 +70,16 @@ export default function EmployeesPage() {
     salary: (rows || []).filter((r) => r.status === 'active').reduce((a, r) => a + Number(r.baseSalary || 0), 0),
   }), [rows]);
 
+  /* ورود از اکسل — همان الگوی مشتریان */
+  const [importOpen, setImportOpen] = useState(false);
+  const [importTypes, setImportTypes] = useState<any[]>([]);
+  const openImport = async () => {
+    try {
+      if (!importTypes.length) setImportTypes((await listImportTypes()).items);
+      setImportOpen(true);
+    } catch (e: any) { toast.error('فهرست ورودی خوانده نشد', e.message); }
+  };
+
   return (
     <div className="col" style={{ gap: 14 }}>
       <div className="card">
@@ -79,7 +92,8 @@ export default function EmployeesPage() {
             <InlineStat label="معاش ثابت" value={`${money(totals.salary)} ؋`} />
           </>}
           actions={<>
-            <button className="btn" onClick={() => downloadCsv('employees')}><IconDownload size={15} /> اکسل</button>
+            <ExportButton type="employees" />
+            <button className="btn" onClick={openImport} title="ورود گروهی از فایل اکسل/CSV">ورود از اکسل</button>
             <button className="btn primary" onClick={openNew}><IconPlus size={15} /> کارمند</button>
           </>}
         >
@@ -137,6 +151,9 @@ export default function EmployeesPage() {
             <Field label="توضیحات" span={3}><TextArea value={form.note} onChange={(v) => setForm({ ...form, note: v })} /></Field>
           </div>
         </Modal>
+      ) : null}
+      {importOpen ? (
+        <ImportDialog types={importTypes} onClose={() => setImportOpen(false)} onDone={() => load()} />
       ) : null}
     </div>
   );

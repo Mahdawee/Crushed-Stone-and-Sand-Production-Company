@@ -379,6 +379,101 @@ html[data-theme='dark'] .nav-link.active { color: #7ee7d8; }
   font-weight: 700; color: var(--accent-dark); font-variant-numeric: tabular-nums; text-align: left; direction: ltr;
 }
 html[data-theme='dark'] .field .computed { color: #8ff0e2; }
+
+/* ------------------------------------------------------------------ *
+ * فیلد محاسبه‌شده — «خودکار، غیرقابل ویرایش»
+ *
+ * درخواست کاربر: «فیلدهایی که خودکار محاسبه می‌شود... را به یک حالت مدرن
+ * و مفهوم‌رسان تغییر بده که نشان‌دهنده محاسبه خودکار و برای کاربر غیرفعال
+ * باشد».
+ *
+ * زبان بصری:
+ *   • پس‌زمینه‌ی راه‌راه ملایم  → «اینجا ورودی نیست»
+ *   • قفل کوچک در گوشه          → «قابل تغییر نیست»
+ *   • برچسب «خودکار» روی فیلد   → «مقدار از کجا می‌آید»
+ *   • فونت مونو + tabular-nums  → ارقام هم‌تراز و خوانا
+ *   • بدون حاشیه‌ی ورودی و بدون cursor:text → اصلاً شبیه input نیست
+ * ------------------------------------------------------------------ */
+.field.is-computed > label { color: var(--text-2); }
+
+.auto-tag {
+  display: inline-flex; align-items: center; gap: 3px;
+  margin-inline-start: 6px; padding: 1px 7px;
+  font-size: .62rem; font-weight: 700; letter-spacing: .2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-dark);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  vertical-align: middle;
+}
+html[data-theme='dark'] .auto-tag { color: #8ff0e2; }
+
+.computed-box {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px; min-height: 38px;
+  border-radius: var(--radius-sm);
+  /* راه‌راه ملایم: نشانه‌ی «غیرفعال/محاسبه‌شده» در همه‌ی تم‌ها */
+  background-image: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 7%, transparent) 0 6px,
+    transparent 6px 12px
+  );
+  background-color: var(--surface-2);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  cursor: default;
+  user-select: none;
+  transition: border-color .15s ease, background-color .15s ease;
+}
+.computed-box .cv { direction: ltr; font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; }
+.computed-box .cs { font-size: .78rem; font-weight: 600; color: var(--text-2); }
+.computed-box .lock {
+  margin-inline-start: auto; display: inline-flex; opacity: .5;
+  color: var(--text-2);
+}
+.computed-box.big {
+  font-size: 1.12rem;
+  color: var(--accent-dark);
+  background-color: color-mix(in srgb, var(--accent) 9%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+html[data-theme='dark'] .computed-box.big { color: #8ff0e2; }
+/* حرکت ملایم وقتی مقدار عوض می‌شود — بدون جلب توجه */
+.computed-box.updating { border-color: var(--accent); }
+
+/* نوار «چطور محاسبه می‌شود» */
+.calc-note {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin-top: 12px; padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  border: 1px dashed color-mix(in srgb, var(--accent) 25%, var(--border));
+  font-size: .76rem; line-height: 1.7; color: var(--text-2);
+}
+.calc-note b { color: var(--text); }
+
+/* ---------------- منوی خروجی ---------------- */
+.export-wrap { position: relative; display: inline-flex; }
+.export-menu {
+  position: absolute; inset-block-start: calc(100% + 6px); inset-inline-end: 0;
+  z-index: 40; min-width: 232px;
+  padding: 6px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg, 0 12px 30px rgba(0,0,0,.18));
+  display: flex; flex-direction: column; gap: 2px;
+}
+.export-menu button {
+  text-align: start; padding: 9px 11px; border: 0; border-radius: var(--radius-sm);
+  background: transparent; cursor: pointer; display: flex; flex-direction: column; gap: 2px;
+  font: inherit; color: inherit;
+}
+.export-menu button:hover, .export-menu button:focus-visible { background: var(--surface-2); }
+.export-menu b { font-size: .84rem; }
+.export-menu span { font-size: .7rem; color: var(--text-3); }
 .check { display: flex; align-items: center; gap: 8px; font-size: .85rem; }
 .check input { width: 16px; height: 16px; accent-color: var(--accent); }
 
@@ -914,3 +1009,239 @@ html[data-theme='dark'] .btn.primary { box-shadow: 0 6px 18px -12px var(--accent
 .theme-thumb.light { --bg: #eef1f5; --bg-2: #fff; --sidebar-bg: #fafafa; --surface-3: #dde4ec; --accent: #0f766e; --border: #d3dae1; }
 .theme-thumb.vivid { --bg: #e3ebf5; --bg-2: #fff; --sidebar-bg: #fff; --surface-3: #c9d8ea; --accent: #1a5cff; --border: #6b8299; }
 .theme-thumb.dark  { --bg: #0f1720; --bg-2: #15202b; --sidebar-bg: #121c26; --surface-3: #2a3a48; --accent: #2dd4bf; --border: #2a3a48; }
+
+/* ================================================================== *
+ * صفحه‌ی لایسنس — بازطراحی
+ *
+ * باگ اصلی قبلی: در چیدمان flex، فرزندها `min-width:auto` دارند و محتوای
+ * بلند (متن لایسنس base64، مسیر فایل) باعث می‌شد ستون از عرض کانتینر
+ * بزند بیرون و روی عنصر کنارش بیفتد. راه‌حل: `min-width: 0` روی ستون‌ها
+ * و `overflow-wrap` روی مقادیر بلند.
+ * ================================================================== */
+.lic-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 14px;
+  align-items: start;
+  padding: 16px;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+@media (max-width: 900px) { .lic-page { grid-template-columns: minmax(0, 1fr); padding: 10px; } }
+
+.lic-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.lic-col > .card { min-width: 0; overflow: hidden; }
+
+.lic-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 15px 18px 0; min-width: 0;
+}
+.lic-title { margin: 0; font-size: 1.1rem; line-height: 1.4; }
+.lic-sub { margin: 3px 0 0; font-size: .76rem; color: var(--text-3); }
+.lic-h2 { margin: 0 0 10px; font-size: .92rem; }
+.lic-head .lic-h2 { margin-bottom: 0; }
+
+.lic-msg {
+  margin: 0 0 12px; padding: 10px 12px; border-radius: var(--radius-md);
+  font-size: .82rem; line-height: 1.8;
+}
+.lic-msg.ok { background: var(--ok-soft); color: var(--ok); }
+.lic-msg.warn { background: var(--warn-soft); color: var(--warn); }
+
+.lic-stats {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px; margin-bottom: 12px;
+}
+.lic-stats .tb-stat {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 9px 11px; border-radius: var(--radius-sm);
+  background: var(--surface-2); border: 1px solid var(--border);
+  min-width: 0;
+}
+.lic-stats .tb-stat > b { font-size: .86rem; overflow-wrap: anywhere; }
+
+.lic-key {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 11px; border-radius: var(--radius-sm);
+  background: var(--surface-2); border: 1px solid var(--border);
+  min-width: 0;
+}
+.lic-key-l { font-size: .74rem; color: var(--text-3); white-space: nowrap; }
+.lic-key-v {
+  flex: 1 1 auto; min-width: 0;
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: .78rem; letter-spacing: .3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  user-select: all;
+}
+
+.lic-hint { margin: 8px 0 0; font-size: .74rem; line-height: 1.8; color: var(--text-3); }
+
+.lic-steps { margin: 0; padding-inline-start: 18px; font-size: .8rem; line-height: 2; }
+.lic-steps code { font-size: .74rem; }
+
+.lic-links { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+.lic-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+@media (max-width: 560px) { .lic-row { grid-template-columns: minmax(0, 1fr); } }
+
+.lic-textarea {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: .72rem; line-height: 1.6; resize: vertical;
+  min-height: 130px; max-height: 260px;
+  overflow-wrap: anywhere; white-space: pre-wrap;
+}
+.lic-textarea.sm { min-height: 96px; margin-top: 10px; }
+
+.lic-check { margin: 4px 0 12px; font-size: .78rem; align-items: flex-start; }
+.lic-check input { margin-top: 3px; }
+
+.lic-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+
+.lic-meta { display: grid; gap: 8px; font-size: .76rem; }
+.lic-meta > div { display: flex; justify-content: space-between; gap: 12px; min-width: 0; }
+.lic-meta span { color: var(--text-3); white-space: nowrap; }
+.lic-meta b { font-weight: 600; overflow-wrap: anywhere; text-align: end; min-width: 0; }
+.lic-meta-path { font-size: .7rem; direction: ltr; }
+
+/* حالت تمام‌صفحه (وقتی برنامه قفل است) */
+.lic-standalone { min-height: 100vh; min-height: 100dvh; background: var(--bg); overflow-y: auto; }
+
+/* ================================================================== *
+ * صفحه‌ی شروع لایسنس
+ * ================================================================== */
+.boot-lic {
+  min-height: 100vh; min-height: 100dvh;
+  display: grid; place-items: center; padding: 20px;
+  background:
+    radial-gradient(900px 460px at 85% -10%, color-mix(in srgb, var(--accent) 14%, transparent), transparent),
+    var(--bg);
+  animation: fadeIn .22s ease both;
+}
+.boot-lic.leaving { animation: fadeOut .14s ease both; }
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+@keyframes fadeOut { from { opacity: 1 } to { opacity: 0 } }
+
+.boot-lic-card {
+  width: min(520px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 18px 50px -24px rgba(0, 0, 0, .35);
+  padding: 22px;
+  display: flex; flex-direction: column; gap: 14px;
+  min-width: 0;
+}
+
+.boot-lic-top { display: flex; align-items: center; gap: 12px; }
+.boot-lic-top h1 { margin: 0; font-size: 1.05rem; }
+.boot-lic-top p { margin: 2px 0 0; }
+.boot-lic-logo {
+  width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center;
+  font-size: 22px; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+  box-shadow: 0 8px 22px -10px var(--accent);
+  flex: 0 0 auto;
+}
+
+.boot-lic-state {
+  border-radius: var(--radius-md);
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  min-width: 0;
+}
+.boot-lic-state.tone-ok { background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 30%, transparent); }
+.boot-lic-state.tone-warn { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+.boot-lic-state.tone-urgent { background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 32%, transparent); }
+.boot-lic-state.tone-trial { background: var(--info-soft, var(--accent-soft)); border-color: color-mix(in srgb, var(--accent) 32%, transparent); }
+
+.boot-lic-state-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.boot-lic-state-h b { font-size: .92rem; }
+.boot-lic-state p { margin: 8px 0 0; font-size: .79rem; line-height: 1.9; }
+
+.boot-lic-dates { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 9px; font-size: .74rem; color: var(--text-2); }
+.boot-lic-dates b { color: var(--text); }
+
+.boot-lic-key {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  padding: 8px 11px; border-radius: var(--radius-sm);
+  background: var(--surface-2); border: 1px solid var(--border);
+  font-size: .74rem;
+}
+.boot-lic-key > span { color: var(--text-3); white-space: nowrap; }
+.boot-lic-key code {
+  flex: 1 1 auto; min-width: 0; font-size: .74rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  user-select: all;
+}
+
+.boot-lic-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.boot-lic-actions .btn.lg { padding: 11px 20px; font-size: .9rem; }
+
+.boot-lic-foot { margin: 0; font-size: .72rem; line-height: 1.8; color: var(--text-3); }
+
+/* ================================================================== *
+ * زنگ اعلان‌ها در هدر
+ * ================================================================== */
+.notif-wrap { position: relative; display: inline-flex; }
+
+.notif-btn { position: relative; }
+.notif-ico { position: relative; display: inline-flex; }
+.notif-btn.has { color: var(--text); }
+.notif-btn.urgent { color: var(--danger); }
+
+.notif-dot {
+  position: absolute;
+  inset-block-start: -5px; inset-inline-end: -7px;
+  min-width: 15px; height: 15px; padding: 0 3px;
+  border-radius: 999px;
+  background: var(--danger); color: #fff;
+  font-size: .58rem; font-weight: 800; line-height: 15px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.notif-btn:not(.urgent) .notif-dot { background: var(--accent); }
+
+.notif-panel {
+  position: absolute; inset-block-start: calc(100% + 8px); inset-inline-end: 0;
+  z-index: 60; width: min(330px, calc(100vw - 24px));
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 16px 44px -18px rgba(0, 0, 0, .34);
+  overflow: hidden;
+  animation: notifIn .14s ease both;
+}
+@keyframes notifIn { from { opacity: 0; transform: translateY(-6px) } to { opacity: 1; transform: none } }
+
+.notif-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 12px; border-block-end: 1px solid var(--border);
+  background: var(--surface-2); font-size: .8rem;
+}
+.notif-empty { padding: 20px 14px; text-align: center; font-size: .78rem; color: var(--text-3); }
+
+.notif-list { list-style: none; margin: 0; padding: 6px; max-height: 380px; overflow-y: auto; }
+.notif-item { display: flex; gap: 9px; padding: 9px 8px; border-radius: var(--radius-sm); }
+.notif-item + .notif-item { border-block-start: 1px solid var(--border); border-radius: 0; }
+.notif-item-dot {
+  flex: 0 0 auto; width: 7px; height: 7px; margin-top: 6px; border-radius: 999px;
+  background: var(--text-3);
+}
+.notif-item.tone-bad .notif-item-dot { background: var(--danger); }
+.notif-item.tone-warn .notif-item-dot { background: var(--warn); }
+.notif-item.tone-info .notif-item-dot { background: var(--accent); }
+
+.notif-item-b { min-width: 0; }
+.notif-item-b > b { display: block; font-size: .79rem; line-height: 1.6; }
+.notif-item-b > p { margin: 3px 0 0; font-size: .72rem; line-height: 1.8; color: var(--text-2); }
+.notif-item-a { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+
+/* فیلد محاسبه‌شده داخل جدول: فشرده‌تر، بدون قفل بزرگ */
+table.tbl .computed-box {
+  padding: 5px 9px; min-height: 30px; font-size: .82rem; gap: 5px;
+}
+table.tbl .computed-box.big { font-size: .88rem; }
+table.tbl .computed-box .lock { opacity: .38; }
+table.tbl tfoot .computed-box { background-color: color-mix(in srgb, var(--accent) 10%, var(--surface)); }

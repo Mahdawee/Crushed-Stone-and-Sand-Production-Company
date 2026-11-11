@@ -12,31 +12,45 @@ export const LOOKUP_TYPES: Record<string, string> = {
   contractor: 'باربری‌ها / دمترک‌ها',
 };
 
-/** How many documents already use a lookup row (used for safe delete logic). */
+/**
+ * چند سند از این ردیف فهرست استفاده می‌کند؟
+ *
+ * از این عدد برای «حذف امن» استفاده می‌شود: اگر سندی به ردیف وصل است،
+ * حذفش داده‌ی قدیمی را بی‌نام می‌کند.
+ *
+ * ⚠ اسناد «حذف نرم»‌شده شمرده **نمی‌شوند**: آن‌ها از دید کاربر وجود ندارند،
+ * پس نباید جلوی حذف یک ردیف فهرست را بگیرند. اگر روزی بازیابی شدند، نام
+ * ردیف در سند ذخیره شده (`materialName` و مانند آن) و نمایش درست می‌ماند —
+ * دقیقاً به همین دلیل نام‌ها در کنار شناسه ذخیره می‌شوند.
+ */
+const LIVE = `COALESCE("deletedAt",'')=''`;
+
 async function usageCount(type: string, id: number, name: string): Promise<number> {
   const p = db();
+  const n = (r: any[]) => Number(r?.[0]?.c ?? 0);
   switch (type) {
-    case 'material': {
-      const r: any[] = await p.$queryRawUnsafe(`SELECT COUNT(*) as c FROM "Sale" WHERE "materialId"=? OR "materialName"=?`, id, name);
-      return Number(r?.[0]?.c ?? 0);
-    }
-    case 'expense_category': {
-      const r: any[] = await p.$queryRawUnsafe(`SELECT COUNT(*) as c FROM "Expense" WHERE "categoryId"=? OR "categoryName"=?`, id, name);
-      return Number(r?.[0]?.c ?? 0);
-    }
+    case 'material':
+      return n(await p.$queryRawUnsafe(
+        `SELECT COUNT(*) as c FROM "Sale" WHERE ${LIVE} AND ("materialId"=? OR "materialName"=?)`, id, name));
+    case 'expense_category':
+      return n(await p.$queryRawUnsafe(
+        `SELECT COUNT(*) as c FROM "Expense" WHERE ${LIVE} AND ("categoryId"=? OR "categoryName"=?)`, id, name));
     case 'payer': {
-      const a: any[] = await p.$queryRawUnsafe(`SELECT COUNT(*) as c FROM "Expense" WHERE "payerId"=? OR "payerName"=?`, id, name);
-      const b: any[] = await p.$queryRawUnsafe(`SELECT COUNT(*) as c FROM "Salary" WHERE "payerName"=?`, name);
-      return Number(a?.[0]?.c ?? 0) + Number(b?.[0]?.c ?? 0);
+      const a = n(await p.$queryRawUnsafe(
+        `SELECT COUNT(*) as c FROM "Expense" WHERE ${LIVE} AND ("payerId"=? OR "payerName"=?)`, id, name));
+      const b = n(await p.$queryRawUnsafe(
+        `SELECT COUNT(*) as c FROM "Salary" WHERE ${LIVE} AND "payerName"=?`, name));
+      return a + b;
     }
-    case 'receipt_source': {
-      const r: any[] = await p.$queryRawUnsafe(`SELECT COUNT(*) as c FROM "Receipt" WHERE "sourceId"=? OR "sourceName"=?`, id, name);
-      return Number(r?.[0]?.c ?? 0);
-    }
+    case 'receipt_source':
+      return n(await p.$queryRawUnsafe(
+        `SELECT COUNT(*) as c FROM "Receipt" WHERE ${LIVE} AND ("sourceId"=? OR "sourceName"=?)`, id, name));
     case 'contractor': {
-      const a: any[] = await p.$queryRawUnsafe(`SELECT COUNT(*) as c FROM "Sale" WHERE "contractorId"=? OR "contractorName"=?`, id, name);
-      const b: any[] = await p.$queryRawUnsafe(`SELECT COUNT(*) as c FROM "Expense" WHERE "contractorId"=? OR "contractorName"=?`, id, name);
-      return Number(a?.[0]?.c ?? 0) + Number(b?.[0]?.c ?? 0);
+      const a = n(await p.$queryRawUnsafe(
+        `SELECT COUNT(*) as c FROM "Sale" WHERE ${LIVE} AND ("contractorId"=? OR "contractorName"=?)`, id, name));
+      const b = n(await p.$queryRawUnsafe(
+        `SELECT COUNT(*) as c FROM "Expense" WHERE ${LIVE} AND ("contractorId"=? OR "contractorName"=?)`, id, name));
+      return a + b;
     }
     default:
       return 0;

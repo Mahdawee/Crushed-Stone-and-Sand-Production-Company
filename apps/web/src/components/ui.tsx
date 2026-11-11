@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { IconAlert, IconCheck, IconChevron, IconClose, IconFilter, IconInfo, IconSearchDoc } from './icons';
+import { IconAlert, IconCheck, IconChevron, IconClose, IconDownload, IconFilter, IconInfo, IconSearchDoc } from './icons';
+import { downloadCsv, downloadImportTemplate, readFileAsText, runImport, type ImportReport } from '../lib/api';
 
 /* =============================== toasts =============================== */
 type ToastKind = 'ok' | 'bad' | 'warn' | 'info';
@@ -164,16 +165,102 @@ export function Modal({ title, onClose, children, footer, size = '', onEnter }: 
 }
 
 /* =============================== fields =============================== */
-export function Field({ label, children, hint, span, required }: {
-  label: string; children: React.ReactNode; hint?: string; span?: 2 | 3; required?: boolean;
+
+/**
+ * برچسب فیلد با نشان «اجباری».
+ *
+ * درخواست کاربر: «فیلدهای حیاتی که منطقاً برای محاسبه و مدیریت ضروری‌اند
+ * باید اجباری باشند تا کاربر مجبور باشد داده وارد کند».
+ *
+ * `required` هم ستارهٔ دیداری می‌گذارد و هم `aria-required` (برای صفحه‌خوان).
+ * خودِ اعتبارسنجی در `validateRequired()` انجام می‌شود که فرم‌ها پیش از
+ * ذخیره صدا می‌زنند — و پیام فارسی با نام دقیق فیلد می‌دهد.
+ */
+export function Field({ label, children, hint, span, required, computed }: {
+  label: string; children: React.ReactNode; hint?: string; span?: 2 | 3;
+  required?: boolean;
+  /** فیلد محاسبه‌شده — نه اجباری است نه قابل تایپ */
+  computed?: boolean;
 }) {
   return (
-    <div className={`field ${span === 2 ? 'span2' : span === 3 ? 'span3' : ''}`}>
-      <label>{label}{required ? <span className="req"> *</span> : null}</label>
+    <div className={`field ${span === 2 ? 'span2' : span === 3 ? 'span3' : ''}${computed ? ' is-computed' : ''}`}>
+      <label>
+        {label}
+        {required ? <span className="req" title="پر کردن این فیلد لازم است"> *</span> : null}
+        {computed ? <span className="auto-tag" title="این مقدار خودکار محاسبه می‌شود">خودکار</span> : null}
+      </label>
       {children}
       {hint ? <span className="hint">{hint}</span> : null}
     </div>
   );
+}
+
+/**
+ * نمایش یک مقدار **محاسبه‌شده** (فقط خواندنی).
+ *
+ * درخواست کاربر: «فیلدهایی که خودکار محاسبه می‌شود و کاربر حق ورودی ندارد
+ * را از این حالت ظاهری مسخره تغییر بده به یک حالت مدرن و مفهوم رسان که
+ * نشان‌دهنده محاسبه خودکار و برای کاربر غیرفعال باشد».
+ *
+ * طراحی:
+ *   • ظاهر «کادر غیرفعال» با پس‌زمینه‌ی راه‌راه ملایم و قفل کوچک
+ *   • `<output>` واقعی (نه input) → کاربر اصلاً نمی‌تواند تایپ کند
+ *   • `dir=ltr` برای اعداد و فونت مونو تا ارقام هم‌تراز باشند
+ *   • برچسب «خودکار» روی خود فیلد
+ */
+export function Computed({ value, suffix, note, big }: {
+  value: React.ReactNode;
+  suffix?: string;
+  note?: string;
+  /** بزرگ‌تر — برای «مجموع» نهایی */
+  big?: boolean;
+}) {
+  return (
+    <output
+      className={`computed-box${big ? ' big' : ''}`}
+      aria-live="polite"
+      title={note || 'خودکار محاسبه می‌شود — نیازی به ورود نیست'}
+    >
+      <span className="cv">{value}</span>
+      {suffix ? <span className="cs">{suffix}</span> : null}
+      <span className="lock" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="4" y="10" width="16" height="10" rx="2" />
+          <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+        </svg>
+      </span>
+    </output>
+  );
+}
+
+/* ---------------- اعتبارسنجی فیلدهای اجباری ---------------- */
+
+export type RequiredRule = {
+  /** نامی که به کاربر نشان داده می‌شود */
+  label: string;
+  /** آیا مقدار «پر» است؟ */
+  filled: boolean;
+  /** اگر پر است ولی نامعتبر — مثلاً عدد صفر */
+  valid?: boolean;
+  /** پیام اختصاصی وقتی پر است ولی نامعتبر */
+  invalidMessage?: string;
+};
+
+/**
+ * بررسی فیلدهای اجباری یک فرم.
+ *
+ * چرا اینجا و نه در هر صفحه: قانون باید یکی باشد. هر فرم فقط فهرست قواعد
+ * را می‌دهد و یک پیام **دقیق** می‌گیرد («متراژ باید بزرگ‌تر از صفر باشد»)،
+ * نه یک «فیلدها را پر کنید»ی مبهم.
+ *
+ * خروجی: نخستین پیام خطا، یا `null` اگر همه‌چیز درست است.
+ */
+export function validateRequired(rules: RequiredRule[]): string | null {
+  for (const r of rules) {
+    if (!r.filled) return `«${r.label}» را پر کنید.`;
+    if (r.valid === false) return r.invalidMessage || `«${r.label}» نامعتبر است.`;
+  }
+  return null;
 }
 
 /**
@@ -461,5 +548,222 @@ export function Stat({ label, value, foot, kind = '', icon }: { label: string; v
       <div className="value">{value}</div>
       {foot ? <div className="foot">{foot}</div> : null}
     </div>
+  );
+}
+
+/* ================================================================== */
+/* خروجی / ورودی اکسل — یک دکمه‌ی مشترک برای همه‌ی صفحه‌ها             */
+/* ================================================================== */
+
+/**
+ * دکمه‌ی «خروجی» با منوی کوچک (اکسل / CSV) و مدیریت خطا.
+ *
+ * ## باگی که این کامپوننت حل می‌کند
+ * در پنج صفحه دکمه‌ی «اکسل» به `/api/api/export` درخواست می‌داد (۴۰۴) و
+ * خطا هم نمایش داده نمی‌شد — کاربر فکر می‌کرد «هیچ اتفاقی نمی‌افتد».
+ * حالا:
+ *   • آدرس درست است (در `lib/api.ts` اصلاح شد)
+ *   • خطا به‌صورت toast نشان داده می‌شود، نه سکوت
+ *   • هنگام دانلود، دکمه «…» می‌شود (کاربر دوباره نمی‌زند)
+ */
+export function ExportButton({ type, label = 'خروجی', compact }: {
+  type: string;
+  label?: string;
+  /** فقط آیکن (برای نوارهای شلوغ) */
+  compact?: boolean;
+}) {
+  const toast = useToast();
+  const [open, setOpen] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const boxRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const go = async (format: 'xls' | 'csv') => {
+    setOpen(false);
+    setBusy(true);
+    try {
+      await downloadCsv(type, format);
+      toast.success('فایل آماده شد', format === 'xls' ? 'با اکسل باز کنید.' : 'فایل CSV با اکسل/برنامه‌های دیگر باز می‌شود.');
+    } catch (e: any) {
+      toast.error('خروجی گرفته نشد', e?.message || 'دوباره تلاش کنید.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="export-wrap" ref={boxRef}>
+      <button
+        type="button" className="btn" disabled={busy}
+        onClick={() => setOpen((v) => !v)}
+        title="خروجی گرفتن از فهرست"
+        aria-haspopup="menu" aria-expanded={open}
+      >
+        <IconDownload size={15} /> {busy ? '…' : compact ? '' : label}
+      </button>
+      {open ? (
+        <div className="export-menu" role="menu">
+          <button type="button" role="menuitem" onClick={() => go('xls')}>
+            <b>Excel (.xls)</b>
+            <span>کارپوشه با ستون‌های جدا — پیشنهادی</span>
+          </button>
+          <button type="button" role="menuitem" onClick={() => go('csv')}>
+            <b>CSV</b>
+            <span>متن ساده، برای همه‌ی برنامه‌ها</span>
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * گفت‌وگوی «ورود از اکسل»: دانلود نمونه → انتخاب فایل → بررسی → ثبت.
+ *
+ * چرا دو مرحله (بررسی، بعد ثبت): کاربر باید **قبل از** نوشتن در دیتابیس
+ * ببیند چند سطر سالم است، کدام سطر خطا دارد و چرا. ثبت بی‌بازبینی روی
+ * داده‌ی مالی یعنی فاجعه‌ی خاموش.
+ */
+export function ImportDialog({ types, onDone, onClose }: {
+  types: { key: string; title: string; enabled: boolean; headers: string[]; reason: string }[];
+  onDone?: () => void;
+  onClose: () => void;
+}) {
+  const toast = useToast();
+  const usable = types.filter((t) => t.enabled);
+  const [type, setType] = React.useState(usable[0]?.key || '');
+  const [file, setFile] = React.useState<File | null>(null);
+  const [csvText, setCsvText] = React.useState('');
+  const [report, setReport] = React.useState<ImportReport | null>(null);
+  const [busy, setBusy] = React.useState(false);
+
+  const pick = async (f: File | null) => {
+    setFile(f);
+    setReport(null);
+    if (!f) { setCsvText(''); return; }
+    try {
+      const text = await readFileAsText(f);
+      setCsvText(text);
+    } catch (e: any) {
+      toast.error('فایل خوانده نشد', e?.message);
+    }
+  };
+
+  const check = async () => {
+    if (!csvText.trim()) { toast.warn('اول یک فایل انتخاب کنید.'); return; }
+    setBusy(true);
+    try {
+      setReport(await runImport(type, csvText, true));
+    } catch (e: any) {
+      toast.error('بررسی انجام نشد', e?.message);
+    } finally { setBusy(false); }
+  };
+
+  const commit = async () => {
+    setBusy(true);
+    try {
+      const r = await runImport(type, csvText, false);
+      setReport(r);
+      toast.success('ثبت انجام شد', r.message);
+      onDone?.();
+    } catch (e: any) {
+      toast.error('ثبت انجام نشد', e?.message);
+    } finally { setBusy(false); }
+  };
+
+  const tpl = async () => {
+    try { await downloadImportTemplate(type, 'xls'); toast.info('فایل نمونه دانلود شد', 'سطرها را پر کنید و همان فایل را برگردانید.'); }
+    catch (e: any) { toast.error('نمونه دانلود نشد', e?.message); }
+  };
+
+  const cfg = types.find((t) => t.key === type);
+
+  return (
+    <Modal title="ورود از اکسل" onClose={onClose} footer={
+      <>
+        <button className="btn" onClick={tpl}>دانلود فایل نمونه</button>
+        <div className="spacer" />
+        <button className="btn" onClick={check} disabled={busy || !csvText}>{busy ? '…' : 'بررسی فایل'}</button>
+        <button className="btn primary" onClick={commit}
+          disabled={busy || !report || report.dryRun === false || (report.valid ?? 0) === 0}>
+          ثبت در سیستم
+        </button>
+      </>
+    }>
+      <div className="col" style={{ gap: 12 }}>
+        <Field label="چه چیزی وارد شود؟">
+          <Select
+            value={type} onChange={(v) => { setType(v); setReport(null); }}
+            options={types.map((t) => ({ value: t.key, label: t.title + (t.enabled ? '' : ' — پشتیبانی نمی‌شود') }))}
+          />
+        </Field>
+
+        {cfg && !cfg.enabled ? (
+          <div className="small" style={{ padding: 12, borderRadius: 10, background: 'var(--warn-soft)', color: 'var(--warn)' }}>
+            {cfg.reason}
+          </div>
+        ) : null}
+
+        {cfg?.enabled ? (
+          <>
+            <div className="small muted">
+              ستون‌های لازم: {cfg.headers.join(' · ')}
+            </div>
+            <Field label="فایل CSV">
+              <input
+                className="input" type="file" accept=".csv,text/csv,text/plain"
+                onChange={(e) => pick(e.target.files?.[0] || null)}
+              />
+            </Field>
+            <p className="small muted" style={{ marginTop: -6 }}>
+              فایل را با اکسل به‌صورت «CSV UTF-8» ذخیره کنید. اگر فایل را با «ذخیره به‌عنوان متن» هم بسازید،
+              جداکننده‌ی کاما، نقطه‌ویرگول یا tab به‌صورت خودکار تشخیص داده می‌شود.
+            </p>
+
+            {report ? (
+              <div className="col" style={{ gap: 8 }}>
+                <div className="small" style={{
+                  padding: 10, borderRadius: 9,
+                  background: (report.errors?.length ?? 0) ? 'var(--danger-soft)' : 'var(--ok-soft)',
+                  color: (report.errors?.length ?? 0) ? 'var(--danger)' : 'var(--ok)',
+                }}>
+                  {report.message}
+                </div>
+                {report.errors?.length ? (
+                  <div className="small">
+                    <b>خطاها:</b>
+                    <ul style={{ margin: '4px 0 0', paddingInlineStart: 18 }}>
+                      {report.errors.slice(0, 10).map((e, i) => <li key={i}>{e}</li>)}
+                    </ul>
+                  </div>
+                ) : null}
+                {report.duplicates?.length ? (
+                  <div className="small">
+                    <b>تکراری‌ها:</b>
+                    <ul style={{ margin: '4px 0 0', paddingInlineStart: 18 }}>
+                      {report.duplicates.slice(0, 6).map((e, i) => <li key={i}>{e}</li>)}
+                    </ul>
+                  </div>
+                ) : null}
+                {report.preview?.length ? (
+                  <div className="small muted">
+                    پیش‌نمایش: {report.preview.slice(0, 5).map((p: any) => p.name).join(' · ')}
+                    {report.preview.length > 5 ? ' …' : ''}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+    </Modal>
   );
 }

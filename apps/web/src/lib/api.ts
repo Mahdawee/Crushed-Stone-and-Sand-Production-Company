@@ -85,19 +85,121 @@ export const api = {
   del: <T = any>(p: string) => request<T>('DELETE', p),
 };
 
-/** Download a file produced by the API (CSV export). */
-export async function downloadCsv(type: string) {
-  const res = await fetch(`${API_BASE}/export?type=${encodeURIComponent(type)}`, {
-    headers: { 'x-auth-token': getToken() },
-  });
-  if (!res.ok) throw new ApiError('خروجی گرفتن انجام نشد.', res.status);
+/* ================================================================== */
+/* فایل‌ها: خروجی اکسل/CSV و ورودی از اکسل                            */
+/* ================================================================== */
+
+/**
+ * دانلود یک فایل از API.
+ *
+ * ## باگ واقعی که این تابع حل می‌کند
+ * نسخه‌ی قبلی `fetch(`${API_BASE}/export?...`)` صدا می‌زد، ولی `API_BASE`
+ * خودش `/api` است → آدرس می‌شد `/api/api/export` و همیشه ۴۰۴ برمی‌گشت.
+ * برای همین دکمه‌ی «اکسل» در پنج صفحه هیچ کاری نمی‌کرد (خطا هم بی‌صدا رد
+ * می‌شد چون `catch` نداشت).
+ */
+async function downloadFile(path: string, filename: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(path, { headers: { 'x-auth-token': getToken() } });
+  } catch {
+    throw new ApiError('ارتباط با سرویس داخلی برقرار نشد.', 0);
+  }
+  if (!res.ok) {
+    let msg = 'خروجی گرفتن انجام نشد.';
+    try {
+      const j = await res.json();
+      msg = j.message || msg;
+    } catch { /* ignore */ }
+    throw new ApiError(msg, res.status);
+  }
+  /*
+   * نام فایل را از Content-Disposition می‌خوانیم (سرور نام فارسی هم
+   * می‌فرستد). اگر نبود، نام پیش‌فرض.
+   */
+  const cd = res.headers.get('content-disposition') || '';
+  const m = cd.match(/filename\*=UTF-8''([^;]+)/i) || cd.match(/filename="?([^";]+)"?/i);
+  const finalName = m ? decodeURIComponent(m[1]) : filename;
+
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${type}-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = finalName;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
+
+export type ExportFormat = 'csv' | 'xls';
+
+/**
+ * خروجی گرفتن.
+ * @param type employees | customers | sales | receipts | expenses | salaries | attendance
+ * @param format `xls` = کارپوشه‌ی اکسل (پیشنهادی) · `csv` = ساده
+ */
+export async function downloadCsv(type: string, format: ExportFormat = 'xls'): Promise<void> {
+  const ext = format === 'xls' ? 'xls' : 'csv';
+  await downloadFile(
+    `${API_BASE}/export?type=${encodeURIComponent(type)}&format=${format}`,
+    `${type}-${new Date().toISOString().slice(0, 10)}.${ext}`,
+  );
+}
+
+/** دانلود «فایل نمونه» برای ورود از اکسل */
+export async function downloadImportTemplate(type: string, format: ExportFormat = 'xls'): Promise<void> {
+  const ext = format === 'xls' ? 'xls' : 'csv';
+  await downloadFile(
+    `${API_BASE}/import/template?type=${encodeURIComponent(type)}&format=${format}`,
+    `template-${type}.${ext}`,
+  );
+}
+
+/** انواع ورودی/خروجی — برای منوها */
+export type ImportType = {
+  key: string; title: string; enabled: boolean;
+  headers: string[]; sample: string[]; hints?: string[]; reason: string;
+};
+export const listImportTypes = () => request<{ items: ImportType[] }>('GET', '/import/types');
+export const listExportTypes = () =>
+  request<{ items: { key: string; title: string; headers: string[] }[]; formats: { key: string; title: string }[] }>('GET', '/export/types');
+
+/** بررسی فایل (dryRun) یا ثبت واقعی */
+export type ImportReport = {
+  dryRun: boolean;
+  total?: number;
+  valid?: number;
+  inserted?: number;
+  errors: string[];
+  warnings: string[];
+  duplicates: string[];
+  skipped?: string[];
+  preview?: any[];
+  message: string;
+};
+export const runImport = (type: string, csv: string, dryRun: boolean) =>
+  request<ImportReport>('POST', `/import/${encodeURIComponent(type)}?x=1`, { csv, dryRun });
+
+/** خواندن فایل متنی که کاربر انتخاب کرده (CSV/متنی) */
+export function readFileAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = () => reject(new Error('فایل خوانده نشد.'));
+    r.onload = () => resolve(String(r.result || ''));
+    r.readAsText(file, 'utf-8');
+  });
+}
+
+/* ================================================================== */
+/* سطل بازیافت                                                        */
+/* ================================================================== */
+
+export type RecycleTable = { table: string; label: string; count: number; titleCol: string; extraCols: string[] };
+export const listRecycle = () => request<{ items: RecycleTable[]; total: number }>('GET', '/recycle');
+export const listDeleted = (table: string) =>
+  request<{ table: string; label: string; titleCol: string; extraCols: string[]; rows: any[] }>(
+    'GET', `/recycle/${encodeURIComponent(table)}`,
+  );
+export const restoreDeleted = (table: string, id: number) =>
+  request<{ ok: boolean; message: string }>('POST', `/recycle/${encodeURIComponent(table)}/${id}/restore`, {});

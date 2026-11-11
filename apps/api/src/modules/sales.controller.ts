@@ -3,6 +3,7 @@ import { db } from '../db';
 import { ensureSchemaAsync } from '../schema';
 import { AuthGuard, ManagerOnly } from '../common/auth';
 import { logActivity } from '../common/activity';
+import { softDelete } from '../common/soft-delete';
 import { settingsService } from '../common/settings';
 import { nextDocNo } from '../common/sequence';
 import { parseUserDate, formatDate, CalendarMode } from '../common/calendar';
@@ -56,6 +57,8 @@ export class SalesController {
     const mode = await settingsService.calendar();
     const where: string[] = [];
     const args: any[] = [];
+    /* حذف‌شده‌ها هرگز در فهرست/جمع نباشند */
+    where.push(`COALESCE("deletedAt",'')=''`);
     if (q) {
       where.push(`("no" LIKE ? OR "customerName" LIKE ? OR "driverName" LIKE ? OR "truckPlate" LIKE ? OR "destination" LIKE ? OR "materialName" LIKE ? OR "contractorName" LIKE ?)`);
       for (let i = 0; i < 7; i++) args.push(`%${q}%`);
@@ -175,12 +178,29 @@ export class SalesController {
   @Delete(':id')
   @ManagerOnly()
   async remove(@Param('id') id: string) {
-    const rows: any[] = await db().$queryRawUnsafe(`SELECT "no" FROM "Sale" WHERE "id"=?`, Number(id));
-    /* باگ: حذف شناسه‌ی ناموجود ۲۰۰ برمی‌گرداند و در «فعالیت‌ها» ثبت می‌شد */
+    /*
+     * باگ (که تست دور ۱۶ گرفت): اینجا ردیف با `deletedAt` هم شمرده می‌شد، پس
+     * حذف یک بل قبلاً حذف‌شده پیام «پیدا نشد» می‌داد (گمراه‌کننده) — و از
+     * طرفی اگر ردیف واقعاً نبود، `softDelete` خودش ۴۰۴ می‌دهد.
+     * حالا فقط وجود ردیف را می‌سنجیم، بدون شرط حذف.
+     */
+    const rows: any[] = await db().$queryRawUnsafe(`SELECT "id", "deletedAt" FROM "Sale" WHERE "id"=?`, Number(id));
     if (!rows?.length) throw new HttpException('بل فروش پیدا نشد.', 404);
-    await db().$executeRawUnsafe(`DELETE FROM "Sale" WHERE "id"=?`, Number(id));
-    await logActivity({ action: 'delete', entity: 'Sale', entityId: Number(id), detail: rows?.[0]?.no || '' });
-    return { ok: true };
+    /*
+     * حذف «نرم» — درخواست کاربر: «حذف‌ها نرم باشند... از سابقه فعالیت‌ها
+     * قابل بازیابی بدون آسیب». ردیف می‌ماند، فقط از همه‌ی فهرست‌ها و
+     * گزارش‌ها پنهان می‌شود و از «سطل بازیافت» برمی‌گردد.
+     */
+    const del = await softDelete("Sale", Number(id));
+    if (!del.ok) throw new HttpException('ردیف پیدا نشد.', 404);
+    return {
+      ok: true,
+      softDeleted: true,
+      already: del.already,
+      message: del.already
+        ? 'این بل قبلاً حذف شده بود.'
+        : 'حذف شد — از «سطل بازیافت» قابل بازگرداندن است.',
+    };
   }
 
   @Get(':id')

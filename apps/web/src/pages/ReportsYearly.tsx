@@ -1,9 +1,11 @@
 import { IconPrint } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
-import { useToast, Table, Spinner } from '../components/ui';
+import { useToast, Table, Spinner, ExportButton,
+} from '../components/ui';
 import { money } from '../lib/calendar';
 import '../styles/print.css';
+import { PrintReportHeader, PrintReportFooter } from '../components/DocHeader';
 
 export default function ReportsYearly() {
   const toast = useToast();
@@ -12,6 +14,11 @@ export default function ReportsYearly() {
   if (!d) return <Spinner />;
   return (
     <div className="col" style={{ gap: 14 }}>
+      {/* سرصفحه و پانوشت چاپ — فقط روی کاغذ دیده می‌شوند */}
+      <PrintReportHeader
+        title="راپور سالانه"
+        period="همه‌ی سال‌ها"
+      />
       <div className="card no-print">
         <div className="list-head">
           <h3 style={{ margin: 0, fontSize: '.92rem' }}>خلاصه هر سال مالی</h3>
@@ -19,6 +26,7 @@ export default function ReportsYearly() {
           <div style={{ flex: 1 }} />
           <div className="list-actions">
             <button className="btn" onClick={() => window.print()}><IconPrint size={15} /> چاپ</button>
+            <ExportButton type="sales" label="خروجی" />
           </div>
         </div>
       </div>
@@ -42,6 +50,9 @@ export default function ReportsYearly() {
           </Table>
         </div>
       </div>
+
+      {/* پانوشت چاپ: تاریخ چاپ + خط امضا — فقط روی کاغذ */}
+      <PrintReportFooter />
     </div>
   );
 }

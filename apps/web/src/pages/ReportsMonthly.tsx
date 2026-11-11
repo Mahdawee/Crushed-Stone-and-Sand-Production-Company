@@ -2,9 +2,11 @@ import { IconAlert, IconChart, IconCheck, IconPrint, IconWallet } from '../compo
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
-import { useToast, Table, Spinner, Stat } from '../components/ui';
+import { useToast, Table, Spinner, Stat, ExportButton,
+} from '../components/ui';
 import { money, todayISO, toCalendar } from '../lib/calendar';
 import '../styles/print.css';
+import { PrintReportHeader, PrintReportFooter } from '../components/DocHeader';
 
 export default function ReportsMonthly() {
   const { calendar } = useSession();
@@ -19,6 +21,11 @@ export default function ReportsMonthly() {
 
   return (
     <div className="col" style={{ gap: 14 }}>
+      {/* سرصفحه و پانوشت چاپ — فقط روی کاغذ دیده می‌شوند */}
+      <PrintReportHeader
+        title="راپور ماهانه"
+        period={`سال ${year}`}
+      />
       <div className="card no-print">
         <div className="list-head">
           <div className="pill-tabs">
@@ -30,6 +37,7 @@ export default function ReportsMonthly() {
           <span className="small muted">سود = کل فروشات − (کل مصارف + کل معاشات)</span>
           <div className="list-actions">
             <button className="btn" onClick={() => window.print()}><IconPrint size={15} /> چاپ</button>
+            <ExportButton type="sales" label="خروجی" />
           </div>
         </div>
       </div>
@@ -77,6 +85,9 @@ export default function ReportsMonthly() {
           </div>
         </div>
       </>)}
+
+      {/* پانوشت چاپ: تاریخ چاپ + خط امضا — فقط روی کاغذ */}
+      <PrintReportFooter />
     </div>
   );
 }
