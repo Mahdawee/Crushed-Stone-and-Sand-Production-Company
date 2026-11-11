@@ -229,8 +229,21 @@ async function resetThroughApi(opts, port) {
     body: JSON.stringify(opts),
   });
   const body = await r.json().catch(() => ({}));
-  if (!r.ok) return { ok: false, message: body?.message || 'صفر کردن از راه برنامه ناموفق بود.' };
-  return body;
+  /*
+   * باگ (شکار باگ دور ۳۰): در خطا فقط `message` برگردانده می‌شد و
+   * `rolledBack`/`backupFile` — که سرور برنامه حالا می‌فرستد — دور ریخته
+   * می‌شد. اپراتور نمی‌فهمید داده سالم برگشته یا باید پشتیبان را دستی
+   * بازگرداند. حالا کل بدنه پاس داده می‌شود.
+   */
+  if (!r.ok) {
+    return {
+      ...body,
+      ok: false,
+      mode: 'api',
+      message: body?.message || 'صفر کردن از راه برنامه ناموفق بود.',
+    };
+  }
+  return { ...body, mode: 'api' };
 }
 
 const server = http.createServer(async (req, res) => {
