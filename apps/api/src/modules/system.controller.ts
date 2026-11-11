@@ -8,6 +8,9 @@ import { logActivity } from '../common/activity';
 import { settingsService } from '../common/settings';
 import { dataDir } from '../db';
 import { demoCounts, hasRealData, installDemo, removeDemo } from '../common/demo';
+import {
+  RESET_PHRASE, dataInventory, resetMark, resetPlan, resetSystem, workingRowCount, type ResetOptions,
+} from '../common/reset';
 
 /**
  * خودآزمایی «بدون نصب چیز اضافه» — همان چیزی که روی کمپیوتر کاربر مهم است.
@@ -229,6 +232,62 @@ export class SystemController {
         ? `${r.total} ردیف نمونه به «سطل بازیافت» رفت (قابل بازگرداندن).`
         : 'داده‌ی نمونه‌ای برای حذف نبود.',
     };
+  }
+
+  // ------------------------------ zero / reset -----------------------------
+  /**
+   * «صفر کردن کامل سیستم» — فقط از راه ابزار بیرونی `tools/reset-ui`.
+   *
+   * درخواست کاربر: «صفر کردن تمام داده‌ها و تحویل سیستم آک، به‌صورت یک ابزار
+   * بیرونی در پوشه‌ی tools، نه در داخل برنامه».
+   *
+   * پس چرا این مسیر در API هست؟ چون تنها راه **اجرای مطمئن** روی یک برنامه‌ی
+   * نصب‌شده همی�ن است: دیتابیس در حال اجرا قفل است و فایلش دست پراسس است؛
+   * پاک کردن فایل از بیرون، برنامه‌ی در حال اجرا را با «دیتابیس قفل‌شده» یا
+   * داده‌ی نیمه‌پاک رها می‌کند. ابزار بیرونی صفحه را نشان می‌دهد، تأیید
+   * می‌گیرد و همین یک مسیر را صدا می‌زند.
+   *
+   * حفاظ‌ها (همه قبل از اولین تغییر):
+   *   • فقط `127.0.0.1` (برنامه آفلاین است؛ درخواست از شبکه رد می‌شود)
+   *   • فقط نقش مدیر
+   *   • عبارت تأیید `صفر کردن`
+   *   • پشتیبان اجباری، که بدون آن هیچ‌چیز پاک نمی‌شود
+   */
+  @Get('reset/info')
+  @ManagerOnly()
+  async resetInfo() {
+    const inv = await dataInventory();
+    const plan = await resetPlan();
+    return {
+      ...inv,
+      plan,
+      mark: resetMark(),
+      phrase: RESET_PHRASE,
+      /* آک بودن: صفر ردیف داده‌ی کاری */
+      clean: (await workingRowCount()) === 0,
+    };
+  }
+
+  @Post('reset')
+  @ManagerOnly()
+  async resetNow(@Req() req: any, @Body() body: ResetOptions) {
+    /*
+     * فقط از همین کمپیوتر: آدرس شبکه (مثلاً 192.168.1.5:4317) همان مسیر را
+     * اجرا می‌کند، و پاک‌کردن کل دیتابیس از روی شبکه نباید ممکن باشد.
+     */
+    const ip = String(req?.ip || req?.socket?.remoteAddress || '');
+    if (!['127.0.0.1', '::1', '::ffff:127.0.0.1', ''].some((a) => ip.endsWith(a))) {
+      throw new HttpException('این عملیات فقط از خودِ همین کمپیوتر ممکن است.', 403);
+    }
+    const who = userOf(req) || 'system';
+    const r = await resetSystem({
+      ...(body || {}),
+      confirm: String(body?.confirm ?? ''),
+      operator: body?.operator || who,
+    });
+    if (!r.ok) throw new HttpException(r.message, 400);
+    /* پیام در سابقه: بعد از پاک شدن ActivityLog، این تنها جای «چه شد»ست */
+    return r;
   }
 
   // -------------------------------- backup ---------------------------------

@@ -681,6 +681,14 @@ pub fn run_recovery(app: &tauri::AppHandle, data_dir: &Path, extra_args: &[&str]
     if let Some(pk) = crate::seal::unsealed_public_key() {
         cmd.env("FD_SEALED_PUBLIC_KEY", pk);
     }
+    /*
+     * کلید «صفر کردن داده» — ابزار بیرونی از همین راه کلید را می‌گیرد
+     * (`FARDAY_RESET_KEY`). جدا از کلید لایسنس است تا اختیار پاک‌کردن داده
+     * با اختیار امضای لایسنس قاطی نشود.
+     */
+    if let Some(rk) = crate::seal::unsealed_reset_key() {
+        cmd.env("FARDAY_RESET_KEY", rk);
+    }
 
     #[cfg(windows)]
     {

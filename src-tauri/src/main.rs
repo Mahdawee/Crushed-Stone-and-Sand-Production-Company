@@ -91,6 +91,8 @@ fn recovery(app: tauri::AppHandle, arg: String) {
     let extra: &[&str] = match arg.as_str() {
         "--reset-admin" => &["--reset-admin"],
         "--list-backups" => &["--list-backups"],
+        /* فقط چاپ کلید صفر کردن — هیچ داده‌ای تغییر نمی‌کند */
+        "--print-reset-key" => &["--print-reset-key"],
         _ => {
             api_sidecar::log_line(&data_dir, "درخواست نجات نامعتبر نادیده گرفته شد");
             return;
@@ -108,6 +110,35 @@ fn main() {
      * حتی وقتی WebView2 خراب است هم کار می‌کند.
      */
     if cli_mode() {
+        /*
+         * `--print-reset-key`: چاپ کلید «صفر کردن داده» (مُهرشده در باینری)
+         * برای ابزار بیرونی در پوشه‌ی tools.
+         *
+         * چرا این سوئیچ لازم است: ابزار صفر کردن باید ثابت کند مالکِ همین
+         * نسخه است. کلید داخل باینری است و هیچ فایلی کنار برنامه نیست که
+         * بشود با Notepad عوضش کرد. اینجا فقط چاپ می‌شود — بعد از تأیید
+         * صریح، و بدون تغییر هیچ داده‌ای.
+         */
+        if std::env::args().any(|a| a == "--print-reset-key") {
+            let data_dir = std::env::var("APPDATA")
+                .map(|a| std::path::PathBuf::from(a).join("af.farday.roshan"))
+                .unwrap_or_else(|_| std::env::temp_dir().join("af.farday.roshan"));
+            match crate::seal::unsealed_reset_key() {
+                Some(k) => {
+                    println!("FARDAY_RESET_KEY {k}");
+                    println!();
+                    println!("این کلید را در ابزار «صفر کردن سیستم» (tools/reset-ui) بچسبانید.");
+                    println!("فقط برای همین نسخه معتبر است و اجازه‌ی پاک‌کردن هیچ‌چیز را جز با تأیید صریح نمی‌دهد.");
+                    println!("مسیر داده: {}", data_dir.display());
+                    std::process::exit(0);
+                }
+                None => {
+                    eprintln!("⛔ این نسخه کلید صفر کردن ندارد (نسخه‌ی مُهرنشده / توسعه).");
+                    eprintln!("   ابزار صفر کردن روی این نسخه کار نمی‌کند (کلید هنگام ساخت مُهر نشده).");
+                    std::process::exit(2);
+                }
+            }
+        }
         let data_dir = std::env::var("APPDATA")
             .map(|a| std::path::PathBuf::from(a).join("af.farday.roshan"))
             .unwrap_or_else(|_| std::env::temp_dir().join("af.farday.roshan"));
@@ -433,11 +464,13 @@ const ERROR_PAGE: &str = r#"<html dir="rtl" lang="fa"><head><meta charset="utf-8
 <div class="btns">
   <button class="btn" onclick="__fd('--reset-admin')">بازنشانی رمز مدیر (admin / admin123)</button>
   <button class="btn" onclick="__fd('--list-backups')">دیدن پشتیبان‌های موجود</button>
+  <button class="btn" onclick="__fd('--print-reset-key')">نمایش کلید صفر کردن داده</button>
   <button class="btn ghost" onclick="__fd('')">باز کردن پوشه داده و لاگ‌ها</button>
 </div>
 <p class="hint">اگر دکمه‌ها کار نکردند، همین کارها را از خط فرمان بزنید (بدون انترنت):<br>
 <code>%LOCALAPPDATA%\Programs\Farday Roshan\Farday Roshan.exe --cli --reset-admin</code><br>
-<code>%LOCALAPPDATA%\Programs\Farday Roshan\Farday Roshan.exe --cli --list-backups</code></p>
+<code>%LOCALAPPDATA%\Programs\Farday Roshan\Farday Roshan.exe --cli --list-backups</code><br>
+<code>%LOCALAPPDATA%\Programs\Farday Roshan\Farday Roshan.exe --cli --print-reset-key</code></p>
 <script>
   /* این صفحه داخل پنجره‌ی Tauri است؛ invoke به پوسته می‌رسد (بدون اینترنت) */
   function __fd(arg) {

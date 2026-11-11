@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────
+#  اجراکننده‌ی ابزار «صفر کردن سیستم» (لینوکس/مک)
+#
+#  درخواست کاربر: «برای ابزار لایسنس یک اجراکننده بساز».
+#  همین فایل را اجرا کنید:  ./tools/license/start.sh   (یا دوبار کلیک)
+# ─────────────────────────────────────────────────────────────────────
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/../.." && pwd)"
+cd "$root"
+
+PORT="${1:-4322}"
+export FD_RESET_UI_PORT="$PORT"
+
+if ! command -v node >/dev/null 2>&1; then
+  echo
+  echo "  ⛔ Node.js پیدا نشد. Node 22 یا بالاتر نصب کنید (nodejs.org)."
+  echo "     اگر نسخه‌ی نصب‌شده‌ی برنامه را دارید: src-tauri/api/node"
+  echo
+  # اگر نود همراه بسته باشد، از همان استفاده کن
+  for cand in "$root/src-tauri/api/node" "$HOME/.local/share/af.farday.roshan/node"; do
+    if [ -x "$cand" ]; then exec "$cand" "$here/server.mjs"; fi
+  done
+  exit 1
+fi
+
+echo
+echo "  ابزار «صفر کردن سیستم» — فردای روشن"
+echo "  آدرس:  http://127.0.0.1:$PORT"
+echo "  برای بستن: Ctrl+C"
+echo
+
+# باز کردن مرورگر، اگر ابزاری برای این کار هست (خطا مهم نیست)
+(
+  sleep 1
+  if command -v xdg-open >/dev/null 2>&1; then xdg-open "http://127.0.0.1:$PORT/" >/dev/null 2>&1 || true
+  elif command -v open >/dev/null 2>&1; then open "http://127.0.0.1:$PORT/" >/dev/null 2>&1 || true
+  fi
+) &
+
+exec node "$here/server.mjs"

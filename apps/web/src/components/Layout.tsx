@@ -3,8 +3,9 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useSession, applyThemeToDocument } from '../lib/session';
 import { formatDate, todayISO } from '../lib/calendar';
 import Notifications from './Notifications';
+import LicenseAlert, { licenseStrip } from './LicenseAlert';
 import {
-  IconBuilding, IconCalendar, IconCash, IconChart, IconChevron, IconClose, IconCoins,
+  IconAlert, IconBuilding, IconCalendar, IconCash, IconChart, IconChevron, IconClose, IconCoins,
   IconContact, IconContrast, IconDashboard, IconDatabase, IconHelp, IconHistory, IconLock, IconLogout,
   IconMenu, IconMoon, IconPanel, IconPlus, IconReceipt, IconSearchDoc, IconSettings, IconSun,
   IconTrend, IconTruck, IconUsers, IconWallet,
@@ -109,7 +110,7 @@ const OPEN_KEY = 'farday.sidebarGroupsOpen';
 const MQ_DRAWER = '(max-width: 1100px)';
 
 export default function Layout() {
-  const { user, logout, isManager, settings, saveSettings, calendar } = useSession();
+  const { user, logout, isManager, settings, saveSettings, calendar, license } = useSession();
   const loc = useLocation();
   const nav = useNavigate();
 
@@ -130,6 +131,13 @@ export default function Layout() {
      */
     try { sessionStorage.setItem('farday.license.returnTo', p); } catch { /* بی‌اهمیت */ }
   }, [loc.pathname]);
+  /*
+   * نشانگر دائمی لایسنس در نوار بالا + بازکردن اجباری هشدار.
+   * `strip` فقط وقتی چیزی برای گفتن هست مقدار دارد (لایسنس سالم = هیچ).
+   */
+  const strip = licenseStrip(license);
+  const [alertOpen, setAlertOpen] = useState(false);
+
   /** تم فعلی (تیره/برجسته/روشن) — از data-theme خوانده می‌شود تا با Settings هم‌خوان بماند */
   const themeMode = (document.documentElement.dataset.theme || 'light') as 'light' | 'vivid' | 'dark';
 
@@ -411,6 +419,18 @@ export default function Layout() {
             {formatDate(todayISO(), calendar, true)}
           </span>
 
+          {strip ? (
+            <button
+              type="button"
+              className={`lic-strip no-print tone-${strip.tone}`}
+              onClick={() => setAlertOpen(true)}
+              title={strip.title}
+            >
+              <IconAlert size={13} />
+              <span>{strip.text}</span>
+            </button>
+          ) : null}
+
           <Notifications />
 
           <button type="button" className={`btn ghost icon theme-btn th-${themeMode}`} onClick={toggleTheme}
@@ -458,6 +478,12 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+
+      {/*
+        هشدار لایسنس — فقط بعد از تصمیم کاربر (یا «بعداً») بسته می‌شود.
+        `reopen` برای این است که دکمه‌ی نوار بالا بعد از «بعداً» هم کار کند.
+      */}
+      {alertOpen ? <LicenseAlert onClose={() => setAlertOpen(false)} /> : null}
     </div>
   );
 }

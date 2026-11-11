@@ -131,9 +131,56 @@ pub fn is_sealed() -> bool {
     unsealed_public_key().is_some()
 }
 
+/* ------------------------------------------------------------------ */
+/* مُهر کلید صفر کردن داده (Reset Key)                                 */
+/* ------------------------------------------------------------------ */
+
+/// کلید «صفر کردن داده» — داخل باینری، جدا از کلید لایسنس.
+///
+/// ## چرا دو کلید جدا
+/// ابزار بیرونیِ «صفر کردن سیستم» داده‌ی مشتری را پاک می‌کند؛ اختیار این کار
+/// نباید همان اختیار امضای لایسنس باشد (اپراتور نصب ≠ فروشنده‌ی لایسنس).
+/// هر دو کلید با همان مکانیزم مُهر می‌شوند، ولی مقدارشان متفاوت است.
+///
+/// `None` = هنگام ساخت کلیدی نبود؛ در آن حالت ابزار صفر کردن کار نمی‌کند و
+/// دلیلش را روشن می‌گوید (نه «خطای نامشخص»).
+pub fn unsealed_reset_key() -> Option<&'static str> {
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let raw = decode(SEALED_RESET_KEY)?;
+            let expected = RESET_FINGERPRINT;
+            if expected.is_empty() {
+                return None;
+            }
+            let actual = sha256_hex(&raw);
+            if actual != expected {
+                /* باینری وصله شده یا کلید عوض شده — قبول نکن */
+                return None;
+            }
+            String::from_utf8(raw).ok().map(|s| s.trim().to_string())
+        })
+        .as_deref()
+}
+
+/// آیا این نسخه کلید صفر کردن دارد؟ (وضعیت در `/api/health`)
+pub fn has_reset_key() -> bool {
+    unsealed_reset_key().is_some()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// آینه‌ی `mix` در build.rs — باید دقیقاً یکی باشد، وگرنه کلیدِ مُهرشده
+    /// هنگام ساخت با کلیدِ بازشده در زمان اجرا فرق می‌کند و همه‌چیز None می‌شود.
+    #[test]
+    fn mix_is_symmetric() {
+        let data = b"FRD-RESET-EXAMPLE";
+        let sealed: Vec<u8> = data.iter().enumerate().map(|(i, b)| mix(*b, i)).collect();
+        let back: Vec<u8> = sealed.iter().enumerate().map(|(i, b)| mix(*b, i)).collect();
+        assert_eq!(back, data.to_vec());
+    }
 
     #[test]
     fn sha256_known_vectors() {

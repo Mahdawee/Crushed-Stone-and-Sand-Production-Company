@@ -49,3 +49,9 @@ license-keys/
 # خروجی تست‌های DOM
 scripts/ui-check/.out-*
 scripts/ui-check/.mock
+
+# کلید «صفر کردن سیستم» — مثل کلید خصوصی لایسنس، هرگز در مخزن نباشد.
+# نبودنش برنامه را نمی‌شکند؛ فقط ابزار tools/reset-ui روی نسخه‌ی مُهرشده
+# کار نمی‌کند و پیام روشن می‌دهد.
+src-tauri/seal/reset-key.txt
+reset-key.txt

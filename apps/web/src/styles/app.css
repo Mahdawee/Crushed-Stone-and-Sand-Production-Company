@@ -1255,3 +1255,76 @@ table.tbl tfoot .computed-box { background-color: color-mix(in srgb, var(--accen
   border: 1px solid color-mix(in srgb, var(--ok) 26%, transparent);
 }
 .lic-back .btn { display: inline-flex; align-items: center; gap: 5px; }
+
+/* ───────────────────────── هشدار لایسنس (alert) ─────────────────────────
+   درخواست کاربر: «نزدیک شدن ختم تاریخ لایسنس یا استفاده از لایسنس آزمایشی
+   در چیزی شبیه alert نشان داده شود، آن‌گونه که حرفه‌ای است.»
+
+   طراحی: یک کارت وسط‌صفحه با نوار رنگی بالا، آیکن، سه رنگ معنا‌دار
+   (قرمز=فوری، زرد=هشدار، آبی=آزمایشی) و یک اقدام اصلی. عمداً از `toast`
+   جدا است: toast می‌رود، این تا وقتی کاربر تصمیم بگیرد می‌ماند. */
+.lic-alert-back {
+  position: fixed; inset: 0; z-index: 120;
+  background: color-mix(in srgb, #06131a 62%, transparent);
+  backdrop-filter: blur(2px);
+  display: grid; place-items: center; padding: 18px;
+  animation: licAlertFade .16s ease both;
+}
+@keyframes licAlertFade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes licAlertIn { from { opacity: 0; transform: translateY(10px) scale(.985) } to { opacity: 1; transform: none } }
+
+.lic-alert {
+  width: min(560px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 16px);
+  box-shadow: 0 24px 70px rgba(4, 18, 24, .45);
+  padding: 18px 18px 14px;
+  animation: licAlertIn .18s ease both;
+  position: relative;
+  overflow: hidden;
+}
+/* نوار رنگی بالای کارت — همان چیزی که «نوع» هشدار را در یک نگاه می‌گوید */
+.lic-alert::before {
+  content: ''; position: absolute; inset-inline: 0; inset-block-start: 0; height: 4px;
+  background: var(--accent);
+}
+.lic-alert.tone-bad::before { background: var(--danger); }
+.lic-alert.tone-warn::before { background: var(--warn); }
+.lic-alert.tone-info::before { background: var(--accent); }
+
+.lic-alert-head { display: flex; align-items: flex-start; gap: 11px; }
+.lic-alert-ico {
+  width: 40px; height: 40px; flex: 0 0 40px; border-radius: 12px; display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent-dark);
+}
+.lic-alert.tone-bad .lic-alert-ico { background: var(--danger-soft); color: var(--danger); }
+.lic-alert.tone-warn .lic-alert-ico { background: var(--warn-soft); color: var(--warn); }
+.lic-alert-t { min-width: 0; flex: 1; }
+.lic-alert-t h2 { margin: 2px 0 0; font-size: 1rem; line-height: 1.5; }
+.lic-alert-head .btn { margin-inline-start: auto; }
+
+.lic-alert-body { margin: 12px 0 0; line-height: 2; font-size: .86rem; color: var(--text-2); }
+.lic-alert-meta {
+  display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 10px;
+  font-size: .78rem; color: var(--text-2);
+}
+.lic-alert-meta b { color: var(--text); }
+.lic-alert-actions {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-top: 16px; padding-top: 12px; border-block-start: 1px solid var(--border);
+}
+.lic-alert-actions .small { margin-inline-start: auto; }
+.lic-alert-foot { margin: 10px 0 0; }
+
+/* نشانگر دائمی در نوار بالا — تا وقتی هشدار بسته شده هم یادآوری بماند */
+.lic-strip {
+  display: flex; align-items: center; gap: 7px;
+  padding: 3px 10px; border-radius: 999px; font-size: .72rem; font-weight: 600;
+  border: 1px solid transparent; white-space: nowrap; cursor: pointer;
+}
+.lic-strip.tone-bad { background: var(--danger-soft); color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, transparent); }
+.lic-strip.tone-warn { background: var(--warn-soft); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+.lic-strip.tone-info { background: var(--accent-soft); color: var(--accent-dark); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+html[data-theme='dark'] .lic-strip.tone-info { color: #8ff0e2; }
+@media (max-width: 720px) { .lic-strip { display: none; } }

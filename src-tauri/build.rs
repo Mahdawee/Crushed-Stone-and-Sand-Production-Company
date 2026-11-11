@@ -86,7 +86,34 @@ fn main() {
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".into()));
     let key_file = manifest.join("seal").join("public-key.txt");
     println!("cargo:rerun-if-changed={}", key_file.display());
+    /* کلید «صفر کردن داده» — جدا از کلید لایسنس (دور ۲۲) */
+    let reset_file = manifest.join("seal").join("reset-key.txt");
+    println!("cargo:rerun-if-changed={}", reset_file.display());
     println!("cargo:rerun-if-changed=build.rs");
+
+    /*
+     * ── کلید صفر کردن داده (Reset Key) ──
+     *
+     * ابزار بیرونی «صفر کردن سیستم» باید ثابت کند که مالکِ همین نسخه است.
+     * اگر این کلید **داخل باینری** نباشد و فقط فایل کنار برنامه باشد، هر
+     * کسی می‌تواند آن را عوض کند و با ابزار خودش داده‌ی مشتری را پاک کند.
+     * با مُهر شدن، عوض کردنش نیاز به وصله‌کردن فایل اجرایی دارد.
+     *
+     * نبودنش برنامه را نمی‌شکند: `reset_key_present()` → false و ابزار
+     * صفر کردن با پیام روشن «این نسخه مُهر نشده» کار نمی‌کند.
+     */
+    let reset_raw = fs::read_to_string(&reset_file).unwrap_or_default();
+    let reset_key = reset_raw.trim().as_bytes();
+    let (sealed_reset, reset_fp) = if reset_key.is_empty() {
+        println!("cargo:warning=کلید صفر کردن داده (src-tauri/seal/reset-key.txt) نیست — ابزار صفر کردن روی این نسخه کار نمی‌کند (فقط برای توسعه)");
+        (Vec::new(), String::new())
+    } else {
+        let mut out = Vec::with_capacity(reset_key.len());
+        for (i, b) in reset_key.iter().enumerate() {
+            out.push(mix(*b, i));
+        }
+        (out, sha256_hex(reset_key))
+    };
 
     let raw = fs::read_to_string(&key_file).unwrap_or_default();
     let key = raw.trim().as_bytes();
@@ -102,9 +129,12 @@ fn main() {
     };
 
     let body = format!(
-        "pub const SEALED_PUBLIC_KEY: &[u8] = &[{}];\npub const SEAL_FINGERPRINT: &str = {:?};\n",
+        "pub const SEALED_PUBLIC_KEY: &[u8] = &[{}];\npub const SEAL_FINGERPRINT: &str = {:?};\n\
+         pub const SEALED_RESET_KEY: &[u8] = &[{}];\npub const RESET_FINGERPRINT: &str = {:?};\n",
         sealed.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(", "),
-        fingerprint
+        fingerprint,
+        sealed_reset.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(", "),
+        reset_fp
     );
     let out_file = PathBuf::from(env::var("OUT_DIR").unwrap_or_else(|_| ".".into())).join("seal.rs");
     if let Err(e) = fs::write(&out_file, body) {
