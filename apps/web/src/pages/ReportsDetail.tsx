@@ -146,9 +146,13 @@ export default function ReportsDetail() {
             </>
           )}
           {tab === 'customer' && (
-            <div className="card"><div className="card-h"><h3>فروشات به مشتری</h3></div><div className="card-b tight">
+            <div className="card"><div className="card-h"><h3>فروشات به مشتری</h3><div style={{ flex: 1 }} />
+              {Number(d.byCustomerTotal || 0) > (d.byCustomerTop || []).length
+                ? <span className="small muted">نمایش {d.byCustomerTop.length} مشتریِ بزرگ‌تر از {d.byCustomerTotal} — برای همه، «خروجی» بگیرید</span>
+                : null}
+            </div><div className="card-b tight">
               <Table head={["مشتری", "اسناد", "متراژ", "مجموع فروش", "از آن قرضه", ""]}>
-                {d.byCustomer.map((r: any, i: number) => (
+                {(d.byCustomerTop || d.byCustomer || []).map((r: any, i: number) => (
                   <tr key={i}><td>{r.name}</td><td className="num">{r.docs}</td><td className="num">{money(r.volume)}</td>
                     <td className="num" style={{ fontWeight: 700 }}>{money(r.total)}</td>
                     <td className="num" style={{ color: 'var(--danger)' }}>{money(r.credit)}</td><td /></tr>

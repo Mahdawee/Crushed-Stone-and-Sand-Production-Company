@@ -118,6 +118,17 @@ check('صفحه هشدار صریح «برگشت‌ناپذیر» دارد', /ب
 check('صفحه دو تأیید می‌گیرد (تیک + عبارت)', /id="ack"/.test(html) && /id="confirm"/.test(html));
 check('کلید صفر کردن در صفحه نیست (دیگر لازم نیست)', !/id="resetKey"/.test(html) && !/print-reset-key/.test(html));
 check('صفحه صریح می‌گوید «کلید لازم نیست»', /کلید لازم نیست/.test(html));
+/*
+ * باگ کاربر (`isWalkIn`): صفحه باید پیش از تأیید بگوید دیتابیس آماده است یا
+ * نه، و دکمه‌ی اجرا را در حالت ناآماده قفل کند.
+ */
+check('صفحه جعبه‌ی «دیتابیس آماده نیست» دارد', /id="preflightBox"/.test(html) && /preflightList/.test(html));
+check('دکمه‌ی اجرا در حالت ناآماده قفل می‌شود', /state\.preflight\.ok !== false/.test(html));
+{
+  const st0 = await (await fetch(BASE + '/api/state')).json();
+  check('وضعیت، نتیجه‌ی پیش‌بررسی را برمی‌گرداند', st0.preflight && st0.preflight.ok === true,
+    JSON.stringify(st0.preflight));
+}
 check('صفحه‌ی نمایش بخش «گزارش عملیات» دارد', /گزارش عملیات/.test(html));
 
 const st = await (await fetch(BASE + '/api/state')).json();

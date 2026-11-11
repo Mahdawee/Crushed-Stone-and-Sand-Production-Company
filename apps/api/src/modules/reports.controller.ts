@@ -537,9 +537,21 @@ export class ReportsController {
       }))
       .filter((d) => Math.abs(d.balance) > 0.001)
       .sort((a, b) => b.balance - a.balance);
+    /*
+     * ── کارایی پاسخ (شکار باگ دور ۲۹) ──────────────────────────────────────
+     * «تفصیلی» فهرست «فروش به تفکیک مشتری» را برای هر مشتریِ بازه برمی‌گرداند؛
+     * با هزاران مشتری این پاسخ چند مگابایت می‌شد و مرورگر کند می‌شد. UI فقط
+     * ۵۰ سطر اول را نشان می‌دهد، پس بقیه هم بی‌فایده منتقل می‌شدند. حالا
+     * همه‌ی ردیف‌ها برای خروجی/چاپ در دسترس‌اند (`*Total`) ولی بدنه فقط
+     * ۱۰۰ ردیف اول را می‌فرستد.
+     */
+    const TOP = 100;
     return {
       from: start, to: end, calendar: mode,
-      byMaterial, byCustomer, byCategory, byPayer, byContractor, salarySummary,
+      byMaterial, byCustomer,
+      byCustomerTop: byCustomer.slice(0, TOP),
+      byCustomerTotal: byCustomer.length,
+      byCategory, byPayer, byContractor, salarySummary,
       byRelated, relatedTotals,
       debtors: debts, debtTotal: r2(debts.reduce((a, d) => a + d.balance, 0)),
     };

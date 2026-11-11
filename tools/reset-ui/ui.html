@@ -133,6 +133,20 @@
     <div class="card-h"><h2>۳) تأیید صریح</h2><div class="fill"></div>
       <span class="small muted">صفر کردن بدون این دو، اجرا نمی‌شود</span></div>
     <div class="card-b">
+      <!--
+        وقتی دیتابیس آماده نیست (خراب/ناشناخته/قفل)، ابزار از **اول** می‌گوید
+        و دکمه‌ی اجرا را قفل می‌کند. پیش‌تر اپراتور تأیید می‌کرد و بعد وسط کار
+        خطا می‌گرفت و دیتابیس نیمه‌کاره می‌ماند (باگ isWalkIn).
+      -->
+      <div id="preflightBox" class="warnbox" style="display:none;margin-bottom:12px">
+        <b>دیتابیس آماده نیست — صفر کردن انجام نمی‌شود.</b>
+        <div id="preflightList" class="small" style="margin-top:6px;line-height:1.9"></div>
+        <div class="hint" style="margin-top:6px">
+          هیچ داده‌ای تغییر نمی‌کند. اگر دیتابیس خراب است، از «ابزار نجات» استفاده کنید:
+          <span class="mono" dir="ltr">--recovery --repair-db</span>
+        </div>
+      </div>
+
       <div id="appOpenBox" class="warnbox" style="display:none;margin-bottom:12px">
         <b>برنامه باز است.</b> صفر کردن از راه سرویس خودِ برنامه انجام می‌شود.
         نام کاربری و رمز مدیر را وارد کنید (پیش‌فرض <span class="mono">admin / admin123</span>).
@@ -263,6 +277,9 @@ function render(){
     : 'سیستم آک است؛ صفر کردن فقط فهرست‌های پیش‌فرض و کاربر مدیر را بازسازی می‌کند.';
 
   $('appOpenBox').style.display = open ? '' : 'none';
+  const pre = st.preflight || { ok: true, problems: [] };
+  $('preflightBox').style.display = pre.ok ? 'none' : '';
+  $('preflightList').innerHTML = (pre.problems || []).map((x) => `• ${String(x).replace(/[<>]/g, '')}`).join('<br>');
   syncBtn();
 }
 
@@ -270,8 +287,9 @@ function syncBtn(){
   const ack = $('ack').checked;
   const typed = $('confirm').value.trim() === 'صفر کردن';
   const passOk = !state.appOpen || $('password').value.length > 0;
+  const ready = !state.preflight || state.preflight.ok !== false;
   /* کلید لازم نیست — فقط تیک، عبارت تأیید، و (در حالت باز) رمز مدیر */
-  $('go').disabled = !(ack && typed && passOk);
+  $('go').disabled = !(ack && typed && passOk && ready);
   $('confirmHint').textContent = typed ? '' : 'با حروف فارسی: صفر کردن';
 }
 
@@ -309,9 +327,18 @@ async function run(){
     const r = await api('/api/reset', body);
     lastReport = r;
     showResult(r);
-    toast(r.message, 'ok');
+    /*
+     * پیام نتیجه از خودِ هسته می‌آید: یا «صفر شد»، یا «انجام نشد و دیتابیس
+     * دست‌نخورده/برگردانده شد». پیش‌تر همیشه «ok» سبز نشان داده می‌شد حتی
+     * وقتی عملیات ناموفق بود.
+     */
+    toast(r.message, r.ok === false ? 'bad' : 'ok');
+    if (r.ok === false) {
+      const details = (r.problems || []).map((x) => `• ${String(x)}`).join('\n');
+      toast(details ? `جزئیات:\n${details}` : r.message, 'bad');
+    }
     /* بعد از صفر کردن، فیلدها پاک می‌شوند تا «دو بار زدن» اتفاق نیفتد */
-    $('confirm').value = ''; $('ack').checked = false;
+    if (r.ok !== false) { $('confirm').value = ''; $('ack').checked = false; }
     await load();
   } catch (e){
     toast(e.message, 'bad');
@@ -328,11 +355,13 @@ async function run(){
 
 function showResult(r){
   $('resultCard').style.display = '';
-  $('resultBadge').className = 'badge ok';
-  $('resultBadge').textContent = 'انجام شد';
+  /* نتیجه‌ی ناموفق نباید سبز «انجام شد» نشان داده شود */
+  const bad = r && r.ok === false;
+  $('resultBadge').className = 'badge ' + (bad ? 'bad' : 'ok');
+  $('resultBadge').textContent = bad ? (r.rolledBack ? 'انجام نشد — برگردانده شد' : 'انجام نشد') : 'انجام شد';
   const rows = Object.entries(r.counts || {}).sort((a, b) => b[1] - a[1]);
   $('resultBox').innerHTML = `
-    <div class="okbox"><b>${String(r.message || '').replace(/[<>]/g, '')}</b></div>
+    <div class="${bad ? 'warnbox' : 'okbox'}"><b>${String(r.message || '').replace(/[<>]/g, '')}</b></div>
     <div class="kv" style="margin-top:12px">
       <span class="muted">زمان</span><b class="mono small">${r.at || ''}</b>
       <span class="muted">اپراتور</span><b>${(r.operator || '—')}</b>

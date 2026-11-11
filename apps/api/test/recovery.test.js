@@ -344,6 +344,30 @@ async function main() {
     check('«جمعه» در سبد تعطیل شمرده می‌شود', row?.holiday === 1, `holiday=${row?.holiday}`);
     check('هیچ وضعیت ناشناخته‌ای در گزارش نیست', row?.unknown === 0, `unknown=${row?.unknown}`);
 
+    console.log('\n— ۱۰) تاریخ‌های خراب در دیتابیس نباید گزارش‌ها را ۵۰۰ کنند —');
+    /*
+     * باگ (شکار باگ دور ۲۹): یک سند با تاریخ نامعتبر (از ورود اکسل یا نسخه‌ی
+     * قدیمی) باعث می‌شد `toJalaali(NaN)` خطای «Invalid Jalaali year» بدهد و
+     * راپور **سالانه** کامل ۵۰۰ شود — یعنی یک ردیف خراب، کل گزارش سال را
+     * از کار می‌انداخت. حالا تاریخ نامعتبر بی‌اثر است، نه کشنده.
+     */
+    await post('/sales', { date: '1404/06/15', volume: 1, unitPrice: 100, paymentType: 'cash' });
+    {
+      const { DatabaseSync } = require('node:sqlite');
+      const w = new DatabaseSync(path.join(impDir, 'farday.db'));
+      try {
+        w.exec(`UPDATE "Sale" SET "date"='garbage' WHERE "id"=(SELECT MAX("id") FROM "Sale")`);
+        w.exec(`UPDATE "Sale" SET "date"='1404/07/01' WHERE "id"=(SELECT MIN("id") FROM "Sale")`);
+      } finally { w.close(); }
+    }
+    const boom = [];
+    for (const u of ['/reports/yearly', '/reports/monthly', '/reports/daily', '/reports/breakdown', '/reports/dashboard', '/sales']) {
+      const r = await fetch(B3 + u, { headers: { 'x-auth-token': tk3 } });
+      if (r.status >= 500) boom.push(`${u} → ${r.status}`);
+      await r.text();
+    }
+    check('گزارش‌ها با تاریخ خراب در دیتابیس ۵۰۰ نمی‌دهند', boom.length === 0, boom.join(' | '));
+
     try { child3.kill('SIGKILL'); } catch { /* ignore */ }
   } finally {
     try { child.kill('SIGKILL'); } catch { /* ignore */ }

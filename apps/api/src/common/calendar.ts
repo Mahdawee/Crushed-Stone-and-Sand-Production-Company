@@ -44,10 +44,33 @@ export function isValidISO(isoStr: string): boolean {
   return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
 }
 
-/** Gregorian ISO → {y,m,d} in the requested calendar. */
+/**
+ * Gregorian ISO → {y,m,d} in the requested calendar.
+ *
+ * ── باگ (شکار باگ دور ۲۹) ────────────────────────────────────────────────
+ * تاریخِ نامعتبر در دیتابیس (مثلاً `garbage` یا `1404/06/15` که از ورود اکسل
+ * یا نسخه‌های قدیمی مانده) این‌جا به `toJalaali(NaN, NaN, NaN)` می‌رفت و
+ * کتابخانه `RangeError: Invalid Jalaali year` می‌داد. نتیجه: راپور
+ * **سالانه** با یک ردیف خراب کامل ۵۰۰ می‌شد — یعنی یک سند قدیمیِ معیوب
+ * کل گزارش سال را از کار می‌انداخت.
+ *
+ * حالا برای ورودی نامعتبر، امروز برگردانده می‌شود (همان قاعده‌ای که
+ * `formatDate` از قبل داشت: رشته‌ی نامعتبر → خالی/بی‌اثر) تا گزارش‌ها
+ * هرگز به‌خاطر یک ردیف خراب از کار نیفتند.
+ */
 export function toCalendar(isoStr: string, mode: CalendarMode) {
-  const { y, m, d } = splitISO(isoStr);
-  return mode === 'jalali' ? jalaali.toJalaali(y, m, d) : { jy: y, jm: m, jd: d };
+  const src = isValidISO(isoStr) ? isoStr : todayISO();
+  const { y, m, d } = splitISO(src);
+  if (mode === 'jalali') {
+    try {
+      return jalaali.toJalaali(y, m, d);
+    } catch {
+      /* بیرون از بازه‌ی پشتیبانی‌شده‌ی کتابخانه — به امروز برمی‌گردیم */
+      const t = splitISO(todayISO());
+      return jalaali.toJalaali(t.y, t.m, t.d);
+    }
+  }
+  return { jy: y, jm: m, jd: d };
 }
 
 /** Calendar date → Gregorian ISO. */
