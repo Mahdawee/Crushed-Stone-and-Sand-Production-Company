@@ -136,11 +136,12 @@
         </div>
         <div>
           <label>تاریخ شروع (شمسی یا میلادی)</label>
-          <input id="start" dir="ltr" placeholder="۱۴۰۵/۰۸/۱۹">
+          <input id="start" dir="ltr" placeholder="۱۴۰۵/۰۸/۱۹" readonly>
+          <p class="hint">برای دوره‌های زمانی همیشه <b>امروز</b> است (لایسنس باید همین حالا کار کند).</p>
         </div>
         <div>
           <label>تاریخ پایان</label>
-          <input id="end" dir="ltr" placeholder="خودکار">
+          <input id="end" dir="ltr" placeholder="خودکار" readonly>
           <p class="hint" id="endHint"></p>
         </div>
         <div>
@@ -158,6 +159,7 @@
           </div>
         </div>
       </div>
+      <p class="small" id="rangeBadge" style="margin:12px 0 0"></p>
       <div class="row" style="margin-top:14px">
         <button class="btn primary" id="issueBtn" onclick="issue()">صدور لایسنس</button>
         <button class="btn" onclick="fillMachineFromClipboard()">خواندن کلید دستگاه از کلیپ‌بورد</button>
@@ -165,10 +167,13 @@
       <div id="issueOut" style="display:none;margin-top:14px">
         <label>متن لایسنس (همین را برای مشتری بفرستید)</label>
         <pre class="out" id="issueText"></pre>
-        <div class="row" style="margin-top:8px">
+        <div class="row" style="margin-top:8px;flex-wrap:wrap">
           <button class="btn sm" onclick="copyText(document.getElementById('issueText').textContent,'متن لایسنس کاپی شد')">کاپی متن</button>
+          <button class="btn sm primary" id="saveLicBtn" onclick="saveIssuedFile()">ذخیره فایل .lic</button>
+          <button class="btn sm" onclick="copyText(document.getElementById('issueText').textContent,'متن لایسنس کاپی شد')">کاپی کلید</button>
           <span class="small muted" id="issueMeta"></span>
         </div>
+        <p class="hint" id="issueFileHint"></p>
       </div>
     </div>
   </div>
@@ -259,14 +264,15 @@
 <script>
 const CSRF = '__CSRF__';
 let state = { keys:{}, items:[], kinds:[] };
-const KINDS = {
-  monthly:{label:'ماهوار',days:30,hint:'۳۰ روز از تاریخ شروع'},
-  yearly:{label:'سالانه',days:365,hint:'۳۶۵ روز از تاریخ شروع'},
-  perpetual:{label:'ابد (همیشگی)',days:null,hint:'بدون تاریخ پایان — قفل دستگاه فعال می‌ماند'},
-  custom:{label:'دلخواه',days:null,hint:'تاریخ شروع و پایان را خودتان می‌دهید'},
-  trial:{label:'آزمایشی',days:7,hint:'۷ روز — برای تحویل موقت'},
-  machine:{label:'فقط قفل دستگاه',days:null,hint:'بدون محدودیت زمان، فقط به یک دستگاه'},
-};
+/*
+ * نوع‌های دوره از سرور می‌آیند (`/api/state.kindMeta`) — دیگر این‌جا جدول
+ * جداگانه‌ای نداریم. باگ: این جدول و جدول سرور با هم فرق داشتند و «ابد» و
+ * «فقط قفل دستگاه» هم دو گزینه‌ی عملاً یکسان بودند (درخواست کاربر: یکی
+ * بماند). حالا فقط **ابد** هست و «ماشین» برای لایسنس‌های قدیمی.
+ */
+let KINDS = {};
+/* برچسب همه‌ی نوع‌ها (شامل «ماشین» قدیمی) برای ستون «نوع» در دفتر */
+let KIND_LABEL = {};
 const $ = (id) => document.getElementById(id);
 
 function toast(msg, kind){
@@ -310,41 +316,107 @@ async function load(){
   } else {
     $('keyMeta').textContent = '';
   }
-  /* انتخاب نوع دوره */
-  const sel = $('kind');
-  if (!sel.options.length){
-    sel.innerHTML = Object.entries(KINDS).map(([v,i]) => `<option value="${v}">${i.label}</option>`).join('');
-    sel.value = 'yearly';
+  /* انتخاب نوع دوره — از فراداده‌ی سرور */
+  KINDS = {};
+  KIND_LABEL = {};
+  for (const m of (state.kindMeta || [])) {
+    KIND_LABEL[m.value] = m.label;
+    if (m.issuable === false) continue;       /* «ماشین» قدیمی: نه برای صدور */
+    KINDS[m.value] = { label: m.label, days: m.days, hint: m.hint };
   }
-  onKindChange();
-  /* شناسه و امروز */
+  const sel = $('kind');
+  const prev = sel.value;
+  sel.innerHTML = Object.entries(KINDS).map(([v,i]) => `<option value="${v}">${i.label}</option>`).join('');
+  sel.value = KINDS[prev] ? prev : 'yearly';
+  /*
+   * تاریخ شروع همیشه امروز — نه یک تاریخ ساختگی.
+   * باگ قبلی: `toJalali` همیشه «سال/01/01» می‌داد (اول حمل)، پس فورم به‌جای
+   * امروز یک تاریخ بی‌ربط نشان می‌داد و لایسنس با تاریخ شروع آینده صادر می‌شد.
+   * حالا از `state.todayJalali` (که خودِ سرور با تقویم درست حساب می‌کند).
+   */
   if (!$('licId').value) $('licId').value = state.nextId;
   $('todayLabel').textContent = 'امروز: ' + state.todayLabel;
-  if (!$('start').value) $('start').value = toJalali(state.today);
+  $('start').value = state.todayJalali || state.today;
+  onKindChange();
   renderList();
   $('issueBtn').disabled = !k.hasPrivate;
 }
 
-function toJalali(iso){
-  /* فقط برای پیش‌فرض فرم؛ منبع حقیقت سرور است */
-  try {
-    const [y,m,d] = iso.split('-').map(Number);
-    const g = new Date(Date.UTC(y, m-1, d));
-    const epoch = Date.UTC(2000,0,1), g2 = g.getTime() - epoch;
-    const days = Math.floor(g2 / 86400000) + 2451545;
-    const jy = Math.floor((days - 1948320.5) / 365.2422) + 1;
-    return String(jy) + '/01/01';
-  } catch { return ''; }
-}
-
+/**
+ * با عوض‌شدن نوع دوره، **هم تاریخ شروع و هم تاریخ پایان** دوباره تنظیم می‌شوند.
+ *
+ * باگ: قبلاً فقط `end.disabled` عوض می‌شد و مقدار قبلی می‌ماند. اگر کاربر
+ * اول «دلخواه» را انتخاب می‌کرد و پایانِ دستی می‌نوشت، بعد «آزمایشی» را
+ * می‌زد، همان تاریخ دلخواه می‌ماند و لایسنس «آزمایشی» با بازه‌ی دلخواه صادر
+ * می‌شد. حالا هر تغییر، بازه را از امروز می‌سازد.
+ */
 function onKindChange(){
   const k = $('kind').value;
-  const info = KINDS[k];
-  $('kindHint').textContent = info.hint;
-  const auto = info.days != null;
-  $('end').disabled = auto;
-  $('end').placeholder = auto ? info.days + ' روز (خودکار)' : '۱۴۰۶/۰۸/۱۹';
-  $('endHint').textContent = auto ? 'از تاریخ شروع محاسبه می‌شود' : (k === 'perpetual' || k === 'machine' ? 'بدون پایان' : 'به شمسی یا میلادی');
+  const info = KINDS[k] || { days: null, hint: '' };
+  $('kindHint').textContent = info.hint || '';
+  $('start').value = state.todayJalali || state.today || '';
+  if (info.days == null){
+    $('end').disabled = (k === 'perpetual');
+    $('end').readOnly = (k === 'perpetual');
+    $('end').placeholder = k === 'perpetual' ? 'بدون پایان' : '۱۴۰۶/۰۸/۱۹';
+    $('end').value = '';
+    $('endHint').textContent = k === 'perpetual'
+      ? 'ابد: بدون تاریخ پایان؛ فقط به دستگاه مشتری قفل می‌شود.'
+      : 'بازه‌ی دلخواه را به شمسی یا میلادی بنویسید.';
+    updateRangeBadge();
+    return;
+  }
+  $('end').disabled = true;
+  $('end').readOnly = true;
+  const end = addDaysJalali(state.today, info.days - 1);
+  $('end').value = end;
+  $('end').placeholder = 'خودکار';
+  $('endHint').textContent = `از امروز تا ${end} — ${info.days} روز (پایان خودکار از نوع دوره).`;
+  updateRangeBadge();
+}
+
+/** «امروز → پایان» زیر جدول تاریخ، همیشه با اعداد فارسی */
+function updateRangeBadge(){
+  const el = $('rangeBadge');
+  if (!el) return;
+  const st = $('start').value || '—';
+  const en = $('end').value || 'بدون پایان';
+  el.innerHTML = 'بازه: <b>' + st + '</b> → <b>' + en + '</b>';
+}
+
+/** تاریخ ISO + n روز → رشته‌ی شمسی «۱۴۰۵/۰۸/۲۵» برای نمایش در فورم */
+function addDaysJalali(iso, n){
+  try {
+    const [y,m,d] = String(iso).slice(0,10).split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m-1, d));
+    dt.setUTCDate(dt.getUTCDate() + n);
+    const g = dt.toISOString().slice(0,10);
+    /* تبدیل نمایشی میلادی→شمسی با همان الگوریتم ساده‌ی تقویم داخلی جلالی */
+    return gregorianToJalaliString(g);
+  } catch { return iso; }
+}
+
+/**
+ * میلادی → «۱۴۰۵/۰۸/۱۹» — پیاده‌سازی استاندارد جلالی (بدون کتابخانه در
+ * مرورگر). همان الگوریتم jalaali-js است تا با سرور یکی دربیاید.
+ */
+function gregorianToJalaliString(iso){
+  const [gy, gm, gd] = String(iso).slice(0,10).split('-').map(Number);
+  const g_d_m = [0,31,59,90,120,151,181,212,243,273,304,334];
+  let jy = (gy <= 1600) ? 0 : 979;
+  let gy2 = (gy <= 1600) ? (gy - 621) : (gy - 1600);
+  let days = (365 * gy2) + Math.floor((gy2 + 3) / 4) - Math.floor((gy2 + 99) / 100)
+    + Math.floor((gy2 + 399) / 400) - 80 + gd + g_d_m[gm - 1];
+  jy += 33 * Math.floor(days / 12053);
+  days %= 12053;
+  jy += 4 * Math.floor(days / 1461);
+  days %= 1461;
+  if (days > 365) { jy += Math.floor((days - 1) / 365); days = (days - 1) % 365; }
+  const jm = (days < 186) ? 1 + Math.floor(days / 31) : 7 + Math.floor((days - 186) / 30);
+  const jd = 1 + ((days < 186) ? (days % 31) : ((days - 186) % 30));
+  /* اعداد فارسی تا با بقیه‌ی صفحه یکی باشد */
+  return `${jy}/${String(jm).padStart(2,'0')}/${String(jd).padStart(2,'0')}`
+    .replace(/[0-9]/g, (x) => '۰۱۲۳۴۵۶۷۸۹'[Number(x)]);
 }
 
 /* ---------- تمدید ---------- */
@@ -451,6 +523,8 @@ async function keygen(force){
   } catch (e){ toast(e.message, 'bad'); }
 }
 
+let issuedLicense = null;
+
 async function issue(){
   $('issueBtn').disabled = true;
   try {
@@ -459,21 +533,55 @@ async function issue(){
       kind: $('kind').value,
       machineKey: $('machine').value,
       start: $('start').value,
-      end: $('end').disabled ? '' : $('end').value,
+      /* «ابد» پایان ندارد؛ «دلخواه» پایانِ دستی می‌فرستد */
+      end: ($('end').disabled || $('kind').value === 'perpetual') ? '' : $('end').value,
       seats: $('seats').value,
       id: $('licId').value,
       note: $('note').value,
     };
     const r = await api('/api/issue', body);
+    issuedLicense = r;
     $('issueOut').style.display = 'block';
     $('issueText').textContent = r.text;
     $('issueMeta').textContent = `${r.id} · ${r.startLabel} تا ${r.endLabel}`;
+    /*
+     * فایل از همان لحظه روی دیسک اپراتور است؛ این خط می‌گوید کجا و دکمه‌ی
+     * «ذخیره فایل .lic» هم همان بایت‌ها را با نام درست دانلود می‌کند.
+     */
+    $('issueFileHint').textContent = r.savedFile
+      ? `فایل روی کمپیوتر شما ذخیره شد: ${r.savedFile} — برای ارسال به مشتری می‌توانید همین را بفرستید یا «ذخیره فایل .lic» را بزنید.`
+      : '';
     toast(r.message, 'ok');
     $('licId').value = '';
     $('note').value = '';
     await load();
   } catch (e){ toast(e.message, 'bad'); }
   finally { $('issueBtn').disabled = !state.keys.hasPrivate; }
+}
+
+/**
+ * ذخیره‌ی فایل `.lic` بعد از ساخت لایسنس — خواسته‌ی کاربر:
+ * «گزینه‌ی ذخیره به‌عنوان فایل هم بعد از ساخت لایسنس key وجود داشته باشد».
+ *
+ * چرا از سرور و نه از متن صفحه: بایت‌های اصلی فایل (بدون خطر شکستن خط در
+ * کاپی/پیست) با نام `<id>.lic` و `content-disposition: attachment` می‌آید.
+ * اگر مرورگر اجازه نداد، به ذخیره‌ی متن در همان صفحه برمی‌گردیم.
+ */
+async function saveIssuedFile(){
+  if (!issuedLicense) { toast('اول لایسنس را صادر کنید', 'bad'); return; }
+  const url = issuedLicense.downloadUrl || ('/api/download?id=' + encodeURIComponent(issuedLicense.id));
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('دانلود ناموفق (' + res.status + ')');
+    const text = await res.text();
+    saveTextFile(issuedLicense.id + '.lic', text);
+    $('issueFileHint').textContent = 'فایل ' + issuedLicense.id + '.lic ذخیره شد — همین فایل را برای مشتری بفرستید.';
+    toast('فایل ذخیره شد', 'ok');
+  } catch (e){
+    /* راه دوم: همان متنی که روی صفحه است */
+    saveTextFile(issuedLicense.id + '.lic', issuedLicense.text + '\n');
+    toast('فایل از متن صفحه ذخیره شد', 'ok');
+  }
 }
 
 function renderList(){
@@ -484,7 +592,7 @@ function renderList(){
     return `<tr>
       <td class="mono small">${it.id}</td>
       <td>${escapeHtml(it.customer || '—')}</td>
-      <td class="small">${KINDS[it.kind]?.label || it.kind}</td>
+      <td class="small">${KIND_LABEL[it.kind] || it.kind}</td>
       <td class="small">${it.startLabel} → ${it.endLabel}</td>
       <td class="mono small">${it.machineKey || '—'}</td>
       <td>${badge}</td>
@@ -583,7 +691,7 @@ async function verify(){
       <table style="margin-top:10px">
         <tr><th>شناسه</th><td class="mono">${p.id}</td></tr>
         <tr><th>مشتری</th><td>${escapeHtml(p.customer || '—')}</td></tr>
-        <tr><th>نوع</th><td>${KINDS[p.kind]?.label || p.kind}</td></tr>
+        <tr><th>نوع</th><td>${KIND_LABEL[p.kind] || p.kind}</td></tr>
         <tr><th>بازه</th><td>${r.startLabel} → ${r.endLabel}</td></tr>
         <tr><th>کلید دستگاه</th><td class="mono">${p.machineKey || '—'}</td></tr>
         <tr><th>صندلی</th><td>${p.seats || '∞'}</td></tr>

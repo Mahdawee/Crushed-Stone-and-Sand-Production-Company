@@ -26,7 +26,18 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const keysDir = path.join(root, 'license-keys');
+/*
+ * پوشه‌ی کلیدها — قابل تغییر با `FD_LICENSE_KEYS_DIR` (مثل ابزار گرافیکی).
+ *
+ * باگ: این متغیر فقط در `tools/license/server.mjs` خوانده می‌شد، نه این‌جا.
+ * خط فرمان همیشه `license-keys/` **واقعی** پروژه را عوض می‌کرد — حتی وقتی
+ * تست یا اپراتور انتظار پوشه‌ی موقت داشت. نتیجه‌ی یک تست می‌توانست دفتر
+ * لایسنس‌های واقعی را آلوده کند یا (با `keygen`) کلیدهای واقعی را بازنویسی
+ * کند و همه‌ی لایسنس‌های مشتریان را باطل کند.
+ */
+const keysDir = process.env.FD_LICENSE_KEYS_DIR
+  ? path.resolve(process.env.FD_LICENSE_KEYS_DIR)
+  : path.join(root, 'license-keys');
 const privatePath = path.join(keysDir, 'private.key');
 const publicPath = path.join(keysDir, 'public.key');
 const ledgerPath = path.join(keysDir, 'issued.json');
@@ -63,14 +74,22 @@ function args(argv) {
 }
 
 /* ---------- helpers (هم‌خوان با apps/api/src/common/license-kinds.ts) ---------- */
+/*
+ * نوع‌های دوره — همان فهرست API و صفحه‌ی گرافیکی.
+ *
+ * «فقط قفل دستگاه» حذف شد چون با «ابد» **دقیقاً** یکی بود (کاربر: «فکر
+ * می‌کنم عین هم است»). لایسنس‌های قدیمی با `kind: 'machine'` همچنان معتبر و
+ * قابل بازرسی‌اند، ولی صدور تازه با آن انجام نمی‌شود.
+ */
 const KINDS = {
   trial: { label: 'آزمایشی', days: 7 },
   monthly: { label: 'ماهوار', days: 30 },
   yearly: { label: 'سالانه', days: 365 },
+  perpetual: { label: 'ابد (همیشگی)', days: null },
   custom: { label: 'دلخواه', days: null },
-  perpetual: { label: 'ابد', days: null },
-  machine: { label: 'فقط قفل دستگاه', days: null },
 };
+/* نوع‌های قدیمی که فقط برای خواندن/بازرسی شناخته می‌شوند */
+const LEGACY_KINDS = { machine: { label: 'ماشین (قدیمی)', days: null } };
 const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 const MACHINE_KEY_LEN = 25;
 
@@ -185,7 +204,9 @@ export function buildLicense(input, privateKey) {
     note: String(input.note || '').trim(),
     issuedAt: input.issuedAt || new Date().toISOString(),
   };
-  if (!KINDS[payload.kind]) throw new Error(`نوع لایسنس ناشناخته: ${payload.kind}`);
+  if (!KINDS[payload.kind] && !LEGACY_KINDS[payload.kind]) {
+    throw new Error(`نوع لایسنس ناشناخته: ${payload.kind}`);
+  }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(payload.start)) throw new Error('تاریخ شروع درست نیست (YYYY-MM-DD).');
   if (payload.end && !/^\d{4}-\d{2}-\d{2}$/.test(payload.end)) throw new Error('تاریخ پایان درست نیست (YYYY-MM-DD).');
   if (payload.end && payload.end < payload.start) throw new Error('تاریخ پایان قبل از شروع است.');
@@ -238,15 +259,35 @@ function cmdKeygen(opts) {
   fs.mkdirSync(keysDir, { recursive: true });
   fs.writeFileSync(privatePath, kp.privateKey + '\n', { encoding: 'utf8', mode: 0o600 });
   fs.writeFileSync(publicPath, kp.publicKey + '\n', 'utf8');
-  for (const p of [bundledPublic, apiPublic, sealSource]) {
-    fs.mkdirSync(path.dirname(p), { recursive: true });
-    fs.writeFileSync(p, kp.publicKey + '\n', 'utf8');
+  /*
+   * ⚠ حفاظ (دور ۲۱): اگر پوشه‌ی کلید با `FD_LICENSE_KEYS_DIR` جایگزین شده
+   * باشد (تست/آزمایش)، هرگز کلید داخل بسته را عوض نکن.
+   *
+   * چه اتفاقی افتاده بود: تست، `keygen` را با پوشه‌ی موقت صدا می‌زد و این
+   * کد بی‌توجه، کلید عمومی داخل `src-tauri/` و `apps/api/public-key/` را
+   * بازنویسی می‌کرد. نتیجه: بسته با کلیدی ساخته می‌شد که کلید خصوصی‌اش
+   * جایی نبود → **هیچ لایسنس واقعی‌ای در نسخه‌ی نصب‌شده کار نمی‌کرد**.
+   * همان اتفاقی که ابزار گرافیکی از دور ۱۶ جلوی آن را گرفته بود، ولی این‌جا
+   * باز مانده بود.
+   */
+  const isolated = Boolean(process.env.FD_LICENSE_KEYS_DIR);
+  if (!isolated) {
+    for (const p of [bundledPublic, apiPublic, sealSource]) {
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, kp.publicKey + '\n', 'utf8');
+    }
   }
   console.log(c.green('✔ جفت‌کلید Ed25519 ساخته شد.'));
   console.log(`  کلید خصوصی: ${privatePath} ${c.red('(هرگز این را جایی نفرستید/کامیت نکنید)')}`);
   console.log(`  کلید عمومی: ${publicPath}`);
-  console.log(`  کلید عمومی برای بسته: ${path.relative(root, bundledPublic)}`);
-  console.log(c.dim('\n  گام بعدی: نسخه‌ی برنامه را با همین کلید عمومی بسازید (npm run desktop:build).'));
+  if (isolated) {
+    console.log(c.yellow(`  ⚠ پوشه‌ی کلید جایگزین است (FD_LICENSE_KEYS_DIR) — کلید داخل بسته دست نخورد.`));
+  } else {
+    console.log(`  کلید عمومی برای بسته: ${path.relative(root, bundledPublic)}`);
+  }
+  if (!isolated) {
+    console.log(c.dim('\n  گام بعدی: نسخه‌ی برنامه را با همین کلید عمومی بسازید (npm run desktop:build).'));
+  }
   return 0;
 }
 
@@ -258,16 +299,39 @@ function cmdIssue(opts) {
     console.error(`  یکی از: ${Object.keys(KINDS).join(' | ')}`);
     return 1;
   }
-  let start;
+  /*
+   * تطبیق تاریخ با نوع دوره (درخواست کاربر):
+   * «تاریخ شروع همیشه امروز» و «پایان مرتبط با نوع لایسنس».
+   *
+   * باگ: `--start` هر تاریخی را قبول می‌کرد (حتی سال آینده) و `--end` روی
+   * دوره‌های زمانی نادیده گرفته می‌شد؛ پس می‌شد «آزمایشی» یک‌ساله صادر کرد.
+   */
+  const today = todayISO();
+  let start = today;
   let end = null;
   try {
-    start = opts.start ? parseDateInput(opts.start, 'تاریخ شروع') : todayISO();
-    end = opts.end ? parseDateInput(opts.end, 'تاریخ پایان') : null;
+    const askedStart = opts.start ? parseDateInput(opts.start, 'تاریخ شروع') : today;
+    const askedEnd = opts.end ? parseDateInput(opts.end, 'تاریخ پایان') : null;
+    const days = KINDS[kind].days;
+    if (days == null) {
+      start = askedStart;
+      end = kind === 'perpetual' ? null : askedEnd;
+    } else {
+      start = today;
+      end = addDays(start, days - 1);
+      if (askedStart !== today) {
+        console.error(c.yellow(`⚠ تاریخ شروع با امروز (${today}) جایگزین شد — دوره‌های زمانی باید از امروز شروع شوند.`));
+      }
+      if (askedEnd && askedEnd !== end) {
+        console.error(c.red(`✘ نوع «${KINDS[kind].label}» پایانِ ${end} دارد (${days} روز از امروز)، نه ${askedEnd}.`));
+        console.error(c.dim('  برای بازه‌ی دلخواه: --kind custom --start … --end …'));
+        return 1;
+      }
+    }
   } catch (e) {
     console.error(c.red('✘ ' + e.message));
     return 1;
   }
-  if (!end && KINDS[kind].days != null) end = addDays(start, KINDS[kind].days - 1);
   const ledger = readLedger();
   const id = String(opts.id || `FR-LIC-${new Date().getFullYear()}-${String(ledger.nextId).padStart(4, '0')}`);
   /* ورودی کاربر ممکن است فاصله/خط تیره/حروف کوچک داشته باشد — یکسان‌سازی شود */
@@ -309,6 +373,7 @@ function cmdIssue(opts) {
   console.log(`  شروع: ${start}   پایان: ${built.payload.end || 'ابد'}`);
   console.log(`  قفل دستگاه: ${built.payload.machineKey || c.yellow('بدون قفل دستگاه')}`);
   console.log(`  فایل: ${outFile}`);
+  console.log(c.dim('  همین فایل .lic را برای مشتری بفرستید (یا متن پایین را).'));
   console.log('\n' + c.bold('— متن لایسنس (همین را برای مشتری بفرستید) —'));
   console.log(built.text);
   return 0;
@@ -384,9 +449,10 @@ function usage() {
 
   ${c.bold('npm run license:keygen')}                          ساخت جفت‌کلید (یک بار در عمر پروژه)
   ${c.bold('npm run license:issue -- --customer "شرکت الف"')}
-      ${c.dim('--kind yearly|monthly|perpetual|custom|trial|machine')}
+      ${c.dim('--kind trial|monthly|yearly|perpetual|custom')}
       ${c.dim('--machine A74PA-AW6C7-UAB99-PAPJU-VQWQW')}     کلید دستگاه مشتری
-      ${c.dim('--start 2026-11-10  --end 2027-11-09')}          برای نوع «دلخواه»
+      ${c.dim('--start 2026-11-10  --end 2027-11-09')}          فقط برای نوع «دلخواه»
+      ${c.dim('  (دوره‌های زمانی همیشه از امروز شروع می‌شوند؛ آزمایشی = امروز تا ۷ روز)')}
       ${c.dim('--seats 3  --note "…"  --out licenses/x.lic  --json')}
   ${c.bold('npm run license:verify -- --file license-keys/FR-LIC-….lic')}
   ${c.bold('npm run license:list')}                            دفتر لایسنس‌ها

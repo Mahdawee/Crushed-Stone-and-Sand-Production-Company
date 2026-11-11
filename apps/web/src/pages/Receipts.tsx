@@ -183,7 +183,7 @@ export default function ReceiptsPage() {
               hint={form.customerId ? undefined : 'بدون مشتری = رسید «گذری» (پول از مشتری بدون حساب)'}>
               <Select value={form.customerId} placeholder="مشتری گذری (بدون حساب)" onChange={(v) => setForm({ ...form, customerId: v })}
                 options={[
-                  { value: '', label: '— مشتری گذری (بدون حساب) —' },
+                  { value: '', label: 'مشتری گذری (بدون حساب)' },
                   ...customers.map((c) => ({ value: c.id, label: `${c.code} — ${c.name} (باقی ${money(c.balance)})` })),
                 ]} />
             </Field>

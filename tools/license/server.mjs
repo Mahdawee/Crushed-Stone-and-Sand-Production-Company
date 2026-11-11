@@ -59,7 +59,66 @@ const normalizeMachineKey = (v) =>
   String(v || '').toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, MK_LEN).replace(/(.{5})/g, '$1-').replace(/-$/, '');
 const isValidMachineKey = (v) => normalizeMachineKey(v).replace(/-/g, '').length === MK_LEN;
 
+/*
+ * نوع‌های دوره — **یک** منبع حقیقت.
+ *
+ * باگ: این جدول سه جا کپی شده بود (سرور ابزار، صفحه‌ی HTML، CLI) و با هم
+ * فرق داشتند: `--kind machine` در CLI معنا داشت ولی در صفحه نبود/برعکس.
+ * حالا از همان فهرست API خوانده می‌شود؛ صفحه هم آن را از `/api/state`
+ * می‌گیرد.
+ */
 const KIND_DAYS = { trial: 7, monthly: 30, yearly: 365, custom: null, perpetual: null, machine: null };
+
+/** برچسب فارسی نوع — برای پیام‌ها و ستون «نوع» */
+const KIND_LABELS = {
+  trial: 'آزمایشی', monthly: 'ماهوار', yearly: 'سالانه',
+  perpetual: 'ابد (همیشگی)', custom: 'دلخواه', machine: 'ماشین (قدیمی)',
+};
+
+/**
+ * بازه‌ی تاریخ را با نوع دوره هم‌تراز می‌کند.
+ *
+ * درخواست کاربر: «تاریخ شروع خوب است همیشه امروز باشد و تاریخ شروع و ختم
+ * باید مرتبط با انتخاب نوع لایسنس تطبیق شود؛ مثلاً آزمایشی را تاریخ‌ها از
+ * امروز تا هفت روز تنظیم کنند».
+ *
+ * ## باگ‌هایی که این تابع می‌بندد
+ * • تاریخ شروع هرچه کاربر می‌نوشت پذیرفته می‌شد — حتی گذشته یا سال آینده.
+ *   لایسنسی که «از فردا» شروع شود روی دستگاه مشتری «معتبر نیست» می‌دهد و
+ *   مشتری فکر می‌کند کلید خراب است. حالا شروعِ دوره‌های زمانی **همیشه
+ *   امروز** است (سرور خودش می‌گذارد، به کلاینت اعتماد نمی‌کند).
+ * • پایانِ ارسالی نادیده گرفته می‌شد: با نوع «آزمایشی» می‌شد یک لایسنس
+ *   یک‌ساله صادر کرد (فقط برچسبش «آزمایشی» بود). حالا برای دوره‌های زمانی،
+ *   پایان **از نوع دوره** حساب می‌شود و اگر پایانِ ناسازگار بفرستید، خطای
+ *   روشن می‌گیرید — نه یک لایسنس با برچسب دروغ.
+ * • «ابد» و «ماشین» همیشه پایان ندارند (حتی اگر تاریخ بفرستید).
+ */
+function resolveRange(kind, inputStart, inputEnd, today = todayISO()) {
+  const startISO = parseDateToISO(inputStart || today, 'تاریخ شروع');
+  const endISO = inputEnd ? parseDateToISO(inputEnd, 'تاریخ پایان') : null;
+  const days = KIND_DAYS[kind];
+  if (days == null) {
+    /* ابد/دلخواه: «ابد» پایان ندارد، «دلخواه» پایان دست کاربر است */
+    if (kind === 'perpetual' || kind === 'machine') return { start: startISO, end: null, forced: false };
+    return { start: startISO, end: endISO, forced: false };
+  }
+  /*
+   * دوره‌ی زمانی: شروع باید امروز باشد تا لایسنس همین حالا کار کند.
+   * اگر کاربر تاریخ گذشته داده باشد، صریح می‌گوییم جایگزین شد.
+   */
+  const start = today;
+  const end = addDays(start, days - 1);
+  if (startISO !== today) {
+    return { start, end, forced: true, note: `تاریخ شروع با امروز (${today}) جایگزین شد.` };
+  }
+  if (endISO && endISO !== end) {
+    throw new Error(
+      `با نوع «${KIND_LABELS[kind] || kind}» تاریخ پایان باید ${end} باشد (${days} روز از امروز). ` +
+      'برای بازه‌ی دلخواه، نوع «دلخواه» را انتخاب کنید.',
+    );
+  }
+  return { start, end, forced: false };
+}
 
 /**
  * ورودی تاریخ (شمسی یا میلادی، با رقم فارسی/عربی) → میلادی ISO.
@@ -192,11 +251,14 @@ function parseRenewRequest(raw) {
 /* ---------- issue / inspect ---------- */
 function buildLicense(input, privateKey) {
   const kind = String(input.kind || 'yearly');
-  if (!(kind in KIND_DAYS)) throw new Error(`نوع دوره ناشناخته: ${kind}`);
-  let end = input.end ? String(input.end).slice(0, 10) : null;
-  if (!end && KIND_DAYS[kind] != null) end = addDays(String(input.start).slice(0, 10), KIND_DAYS[kind] - 1);
-  if (kind === 'perpetual' || kind === 'machine') end = null;
-  if (end && end < input.start) throw new Error('تاریخ پایان قبل از شروع است.');
+  if (!(kind in KIND_DAYS)) {
+    throw new Error(`نوع دوره ناشناخته: ${kind} — یکی از: ${Object.keys(KIND_DAYS).join(' | ')}`);
+  }
+  /* بازه از نوع دوره ساخته می‌شود، نه از ورودی آزاد کلاینت (باگ: تاریخ ناسازگار) */
+  const range = resolveRange(kind, input.start, input.end, input.today || todayISO());
+  const start = range.start;
+  const end = range.end;
+  if (end && end < start) throw new Error('تاریخ پایان قبل از شروع است.');
   const machineKey = input.machineKey ? normalizeMachineKey(input.machineKey) : '';
   if (machineKey && !isValidMachineKey(machineKey)) throw new Error(`کلید دستگاه باید ${MK_LEN} نویسه باشد.`);
   const payload = {
@@ -204,7 +266,7 @@ function buildLicense(input, privateKey) {
     id: String(input.id),
     customer: String(input.customer || '').trim(),
     kind,
-    start: String(input.start).slice(0, 10),
+    start,
     end,
     machineKey,
     seats: Math.max(0, Math.trunc(Number(input.seats) || 0)),
@@ -217,6 +279,8 @@ function buildLicense(input, privateKey) {
   return {
     payload,
     text: `-----BEGIN FARDAY LICENSE-----\nFR-1\n${body}\n${sig}\n-----END FARDAY LICENSE-----`,
+    rangeNote: range.forced ? range.note : undefined,
+    days: KIND_DAYS[kind],
   };
 }
 
@@ -254,6 +318,16 @@ async function jalaaliLabel(iso) {
   } catch { return iso; }
 }
 void require_;
+
+/** میلادی ISO → «۱۴۰۵/۰۸/۱۹» با رقم فارسی (پیش‌فرض کادرهای تاریخ) */
+async function jalaaliInputLabel(iso) {
+  try {
+    const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number);
+    const j = jalaali().toJalaali(y, m, d);
+    const s = `${j.jy}/${String(j.jm).padStart(2, '0')}/${String(j.jd).padStart(2, '0')}`;
+    return s.replace(/[0-9]/g, (x) => '۰۱۲۳۴۵۶۷۸۹'[Number(x)]);
+  } catch { return iso; }
+}
 
 /* ---------- CSRF ---------- */
 const CSRF = crypto.randomBytes(18).toString('hex');
@@ -316,7 +390,23 @@ const server = http.createServer(async (req, res) => {
         nextId: `FR-LIC-${new Date().getFullYear()}-${String(ledger.nextId).padStart(4, '0')}`,
         today,
         todayLabel: await jalaaliLabel(today),
+        /* «۱۴۰۵/۰۸/۱۹» برای پیش‌فرض فورم — قبلاً کلاینت خودش (غلط) می‌ساخت */
+        todayJalali: await jalaaliInputLabel(today),
         kinds: Object.keys(KIND_DAYS),
+        /*
+         * فراداده‌ی نوع‌ها به یک منبع حقیقت می‌آید: صفحه دیگر جدول خودش را
+         * ندارد. `issuable` = نوع‌هایی که برای صدور تازه پیشنهاد می‌شوند
+         * («ماشین» قدیمی حذف شد چون با «ابد» عین هم بود).
+         */
+        kindMeta: Object.entries(KIND_DAYS).map(([value, days]) => ({
+          value, days, label: KIND_LABELS[value] || value,
+          issuable: value !== 'machine',
+          hint: days == null
+            ? (value === 'custom' ? 'بازه‌ی دلخواه' : 'بدون تاریخ پایان — قفل دستگاه فعال')
+            : `${days} روز از امروز`,
+          start: value === 'perpetual' || value === 'machine' ? today : today,
+          end: days == null ? null : addDays(today, days - 1),
+        })),
       });
       return;
     }
@@ -373,10 +463,15 @@ const server = http.createServer(async (req, res) => {
       const privateKey = loadPrivate();
       const ledger = readLedger();
       const id = String(body.id || `FR-LIC-${new Date().getFullYear()}-${String(ledger.nextId).padStart(4, '0')}`);
-      /* تاریخ‌ها در سرور یکسان‌سازی می‌شوند (شمسی → میلادی) */
-      const startISO = parseDateToISO(body.start, 'تاریخ شروع');
+      /*
+       * تاریخ‌ها در سرور یکسان‌سازی می‌شوند (شمسی → میلادی) و **با نوع دوره
+       * تطبیق داده می‌شوند**: دوره‌های زمانی همیشه از امروز شروع می‌شوند و
+       * پایانشان از روی همان نوع حساب می‌شود.
+       */
+      const today = todayISO();
+      const startISO = body.start ? parseDateToISO(body.start, 'تاریخ شروع') : today;
       const endISO = body.end ? parseDateToISO(body.end, 'تاریخ پایان') : null;
-      const built = buildLicense({ ...body, id, start: startISO, end: endISO }, privateKey);
+      const built = buildLicense({ ...body, id, start: startISO, end: endISO, today }, privateKey);
       fs.mkdirSync(keysDir, { recursive: true });
       const file = path.join(keysDir, `${id}.lic`);
       fs.writeFileSync(file, built.text + '\n', 'utf8');
@@ -397,12 +492,23 @@ const server = http.createServer(async (req, res) => {
       writeLedger(ledger);
       json(res, 200, {
         ok: true,
-        message: `لایسنس ${id} صادر شد.`,
+        message: `لایسنس ${id} صادر شد` +
+          (built.payload.end ? ` — ${built.payload.start} تا ${built.payload.end}.` : ' — بدون تاریخ پایان.') +
+          (built.rangeNote ? ` (${built.rangeNote})` : ''),
         id,
         text: built.text,
         payload: built.payload,
         endLabel: built.payload.end ? await jalaaliLabel(built.payload.end) : 'ابد',
         startLabel: await jalaaliLabel(built.payload.start),
+        rangeNote: built.rangeNote || null,
+        /*
+         * آدرس ذخیره‌ی فایل `.lic` — درخواست کاربر: «گزینه‌ی ذخیره به‌عنوان
+         * فایل هم بعد از ساخت لایسنس باشد». فایل از همان لحظه روی دیسک
+         * اپراتور هست؛ این آدرس برای دکمه‌ی «ذخیره فایل» صفحه است و با
+         * `content-disposition: attachment` فرستاده می‌شود (ذخیره، نه نمایش).
+         */
+        downloadUrl: `/api/download?id=${encodeURIComponent(id)}`,
+        savedFile: path.relative(root, file),
       });
       return;
     }
@@ -531,6 +637,30 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const parsed = parseRenewRequest(String(body.request || ''));
       json(res, 200, { ok: true, ...parsed });
+      return;
+    }
+
+    /*
+     * ذخیره‌ی فایل `.lic` با نام درست — «گزینه‌ی ذخیره به‌عنوان فایل بعد از
+     * ساخت لایسنس».
+     *
+     * چرا جدا از `/api/file` (که JSON می‌دهد): برای دانلود واقعی مرورگر باید
+     * `content-disposition: attachment` ببیند. قبلاً صفحه فایل را از JSON
+     * می‌ساخت؛ اگر متن در کاپی/پیست خط می‌شکست، فایل خراب ذخیره می‌شد.
+     * حالا بایت‌های اصلی فایل از سرور می‌آید.
+     */
+    if (req.method === 'GET' && p === '/api/download') {
+      const id = String(url.searchParams.get('id') || '');
+      if (!/^FR-LIC-[A-Za-z0-9-]+$/.test(id)) { json(res, 400, { ok: false, message: 'شناسه نامعتبر.' }); return; }
+      const f = path.join(keysDir, `${id}.lic`);
+      if (!fs.existsSync(f)) { json(res, 404, { ok: false, message: 'فایل پیدا نشد.' }); return; }
+      const text = fs.readFileSync(f, 'utf8');
+      res.writeHead(200, {
+        'content-type': 'text/plain; charset=utf-8',
+        'content-disposition': `attachment; filename="${id}.lic"`,
+        'cache-control': 'no-store',
+      });
+      res.end(text);
       return;
     }
 
