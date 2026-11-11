@@ -7,6 +7,7 @@ import { AuthGuard, ManagerOnly, userOf } from '../common/auth';
 import { logActivity } from '../common/activity';
 import { settingsService } from '../common/settings';
 import { dataDir } from '../db';
+import { ensureSqliteEngine, nativePackageName, type EngineStatus } from '../common/sqlite-engine';
 import { demoCounts, hasRealData, installDemo, removeDemo } from '../common/demo';
 import {
   RESET_PHRASE, dataInventory, resetMark, resetPlan, resetSystem, workingRowCount, type ResetOptions,
@@ -23,37 +24,29 @@ import {
 function runtimeCheck() {
   const os = require('node:os') as typeof import('node:os');
 
-  /**
-   * باینری‌های از پیش ساخته شده در **چند** جا ممکن است باشند:
-   *   • نسخه‌ی نصب‌شده: `<app.js کنار node.exe>/node_modules`
-   *   • حالت توسعه:   `<repo>/node_modules`
-   *   • اجرا از داخل repo: `process.cwd()/node_modules`
+  /*
+   * ⚠ این‌جا فقط «یک منبع حقیقت» داریم: `common/sqlite-engine.ts`.
+   *
+   * کد قبلی مسیرها را دستی می‌ساخت و `__dirname/../../node_modules` را
+   * بررسی می‌کرد. در بسته‌ی نصب‌شده `__dirname` = `<resources>\api\modules`
+   * است، پس مسیر درست (`<resources>\api\node_modules`) **هرگز** دیده نمی‌شد
+   * و صفحه‌ی شروع «missing (@libsql/win32-x64-msvc)» نشان می‌داد، در حالی
+   * که دیتابیس سالم کار می‌کرد (کاربر همین را گزارش کرد).
+   *
+   * اکنون همان تابعی که واقعاً موتور را بار می‌کند گزارش می‌دهد.
    */
-  const searchDirs = [
-    path.join(__dirname, 'node_modules'),
-    path.join(__dirname, '..', '..', 'node_modules'),
-    path.join(process.cwd(), 'node_modules'),
-    path.join(process.cwd(), '..', 'node_modules'),
-  ];
-
-  const findBinary = (pkgs: string[]): string | null => {
-    for (const pkg of pkgs) {
-      for (const base of searchDirs) {
-        const p = path.join(base, ...pkg.split('/'), 'index.node');
-        if (fs.existsSync(p)) return pkg;
-      }
-    }
-    return null;
-  };
-
-  const wanted =
-    process.platform === 'win32'
-      ? ['@libsql/win32-x64-msvc']
-      : process.platform === 'linux'
-        ? ['@libsql/linux-x64-gnu', '@libsql/linux-x64-musl']
-        : [];
-  const found = wanted.length ? findBinary(wanted) : 'native/n-a';
-  const sqlite = wanted.length === 0 ? 'ok (پلتفرم بدون باینری از پیش‌ساخته)' : found ? 'ok' : `missing (${wanted.join(' / ')})`;
+  let engine: EngineStatus;
+  try {
+    engine = ensureSqliteEngine();
+  } catch (e: any) {
+    engine = {
+      ok: false,
+      package: nativePackageName(),
+      file: null,
+      checked: [],
+      detail: e?.message || String(e),
+    };
+  }
 
   let writable = false;
   try {
@@ -68,10 +61,16 @@ function runtimeCheck() {
     fs.existsSync(path.join(__dirname, process.platform === 'win32' ? 'node.exe' : 'node')) ||
     fs.existsSync(path.join(__dirname, '..', process.platform === 'win32' ? 'node.exe' : 'node'));
 
+  const sqlite = engine.ok ? 'ok' : `missing (${engine.package})`;
+
   return {
     bundledNode,
     sqlite,
-    sqliteBinary: found,
+    sqliteBinary: engine.file,
+    sqlitePackage: engine.package,
+    /* جاهایی که جست‌وجو شد — برای پیام پشتیبانی، نه برای کاربر عادی */
+    sqliteChecked: engine.checked.slice(0, 12),
+    sqliteDetail: engine.detail,
     platform: `${process.platform}-${process.arch}`,
     arch: os.arch(),
     totalMemGb: Math.round((os.totalmem() / 1024 ** 3) * 10) / 10,

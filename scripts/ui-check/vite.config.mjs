@@ -1,7 +1,10 @@
 import path from 'node:path';
+import { projectRoot } from '../../scripts/lib/project-root.mjs';
 import react from '@vitejs/plugin-react';
 
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..');
+/* همان کمکی که doctor استفاده می‌کند — `new URL().pathname` روی ویندوز
+   `C:\C:\...` می‌سازد. */
+const root = projectRoot(import.meta.url, 2);
 
 export default {
   root,

@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { findMsvc } from './lib/msvc.mjs';
+import { projectRoot } from './lib/project-root.mjs';
 
 const ok = (s) => console.log(`  ✔ ${s}`);
 const bad = (s, fix) => { problems.push({ s, fix }); console.log(`  ✘ ${s}`); };
@@ -23,7 +24,9 @@ function run(cmd) {
   catch { return ''; }
 }
 
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+/* مسیر پروژه از `scripts/lib/project-root.mjs` — نگاه کنید به توضیح همان فایل:
+   الگوی `new URL(import.meta.url).pathname` روی ویندوز `C:\C:\...` می‌سازد. */
+const root = projectRoot(import.meta.url, 1);
 const isWin = process.platform === 'win32';
 
 console.log('\n=== بررسی محیط ===\n');
@@ -109,20 +112,44 @@ if (isWin) {
 }
 
 console.log('\n— ۵) بسته‌های پروژه —');
-// npm workspaces hoist to the root, but a missing workspace folder is the real signal.
-const nmRoot = path.join(root, 'node_modules');
-const have = (rel) => fs.existsSync(path.join(nmRoot, rel));
-const rootDeps = fs.existsSync(path.join(root, 'package-lock.json'));
-if (fs.existsSync(nmRoot) && have('@nestjs/core') && have('vite')) {
-  ok('node_modules نصب است (api + web)');
-} else if (fs.existsSync(nmRoot)) {
-  const missing = [!have('@nestjs/core') && '@nestjs/core', !have('vite') && 'vite'].filter(Boolean);
-  bad(`بسته‌های پروژه ناقص است (${missing.join(', ')} پیدا نشد)`, 'در پوشه پروژه: npm install');
-} else if (fs.existsSync(path.join(root, 'apps/api/node_modules')) && fs.existsSync(path.join(root, 'apps/web/node_modules'))) {
-  /* ویندوز/workspaces گاهی به‌جای hoist کردن، داخل هر پکیج نصب می‌کند */
-  ok('بسته‌ها داخل apps/api و apps/web نصب شده‌اند');
+/*
+ * ⚠ باگ «npm install اجرا نشده» با وجود نصب کامل.
+ *
+ * کد قبلی فقط `node_modules` ریشه را نگاه می‌کرد. روی ویندوز (و با
+ * npm workspaces) بسته‌ها گاهی داخل `apps/api/node_modules` و
+ * `apps/web/node_modules` می‌نشینند و ریشه فقط پوشه‌ی خالی/جزئی دارد. نتیجه:
+ * doctor می‌گفت «نصب نشده» و کاربر بی‌دلیل `npm install` را تکرار می‌کرد.
+ *
+ * حالا هر سه جا بررسی می‌شود و پیام هم می‌گوید **کجا** پیدا شد.
+ */
+const nmRoots = [
+  path.join(root, 'node_modules'),
+  path.join(root, 'apps', 'api', 'node_modules'),
+  path.join(root, 'apps', 'web', 'node_modules'),
+];
+const hasPkg = (rel) => nmRoots.some((d) => fs.existsSync(path.join(d, rel, 'package.json')));
+const missingPkgs = [
+  ['@nestjs/core', '@nestjs/core'],
+  ['vite', 'vite'],
+  ['react', 'react'],
+  [path.join('@prisma', 'client'), '@prisma/client'],
+].filter(([rel]) => !hasPkg(rel)).map(([, name]) => name);
+
+/*
+ * نشانه‌ی «نصب واقعی»: وجود پکیج‌ها، **یا** وجود `node_modules/.package-lock.json`
+ * که npm بعد از هر نصب موفق می‌نویسد (حتی وقتی همه‌چیز hoist شده).
+ */
+const lockInstalled = nmRoots.some((d) => fs.existsSync(path.join(d, '.package-lock.json')));
+
+if (missingPkgs.length === 0 || (lockInstalled && missingPkgs.length === 0)) {
+  ok('بسته‌های پروژه نصب است (api + web + vite + prisma)');
+} else if (missingPkgs.length === 0) {
+  ok('بسته‌های پروژه نصب است');
+} else if (missingPkgs.length < 4 && lockInstalled) {
+  warn(`نصب هست ولی چند بسته پیدا نشد (${missingPkgs.join(', ')}) — اگر ساخت خطا داد: npm install`);
 } else {
-  bad('npm install اجرا نشده (یا ناقص است)', 'در پوشه پروژه: npm install   — یا: npm run setup');
+  bad(`بسته‌های پروژه ناقص است (${missingPkgs.join(', ')} پیدا نشد)`,
+    'در پوشه پروژه: npm install   — یا: npm run setup');
 }
 
 console.log('\n— ۶) ساخته‌های API و رابط —');
@@ -152,8 +179,16 @@ console.log('\n— ۸) تنظیمات نصب‌کننده ویندوز (NSIS) �
    «Can't open language file - ...\Persian.nlf» — یعنی نام زبان در
    tauri.conf.json با نام فایل زبانِ NSIS یکی نبود. */
 if (isWin) {
+  const confFile = path.join(root, 'src-tauri', 'tauri.conf.json');
   try {
-    const conf = JSON.parse(fs.readFileSync(path.join(root, 'src-tauri/tauri.conf.json'), 'utf8'));
+    if (!fs.existsSync(confFile)) {
+      /*
+       * پیام باید بگوید **کجا** را نگاه کرده است، نه «ENOENT» خالی.
+       * (باگ مسیر ویندوزی همین‌جا خودش را نشان می‌داد: C:\C:\Users\…)
+       */
+      throw new Error(`فایل پیدا نشد: ${confFile}\n     پوشه‌ی پروژه: ${root}`);
+    }
+    const conf = JSON.parse(fs.readFileSync(confFile, 'utf8'));
     const nsis = conf?.bundle?.windows?.nsis || {};
     const langs = nsis.languages || ['English'];
     /* NSIS زبان فارسی را «Farsi» می‌شناسد؛ «Persian» فایل .nlf ندارد */
@@ -173,13 +208,61 @@ if (isWin) {
       warn('برای Farsi فایل پیام سفارشی تعریف نشده — متن دکمه‌های نصب‌کننده انگلیسی می‌ماند (ساخت موفق است)');
     }
   } catch (e) {
-    bad('tauri.conf.json خوانده نشد', e.message);
+    bad('tauri.conf.json خوانده نشد', `${e.message}\n  اگر مطمئنید فایل هست: در پوشه‌ی پروژه دستور را اجرا کنید (نه از پوشه‌ی دیگر)، و npm run setup را بزنید.`);
   }
 } else {
   warn('ساخت نصب‌کننده NSIS فقط روی ویندوز انجام می‌شود');
 }
 
-console.log('\n— ۹) ابزار Tauri CLI —');
+console.log('\n— ۹) موتور دیتابیس در بسته نصبی —');
+/*
+ * «موتور دیتابیس — missing (@libsql/win32-x64-msvc)» روی ویندوزِ کاربر.
+ *
+ * چرا این‌جا هم بررسی می‌شود: دو باگ قبلی هر دو در «زمان اجرا» ظاهر می‌شدند
+ * و هیچ‌کدام در زمان ساخت دیده نمی‌شد:
+ *   ۱) مسیر جست‌وجو (`__dirname/../../node_modules`) در بسته اشتباه بود؛
+ *   ۲) اگر باینری ویندوزی جا می‌افتاد، فقط روی ویندوز معلوم می‌شد.
+ * اکنون doctor دقیقاً همان چیزی را می‌سنجد که برنامه در زمان اجرا می‌بیند:
+ * فایل `<src-tauri/api>/node_modules/@libsql/win32-x64-msvc/index.node`
+ * و همچنین مسیری که `sqlite-engine` واقعاً استفاده می‌کند.
+ */
+{
+  const apiBundle = path.join(root, 'src-tauri', 'api');
+  const winBin = path.join(apiBundle, 'node_modules', '@libsql', 'win32-x64-msvc', 'index.node');
+  if (!fs.existsSync(apiBundle)) {
+    warn('بسته‌ی API ساخته نشده — بررسی موتور دیتابیس انجام نشد (npm run package:api)');
+  } else if (fs.existsSync(winBin)) {
+    const mb = (fs.statSync(winBin).size / (1024 * 1024)).toFixed(1);
+    ok(`باینری ویندوزی موتور دیتابیس داخل بسته هست (${mb} MB)`);
+  } else {
+    /*
+     * اگر این‌جا نباشد، نصب‌کننده روی ویندوز بالا نمی‌آید. پیام باید بگوید
+     * *کدام* فایل و *چگونه* بسازد — نه یک «missing» خشک.
+     */
+    bad('باینری ویندوزی موتور دیتابیس در بسته نیست (@libsql/win32-x64-msvc)',
+      `npm run package:api   ← خودش دانلود/کاپی می‌کند\n     مسیر مورد انتظار: ${path.relative(root, winBin)}`);
+  }
+
+  /* همان تابعی که برنامه در زمان اجرا صدا می‌زند — بدون راه‌اندازی سرور */
+  const engineFile = path.join(root, 'apps', 'api', 'dist', 'common', 'sqlite-engine.js');
+  if (fs.existsSync(engineFile)) {
+    try {
+      const { ensureSqliteEngine } = await import(engineFile);
+      const st = ensureSqliteEngine();
+      if (st.ok) ok(`موتور دیتابیس روی همین سیستم بارگذاری می‌شود (${st.package})`);
+      else {
+        bad(`موتور دیتابیس روی همین سیستم بارگذاری نشد (${st.package})`,
+          `${st.detail}\n     بررسی‌شده: ${st.checked.slice(0, 3).join(' , ')}`);
+      }
+    } catch (e) {
+      warn(`بارگذاری آزمون موتور دیتابیس انجام نشد: ${e instanceof Error ? e.message : e}`);
+    }
+  } else {
+    warn('apps/api/dist نیست — آزمون بارگذاری موتور دیتابیس انجام نشد (npm run build)');
+  }
+}
+
+console.log('\n— ۱۰) ابزار Tauri CLI —');
 const cli = run('npx --no-install tauri --version') || run('npx --no-install @tauri-apps/cli --version');
 if (cli) ok(cli);
 else { warn('نصب نشده — یک بار: npm run desktop:setup'); todos.push('npm run desktop:setup'); }

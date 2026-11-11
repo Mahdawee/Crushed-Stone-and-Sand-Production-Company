@@ -2,6 +2,7 @@ import { PrismaClient } from './generated/prisma/client';
 import { PrismaLibSql } from '@prisma/adapter-libsql';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { requireSqliteEngine } from './common/sqlite-engine';
 
 /**
  * Where the SQLite file lives.
@@ -31,6 +32,9 @@ let client: PrismaClient | null = null;
 
 export function db(): PrismaClient {
   if (client) return client;
+  /* موتور بومی باید *قبل* از ساخت کلاینت آماده باشد؛ وگرنه خطای
+     «Cannot find module @libsql/win32-x64-msvc» در وسط کار بیرون می‌آید. */
+  requireSqliteEngine();
   const file = databaseFile();
   const adapter = new PrismaLibSql({ url: `file:${file}` });
   client = new PrismaClient({ adapter } as any);
@@ -53,6 +57,7 @@ export async function resetDb(): Promise<void> {
 
 /** Test / maintenance helper — opens a second connection on another file. */
 export function openDb(file: string): PrismaClient {
+  requireSqliteEngine();
   const adapter = new PrismaLibSql({ url: `file:${file}` });
   return new PrismaClient({ adapter } as any);
 }

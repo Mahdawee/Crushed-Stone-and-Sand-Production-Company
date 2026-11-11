@@ -217,7 +217,17 @@ export default function SettingsPage() {
                     </div>
                     <dl className="kv">
                       <dt>موتور دیتابیس</dt>
-                      <dd>{info.runtime.sqlite === 'ok' ? 'درست' : info.runtime.sqlite}</dd>
+                      <dd>
+                        {info.runtime.sqlite === 'ok' ? 'درست' : info.runtime.sqlite}
+                        {/*
+                          * «بارگذاری دستی» یعنی موتور پیدا شد ولی از مسیر
+                          * معمولِ نصب نبود (بسته‌ی portable / مسیر جابه‌جا
+                          * شده) — خوب است بدانید، ولی خطا نیست.
+                          */}
+                        {info.runtime.sqlite === 'ok' && (info.runtime.sqliteDetail || '').includes('دستی')
+                          ? ' — از مسیر جانبی بارگذاری شد'
+                          : ''}
+                      </dd>
                       <dt>پوشه داده قابل نوشتن</dt>
                       <dd>{info.runtime.writableDataDir ? 'بله' : 'نه — دسترسی را بررسی کنید'}</dd>
                       <dt>پلتفرم</dt>
@@ -226,9 +236,26 @@ export default function SettingsPage() {
                       <dd>{info.runtime.totalMemGb} GB</dd>
                     </dl>
                     {info.runtime.sqlite !== 'ok' ? (
-                      <p className="small" style={{ color: 'var(--bad, #b91c1c)', marginTop: 8 }}>
-                        موتور دیتابیس این نسخه پیدا نشد. یک بار برنامه را دوباره نصب کنید یا از «ابزار نجات» کمک بگیرید.
-                      </p>
+                      <div className="small" style={{ color: 'var(--bad, #b91c1c)', marginTop: 8 }}>
+                        <p style={{ margin: 0 }}>
+                          موتور دیتابیس این نسخه پیدا نشد. یک بار برنامه را دوباره نصب کنید یا از «ابزار نجات» کمک بگیرید.
+                        </p>
+                        {/*
+                          * قبلاً این‌جا فقط یک پیام کلی بود و کاربر نمی‌دانست
+                          * چه چیزی کم است. حالا *کدام* فایل جست‌وجو شد را
+                          * نشان می‌دهیم تا پشتیبانی سریع جواب بدهد.
+                          */}
+                        {info.runtime.sqliteChecked?.length ? (
+                          <details style={{ marginTop: 6 }}>
+                            <summary style={{ cursor: 'pointer' }}>جزئیات برای پشتیبانی</summary>
+                            <div className="mono small" style={{ wordBreak: 'break-all', marginTop: 6 }}>
+                              {(info.runtime.sqliteChecked || []).map((p) => (
+                                <div key={p}>{p}</div>
+                              ))}
+                            </div>
+                          </details>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
                 ) : null}
