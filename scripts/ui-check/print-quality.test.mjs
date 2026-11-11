@@ -79,5 +79,17 @@ check('تأیید متنی «صفر کردن» باقی است', /confirm/.test(
 check('تیک «برگشت‌ناپذیر» باقی است', /id="ack"/.test(html));
 check('پشتیبان اجباری در سرور هست', /backup:\s*true/.test(serverSrc));
 
+console.log('\n— ۶) اجراکننده‌ی ابزار (مرورگر بعد از سرور باز شود) —');
+{
+  const cmd = fs.readFileSync(path.join(root, 'tools', 'reset-ui', 'start.cmd'), 'utf8');
+  const sh = fs.readFileSync(path.join(root, 'tools', 'reset-ui', 'start.sh'), 'utf8');
+  check('start.cmd قبل از باز کردن مرورگر صبر می‌کند', /timeout \/t 2/.test(cmd));
+  check('start.cmd کوتیشن تودرتو ندارد',
+    !/cmd \/c "timeout[^"]*start ""/.test(cmd));
+  check('start.sh قبل از باز کردن مرورگر صبر می‌کند', /sleep 2\.5/.test(sh));
+  check('start.sh فقط یک بار مرورگر را باز می‌کند',
+    (sh.match(/xdg-open "http:\/\/127\.0\.0\.1/g) || []).length === 1);
+}
+
 console.log(`\n${failed === 0 ? '✔' : '✘'} ${passed} تست موفق، ${failed} ناموفق`);
 if (failed) { console.log('\nمشکلات:'); problems.forEach((p) => console.log(` • ${p}`)); process.exit(1); }

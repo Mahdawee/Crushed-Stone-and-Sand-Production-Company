@@ -32,8 +32,10 @@ echo "  برای بستن: Ctrl+C"
 echo
 
 # باز کردن مرورگر، اگر ابزاری برای این کار هست (خطا مهم نیست)
+#  باگ: با تأخیر ۱ ثانیه، روی کمپیوتر کند مرورگر قبل از بالا آمدن سرور باز
+#  می‌شد و صفحه‌ی «اتصال برقرار نشد» نشان می‌داد. ۲.۵ ثانیه امن است.
 (
-  sleep 1
+  sleep 2.5
   if command -v xdg-open >/dev/null 2>&1; then xdg-open "http://127.0.0.1:$PORT/" >/dev/null 2>&1 || true
   elif command -v open >/dev/null 2>&1; then open "http://127.0.0.1:$PORT/" >/dev/null 2>&1 || true
   fi
