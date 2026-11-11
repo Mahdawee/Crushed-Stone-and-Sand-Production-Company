@@ -38,6 +38,27 @@ function numOrZero(v: unknown): number {
 /** وضعیت‌های مجاز یک روز حضور — یک منبع واحد برای ذخیره و گزارش. */
 const ROW_STATUS = ['present', 'absent', 'leave', 'sick', 'official_holiday', 'friday'];
 
+/**
+ * آیا این کارمند در بازه‌ی [from..to] واقعاً در شرکت بوده؟
+ *
+ * ── باگ (شکار باگ دور ۳۲) ──────────────────────────────────────────────
+ * ورق حضور و غیاب همه‌ی کارمندان **فعال** را می‌آورد، بی‌توجه به تاریخ:
+ *   • کارمندی که قراردادش از ماه بعد شروع می‌شود در ورق این ماه می‌آمد و
+ *     مدیر می‌توانست برای او غیبت ثبت کند (و بعد «روز کسر» در معاش)؛
+ *   • کارمندی که از شرکت رفته (`status='inactive'`) از ورق ماه‌های **قبل**
+ *     هم غیب می‌شد؛ یعنی حضور ماه‌های گذشته‌اش ناپدید می‌شد و گزارش
+ *     ماه‌های بسته‌شده با یک کلیک «غیرفعال کردن» عوض می‌شد.
+ * قاعده‌ی تازه: کسی در ورق است که در آن بازه شاغل بوده. کسی که رفته ولی
+ * در آن بازه حضور ثبت‌شده دارد هم می‌ماند، تا گذشته دست‌نخورده بماند.
+ */
+function employedInRange(emp: any, from: string, to: string, hasAttendance: boolean): boolean {
+  if (emp?.deletedAt) return false;
+  const hire = String(emp?.hireDate || '');
+  if (hire && hire > to) return false;                     /* هنوز استخدام نشده */
+  if (String(emp?.status || 'active') === 'active') return true;
+  return hasAttendance;                                     /* رفته، ولی سابقه دارد */
+}
+
 @UseGuards(AuthGuard)
 @Controller()
 export class EmployeesController {
@@ -93,8 +114,8 @@ export class EmployeesController {
   async attendance(@Query('month') month: string, @Query('date') date: string) {
     await ensureSchemaAsync();
     const mode = await this.cal();
-    const employees: any[] = await db().$queryRawUnsafe(
-      `SELECT * FROM "Employee" WHERE "status"='active' AND COALESCE("deletedAt",'')='' ORDER BY "code"`,
+    const allEmployees: any[] = await db().$queryRawUnsafe(
+      `SELECT * FROM "Employee" WHERE COALESCE("deletedAt",'')='' ORDER BY "code"`,
     );
     if (date) {
       let iso = '';
@@ -102,6 +123,8 @@ export class EmployeesController {
       catch (e: any) { throw new HttpException(e.message, 400); }
       const rows: any[] = await db().$queryRawUnsafe(
         `SELECT * FROM "Attendance" WHERE "date"=? AND COALESCE("deletedAt",'')=''`, iso);
+      const marked = new Set(rows.map((r: any) => Number(r.employeeId)));
+      const employees = allEmployees.filter((e: any) => employedInRange(e, iso, iso, marked.has(Number(e.id))));
       return { mode, date: iso, employees, rows };
     }
     // month = "1404-08" in the active calendar
@@ -127,6 +150,9 @@ export class EmployeesController {
       `SELECT * FROM "Salary" WHERE "periodStart" = ? AND COALESCE("deletedAt",'')=''`,
       bucket.start,
     );
+    /* قاعده‌ی «شاغل در این بازه» — باگ دور ۳۲؛ توضیح در `employedInRange` */
+    const markedInMonth = new Set(rows.map((r: any) => Number(r.employeeId)));
+    const employees = allEmployees.filter((e: any) => employedInRange(e, bucket.start, bucket.end, markedInMonth.has(Number(e.id))));
     return {
       mode,
       month: `${bucket.year}-${String(bucket.month).padStart(2, '0')}`,

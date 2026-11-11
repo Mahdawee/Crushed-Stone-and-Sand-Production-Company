@@ -236,5 +236,13 @@ ok('ورق معاش کارمند آینده را نمی‌آورد', /filter\(\(
 const salPage = read('apps/web/src/pages/Salaries.tsx');
 ok('«ثبت‌شده این ماه» از totalPaid نشان داده می‌شود', /sheet\.totalPaid/.test(salPage));
 
+console.log('\n— حضور و غیاب: گذشته دست‌نخورده می‌ماند —');
+
+const empCtl = read('apps/api/src/modules/employees.controller.ts');
+ok('قاعده‌ی «شاغل در این بازه» یک تابع واحد است', /function employedInRange\(/.test(empCtl));
+ok('ورق ماه فیلتر می‌شود', /employedInRange\(e, bucket\.start, bucket\.end/.test(empCtl));
+ok('ورق روز هم فیلتر می‌شود', /employedInRange\(e, iso, iso/.test(empCtl));
+ok('کارمند رفته با سابقه‌ی همان ماه نمی‌افتد', /return hasAttendance;/.test(empCtl));
+
 console.log(`\n${fail === 0 ? '✅' : '⛔'} ${pass} موفق، ${fail} ناکام\n`);
 process.exit(fail === 0 ? 0 : 1);

@@ -139,6 +139,27 @@ const daily = (token, from, to) =>
   check('کارمند غیرفعال (رفته) از ورق ماه‌های بعد حذف می‌شود', !sheet.rows.some((r) => r.name === 'کارمند ماه قبل'),
     sheet.rows.map((r) => r.name).join(','));
 
+  console.log('\n— حضور و غیاب: «شاغل در این بازه» —');
+  /*
+   * باگ دور ۳۲: ورق حضور همه‌ی کارمندان فعال را می‌آورد، بی‌توجه به تاریخ
+   * استخدام؛ و کارمند رفته از ورق ماه‌های گذشته هم غیب می‌شد.
+   */
+  await api('POST', '/attendance/bulk', {
+    items: [{ employeeId: oldEmp.id, date: '2026-11-01', status: 'present', overtime: 3 }],
+  }, token);
+  let att = (await api('GET', '/attendance?month=1405-08', undefined, token)).body;
+  const attNames = att.employees.map((e) => e.name);
+  check('ورق حضور کارمند آینده را نمی‌آورد', !attNames.includes('کارمند ماه آینده'), attNames.join(','));
+  check('ورق حضور کارمند شاغل را می‌آورد', attNames.includes('کارمند ماه قبل'), attNames.join(','));
+
+  /* کارمند رفته: نباید از ورق ماه‌های بعد بیاید، ولی سابقه‌اش در ماه قبل بماند */
+  att = (await api('GET', '/attendance?month=1405-08', undefined, token)).body;
+  check('کارمند غیرفعال با سابقه‌ی این ماه در ورق می‌ماند', attNames.includes('کارمند ماه قبل'));
+  const nextMonth = (await api('GET', '/attendance?month=1405-10', undefined, token)).body;
+  check('کارمند غیرفعال در ماه‌های بدون سابقه نمی‌آید',
+    !nextMonth.employees.some((e) => e.name === 'کارمند ماه قبل'),
+    nextMonth.employees.map((e) => e.name).join(','));
+
   console.log('\n— سلامت —');
   check('سرور خطای داخلی نداده', !/Internal server error|Unhandled/i.test(log));
   const empty = await daily(token, '2026-12-25', '2026-12-26');
