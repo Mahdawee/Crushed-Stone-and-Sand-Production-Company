@@ -79,7 +79,25 @@ export class RecycleController {
     if (!SOFT_TABLES[table]) throw new HttpException('جدول ناشناخته است.', 400);
     const n = Number(id);
     if (!Number.isFinite(n) || n <= 0) throw new HttpException('شناسه نامعتبر است.', 400);
-    const res = await restore(table, n, { username: body?.username });
+    /*
+     * ── باگ: بازیابی می‌توانست ۵۰۰ بدهد ─────────────────────────────────
+     * اگر شماره‌ی سند حذف‌شده بعداً به سند دیگری داده شده باشد، `UPDATE`
+     * بازیابی با «UNIQUE constraint failed» می‌شکست و کاربر یک خطای سرور
+     * بی‌معنا می‌دید. حالا: پیام روشن + راه‌حل (شماره‌ی سند دیگر را عوض کنید).
+     */
+    let res;
+    try {
+      res = await restore(table, n, { username: body?.username });
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      if (/UNIQUE/i.test(msg)) {
+        throw new HttpException(
+          'بازیابی نشد: شماره‌ی این سند الان روی سند دیگری است. اول شماره‌ی آن سند را عوض کنید، بعد این یکی را بازگردانید.',
+          409,
+        );
+      }
+      throw new HttpException(`بازیابی انجام نشد: ${msg}`, 400);
+    }
     if (!res.ok) throw new HttpException('ردیف پیدا نشد.', 404);
     return { ok: true, message: 'بازیابی شد.' };
   }

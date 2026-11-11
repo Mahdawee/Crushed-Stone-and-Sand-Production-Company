@@ -245,7 +245,7 @@ export default function SalesPage() {
           </>
         }>
           <div className="form-grid">
-            <Field label="شماره بل"><Text value={form.no} onChange={(v) => setForm({ ...form, no: v })} readOnly={!!form.id} /></Field>
+            <Field label="شماره بل" hint={form.id ? 'قابل ویرایش — اگر تکراری باشد ذخیره نمی‌شود' : undefined}><Text value={form.no} onChange={(v) => setForm({ ...form, no: v })} /></Field>
             <Field label="تاریخ" required hint={calendar === 'jalali' ? 'شمسی' : 'میلادی'}>
               <DatePicker value={dateISO} onChange={setDateISO} calendar={calendar} />
             </Field>

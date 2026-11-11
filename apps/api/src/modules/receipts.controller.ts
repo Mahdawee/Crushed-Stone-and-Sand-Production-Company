@@ -199,15 +199,35 @@ export class ReceiptsController {
      */
     const cust = await resolveReceiptCustomer(body);
     const sourceName = await resolveSourceName(body.sourceId, body.sourceName);
+
+    /*
+     * ── باگ: شماره رسید در ویرایش گم می‌شد ─────────────────────────────
+     *
+     * فورم ویرایش شماره را `readOnly` نشان می‌داد ولی آن را در `PUT` هم
+     * می‌فرستاد؛ سرور شماره را در `SET` نداشت، پس شماره‌ی سند حفظ می‌شد.
+     * اشکال در دو جا بود: (۱) اگر شماره ارسال می‌شد نادیده گرفته می‌شد
+     * (رفتار مبهم)، و (۲) شماره نمی‌توانست عمداً اصلاح شود.
+     * حالا رفتار صریح است: نبودِ شماره = حفظ شماره، شماره‌ی تکراری = ۴۰۹.
+     */
+    const curNo: any[] = await db().$queryRawUnsafe(`SELECT "no" FROM "Receipt" WHERE "id"=?`, rid);
+    const currentNo = String(curNo?.[0]?.no ?? '');
+    const wanted = String(body.no ?? '').trim();
+    const finalNo = wanted || currentNo;
+    if (wanted && wanted !== currentNo) {
+      const clash: any[] = await db().$queryRawUnsafe(
+        `SELECT "id" FROM "Receipt" WHERE "no"=? AND "id"<>?`, wanted, rid,
+      );
+      if (clash?.length) throw new HttpException(`شماره رسید «${wanted}» قبلاً ثبت شده است.`, 409);
+    }
     await db().$executeRawUnsafe(
-      `UPDATE "Receipt" SET "date"=?, "customerId"=?, "customerName"=?, "amount"=?, "relatedBillNo"=?,
+      `UPDATE "Receipt" SET "no"=?, "date"=?, "customerId"=?, "customerName"=?, "amount"=?, "relatedBillNo"=?,
        "sourceId"=?, "sourceName"=?, "receivedBy"=?, "note"=? WHERE "id"=?`,
-      date, cust.id, cust.name || body.customerName || '', amount,
+      finalNo, date, cust.id, cust.name || body.customerName || '', amount,
       body.relatedBillNo || '', body.sourceId ? Number(body.sourceId) : null, sourceName,
       body.receivedBy || '', body.note || '', rid,
     );
-    await logActivity({ action: 'update', entity: 'Receipt', entityId: rid });
-    return { ok: true };
+    await logActivity({ action: 'update', entity: 'Receipt', entityId: rid, detail: finalNo });
+    return { ok: true, no: finalNo };
   }
 
   @Delete(':id')

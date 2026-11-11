@@ -185,7 +185,7 @@ export default function ExpensesPage() {
           <><button className="btn primary" onClick={save} disabled={busy}>{busy ? 'ذخیره…' : 'ذخیره مصرف'}</button>
             <button className="btn" onClick={() => setForm(null)}>انصراف</button></>}>
           <div className="form-grid">
-            <Field label="شماره سند"><Text value={form.no} onChange={(v) => setForm({ ...form, no: v })} readOnly={!!form.id} /></Field>
+            <Field label="شماره سند" hint={form.id ? 'قابل ویرایش — اگر تکراری باشد ذخیره نمی‌شود' : undefined}><Text value={form.no} onChange={(v) => setForm({ ...form, no: v })} /></Field>
             <Field label="تاریخ" required><DatePicker value={dateISO} onChange={setDateISO} calendar={calendar} /></Field>
             <Field label="نوع مصرف">
               <Select value={form.categoryId} placeholder="انتخاب…" onChange={(v) => setForm({ ...form, categoryId: v })}

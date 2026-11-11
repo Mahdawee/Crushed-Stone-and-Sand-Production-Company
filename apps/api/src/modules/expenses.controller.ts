@@ -134,18 +134,31 @@ export class ExpensesController {
     if (amountAfn < 0 || amountUsd < 0) throw new HttpException('مبلغ مصرف نمی‌تواند منفی باشد.', 400);
     if (amountAfn <= 0 && amountUsd <= 0) throw new HttpException('مبلغ مصرف را وارد کنید (افغانی یا دالری).', 400);
     const branch = await resolveRelatedBranch(body.contractorId, body.contractorName);
+
+    /* همان باگ «شماره در ویرایش گم می‌شد» — با رفتار صریح (حفظ یا ۴۰۹) */
+    const curNo: any[] = await db().$queryRawUnsafe(`SELECT "no" FROM "Expense" WHERE "id"=?`, eid);
+    const currentNo = String(curNo?.[0]?.no ?? '');
+    const wanted = String(body.no ?? '').trim();
+    const finalNo = wanted || currentNo;
+    if (wanted && wanted !== currentNo) {
+      const clash: any[] = await db().$queryRawUnsafe(
+        `SELECT "id" FROM "Expense" WHERE "no"=? AND "id"<>?`, wanted, eid,
+      );
+      if (clash?.length) throw new HttpException(`شماره سند «${wanted}» قبلاً ثبت شده است.`, 409);
+    }
+
     await db().$executeRawUnsafe(
-      `UPDATE "Expense" SET "date"=?, "description"=?, "categoryId"=?, "categoryName"=?, "contractorId"=?, "contractorName"=?,
+      `UPDATE "Expense" SET "no"=?, "date"=?, "description"=?, "categoryId"=?, "categoryName"=?, "contractorId"=?, "contractorName"=?,
        "purchaseBillNo"=?, "shopName"=?, "amountAfn"=?, "amountUsd"=?, "payerId"=?, "payerName"=?, "paymentType"=?, "note"=?
        WHERE "id"=?`,
-      date, body.description || '', body.categoryId ? Number(body.categoryId) : null, body.categoryName || '',
+      finalNo, date, body.description || '', body.categoryId ? Number(body.categoryId) : null, body.categoryName || '',
       branch.contractorId, branch.contractorName,
       body.purchaseBillNo || '', body.shopName || '', amountAfn, amountUsd,
       body.payerId ? Number(body.payerId) : null, body.payerName || '',
       body.paymentType === 'credit' ? 'credit' : 'cash', body.note || '', eid,
     );
-    await logActivity({ action: 'update', entity: 'Expense', entityId: eid });
-    return { ok: true };
+    await logActivity({ action: 'update', entity: 'Expense', entityId: eid, detail: finalNo });
+    return { ok: true, no: finalNo };
   }
 
   @Delete(':id')

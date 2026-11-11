@@ -52,15 +52,22 @@ export class EmployeesController {
     const sql = `SELECT * FROM "Employee" ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY "code"`;
     const rows: any[] = await db().$queryRawUnsafe(sql, ...args);
     const mode = await this.cal();
-    const enriched = [];
-    for (const r of rows) {
-      const s: any[] = await db().$queryRawUnsafe(
-        /* فقط معاش‌های زنده — سند سطل بازیافت نباید شمارش شود */
-        `SELECT COUNT(*) as c FROM "Salary" WHERE "employeeId"=? AND COALESCE("deletedAt",'')=''`,
-        r.id,
-      );
-      enriched.push({ ...r, salaryCount: Number(s?.[0]?.c ?? 0), hireDateDisplay: r.hireDate });
-    }
+    /*
+     * ── باگ کارایی (شکار باگ دور ۲۴) ─────────────────────────────────────
+     * نسخه‌ی قبلی برای **هر کارمند** یک کوئری جدا می‌زد (N+1). با ۳۰۰ کارمند
+     * یعنی ۳۰۰ رفت‌وبرگشت به دیتابیس و چند ثانیه معطلی در فهرست کارمندان.
+     * حالا یک کوئری گروهی؛ نتیجه عددبه‌عدد یکسان.
+     */
+    const counts: any[] = await db().$queryRawUnsafe(
+      `SELECT "employeeId", COUNT(*) AS c FROM "Salary"
+        WHERE COALESCE("deletedAt",'')='' GROUP BY "employeeId"`,
+    );
+    const byEmp = new Map<number, number>(counts.map((c) => [Number(c.employeeId), Number(c.c) || 0]));
+    const enriched = rows.map((r) => ({
+      ...r,
+      salaryCount: byEmp.get(Number(r.id)) ?? 0,
+      hireDateDisplay: r.hireDate,
+    }));
     return { rows: enriched, calendar: mode };
   }
 
@@ -184,15 +191,37 @@ export class EmployeesController {
     try { iso = parseUserDate(body.date, mode); }
     catch (e: any) { throw new HttpException(e.message, 400); }
     const p = db();
-    for (const id of body.employeeIds || []) {
+    /*
+     * ── باگ (شکار باگ دور ۲۴) ───────────────────────────────────────────
+     *
+     * این مسیر هیچ بررسی‌ای نداشت: نه وجود کارمند را می‌سنجید (ردیف حضور
+     * «یتیم» ساخته می‌شد — همان چیزی که در `attendance/bulk` صریحاً باگ
+     * شمرده شده)، نه وضعیت را محدود می‌کرد، و نه سابقه ثبت می‌کرد (پس
+     * «ثبت حضور گروهی» در «سابقه فعالیت‌ها» پیدا نمی‌شد).
+     */
+    await ensureSchemaAsync();
+    const ids = (body.employeeIds || []).map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0);
+    if (!ids.length) throw new HttpException('هیچ کارمندی انتخاب نشده است.', 400);
+    const VALID = ['present', 'absent', 'leave', 'sick', 'official_holiday', 'friday'];
+    const status = String(body.status || 'present');
+    if (!VALID.includes(status)) throw new HttpException('وضعیت حضور معتبر نیست.', 400);
+    const known: any[] = await p.$queryRawUnsafe(
+      `SELECT "id" FROM "Employee" WHERE COALESCE("deletedAt",'')=''`, );
+    const live = new Set(known.map((k) => Number(k.id)));
+    const missing = ids.filter((id) => !live.has(id));
+    if (missing.length) {
+      throw new HttpException(`کارمند با شناسه ${missing[0]} پیدا نشد.`, 400);
+    }
+    for (const id of ids) {
       await p.$executeRawUnsafe(
         `INSERT INTO "Attendance" ("employeeId","date","status") VALUES (?,?,?)
          ON CONFLICT("employeeId","date") DO UPDATE SET "status"=excluded."status",
            "deletedAt"=NULL, "deletedBy"=NULL`,
-        Number(id), iso, body.status || 'present',
+        id, iso, status,
       );
     }
-    return { ok: true };
+    await logActivity({ action: 'update', entity: 'Attendance', detail: `ثبت گروهی ${ids.length} کارمند` });
+    return { ok: true, saved: ids.length };
   }
 
   /**

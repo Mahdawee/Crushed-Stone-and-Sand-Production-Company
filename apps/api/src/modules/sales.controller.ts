@@ -237,12 +237,38 @@ export class SalesController {
     }
     /* «مربوط» (شاخه‌ی مصرف): نام از شناسه خوانده می‌شود، نه از کلاینت */
     const branch = await resolveRelatedBranch(body.contractorId, body.contractorName);
+
+    /*
+     * ── باگ: شماره بل در ویرایش گم می‌شد ────────────────────────────────
+     *
+     * `PUT` شماره را در `SET` نداشت. فورم ویرایش هم شماره نمی‌فرستاد، پس
+     * سرور با «شماره فعلی» کاری نداشت و شماره‌ی روی سند همان قبلی می‌ماند —
+     * ولی *فورم* شماره‌ی بعدی (`next-no`) را نشان می‌داد، و کاربر فکر
+     * می‌کرد شماره عوض شده. بدتر: اگر شماره واقعاً عوض می‌شد (API/CLI)
+     * یکتایی بررسی نمی‌شد و پیام «ویرایش انجام نشد» بی‌ربط می‌داد.
+     *
+     * حالا: اگر `no` فرستاده نشود، شماره‌ی فعلی **حفظ** می‌شود؛ اگر
+     * فرستاده شود، معتبر و یکتا بودنش روشن گزارش می‌شود.
+     */
+    const cur: any[] = await db().$queryRawUnsafe(`SELECT "no" FROM "Sale" WHERE "id"=?`, sid);
+    const currentNo = String(cur?.[0]?.no ?? '');
+    const wantedNo = String(body.no ?? '').trim();
+    const finalNo = wantedNo || currentNo;
+    if (wantedNo && wantedNo !== currentNo) {
+      const clash: any[] = await db().$queryRawUnsafe(
+        `SELECT "id" FROM "Sale" WHERE "no"=? AND "id"<>?`, wantedNo, sid,
+      );
+      if (clash?.length) {
+        throw new HttpException(`شماره بل «${wantedNo}» قبلاً برای سند دیگری ثبت شده است.`, 409);
+      }
+    }
+
     try {
       await db().$executeRawUnsafe(
-        `UPDATE "Sale" SET "date"=?, "customerId"=?, "customerName"=?, "driverName"=?, "truckPlate"=?, "destination"=?,
+        `UPDATE "Sale" SET "no"=?, "date"=?, "customerId"=?, "customerName"=?, "driverName"=?, "truckPlate"=?, "destination"=?,
           "materialId"=?, "materialName"=?, "volume"=?, "unitPrice"=?, "freightPerUnit"=?, "freightTotal"=?, "total"=?,
           "contractorId"=?, "contractorName"=?, "paymentType"=?, "note"=? WHERE "id"=?`,
-        date, cust.id, cust.name || body.customerName || '', body.driverName || '',
+        finalNo, date, cust.id, cust.name || body.customerName || '', body.driverName || '',
         body.truckPlate || '', body.destination || '', body.materialId ? Number(body.materialId) : null,
         body.materialName || '', volume, unitPrice, freightPerUnit, freightTotal, total,
         branch.contractorId, branch.contractorName,
@@ -251,8 +277,8 @@ export class SalesController {
     } catch {
       throw new HttpException('ویرایش انجام نشد.', 400);
     }
-    await logActivity({ action: 'update', entity: 'Sale', entityId: sid, detail: body.no || '' });
-    return { ok: true, total };
+    await logActivity({ action: 'update', entity: 'Sale', entityId: sid, detail: finalNo });
+    return { ok: true, total, no: finalNo };
   }
 
   @Delete(':id')

@@ -177,7 +177,7 @@ export default function ReceiptsPage() {
             {selectedCust ? <span className="small muted">باقی فعلی مشتری: <b className="mono" style={{ color: 'var(--danger)' }}>{money(selectedCust.balance)}</b></span> : null}
           </>}>
           <div className="form-grid c2">
-            <Field label="شماره رسید"><Text value={form.no} onChange={(v) => setForm({ ...form, no: v })} readOnly={!!form.id} /></Field>
+            <Field label="شماره رسید" hint={form.id ? 'قابل ویرایش — اگر تکراری باشد ذخیره نمی‌شود' : undefined}><Text value={form.no} onChange={(v) => setForm({ ...form, no: v })} /></Field>
             <Field label="تاریخ" required><DatePicker value={dateISO} onChange={setDateISO} calendar={calendar} /></Field>
             <Field label="مشتری" span={2}
               hint={form.customerId ? undefined : 'بدون مشتری = رسید «گذری» (پول از مشتری بدون حساب)'}>

@@ -185,10 +185,22 @@ export function toExcelHtml(sheet: string, headers: string[], rows: unknown[][],
   const numCols = new Set(numeric);
   const head = headers.map((h) => `<th>${esc(h)}</th>`).join('');
   const body = rows.map((r) => '<tr>' + r.map((c, i) => {
-    /* کاربر ممکن است با «=» شروع شود → اکسل فرمول می‌بیند */
-    const isNum = numCols.has(i) && c !== null && c !== undefined && c !== '' && Number.isFinite(Number(c));
-    const style = isNum ? ' style="mso-number-format:\\@"' : ' style="mso-number-format:\\@"';
-    return `<td${style}>${esc(c)}</td>`;
+    /*
+     * ── باگ (شکار باگ دور ۲۴) ───────────────────────────────────────
+     *
+     * ۱) ستون‌های عددی با `mso-number-format:\@` (متن) نوشته می‌شدند، پس
+     *    «متراژ ۱۲٫۵» و «مبلغ ۱۲۰۰۰۰» در اکسل **متن** بودند: جمع ستون صفر
+     *    می‌شد و کاربر فکر می‌کرد خروجی خراب است. حالا اعداد، عددی‌اند.
+     * ۲) محافظت از فرمول (CSV injection) اصلاً نبود: نام مشتری که با «=»
+     *    شروع شود، در اکسل فرمول اجرا می‌کرد. همان محافظتِ CSV این‌جا هم
+     *    لازم است (آپاستروف بی‌اثر).
+     */
+    const isNum = numCols.has(i) && c !== null && c !== undefined && c !== ''
+      && Number.isFinite(Number(c));
+    if (isNum) return `<td style="mso-number-format:General">${esc(c)}</td>`;
+    const raw = String(c ?? '');
+    const safe = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+    return `<td style="mso-number-format:\\@">${esc(safe)}</td>`;
   }).join('') + '</tr>').join('');
 
   return `\uFEFF<html xmlns:o="urn:schemas-microsoft-com:office:office"

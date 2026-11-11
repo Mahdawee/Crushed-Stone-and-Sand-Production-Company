@@ -345,9 +345,24 @@ export class ReportsController {
     await ensureSchemaAsync();
     const mode = await settingsService.calendar();
     const today = todayISO();
-    const start = from || startOfMonth(today, mode);
-    const end = to || endOfMonth(today, mode);
-    try { assertRange(start, end); } catch (e: any) { throw new HttpException(e.message, 400); }
+    /*
+     * ── باگ (شکار باگ دور ۲۴) ────────────────────────────────────────────
+     *
+     * این‌جا (و در «تفصیلی») تاریخ کاربر **بی‌تبدیل** استفاده می‌شد:
+     * `const start = from`. رابط تاریخ شمسی می‌فرستد (۱۴۰۴/۰۶/۱۵) ولی
+     * ستون‌های `date` در دیتابیس ISO میلادی‌اند؛ مقایسه‌ی رشته‌ای
+     * (`"1404/06/15" >= "2025-09-06"`) همیشه نادرست است، پس «دفتر صندوق»
+     * و «تفصیلی» برای هر بازه‌ای **خالی** برمی‌گشتند (یا داده‌ی غلط) — در
+     * حالی که راپور روزانه درست بود. دقیقاً همان کلاسِ باگی که کاربر درباره‌ی
+     * خروجی گرفتن گزارش‌ها دیده بود.
+     */
+    let start: string;
+    let end: string;
+    try {
+      start = from ? parseUserDate(from, mode) : startOfMonth(today, mode);
+      end = to ? parseUserDate(to, mode) : endOfMonth(today, mode);
+      assertRange(start, end);
+    } catch (e: any) { throw new HttpException(e.message, 400); }
     const p = db();
     const entries: any[] = [];
     const sales: any[] = await p.$queryRawUnsafe(
@@ -429,9 +444,14 @@ export class ReportsController {
     await ensureSchemaAsync();
     const mode = await settingsService.calendar();
     const today = todayISO();
-    const start = from || startOfYear(today, mode);
-    const end = to || today;
-    try { assertRange(start, end); } catch (e: any) { throw new HttpException(e.message, 400); }
+    /* همان باگ تاریخ شمسی/میلادی — بازه باید تبدیل شود (نه مقایسه‌ی رشته‌ای) */
+    let start: string;
+    let end: string;
+    try {
+      start = from ? parseUserDate(from, mode) : startOfYear(today, mode);
+      end = to ? parseUserDate(to, mode) : today;
+      assertRange(start, end);
+    } catch (e: any) { throw new HttpException(e.message, 400); }
     const p = db();
     /*
      * هر کوئری دو «؟» (بازه) دارد؛ کوئری «مربوط» سه بخش دارد و شش «؟».

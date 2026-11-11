@@ -165,7 +165,7 @@ export class SalariesController {
     for (const r of body.rows || []) {
       /* کارمند باید وجود داشته باشد — وگرنه سند معاش «یتیم» ساخته می‌شود */
       const emp: any[] = await p.$queryRawUnsafe(
-        `SELECT "id" FROM "Employee" WHERE "id"=? AND COALESCE("deletedAt",'')=''`,
+        `SELECT "id","name" FROM "Employee" WHERE "id"=? AND COALESCE("deletedAt",'')=''`,
         Number(r.employeeId),
       );
       if (!emp?.length) throw new HttpException(`کارمند با شناسه ${r.employeeId} پیدا نشد.`, 400);
@@ -212,7 +212,15 @@ export class SalariesController {
             "employeeName","baseSalary","bonus","penalty","overtimeAmount","total","payerName","paymentType","note")
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           no, b.start, b.label, mode, b.year, b.month, payDate, Number(r.employeeId),
-          r.name || '', base, bonus, penalty, overtimeAmount, total, r.payerName || '',
+          /*
+           * ── باگ (شکار باگ دور ۲۴) ────────────────────────────────────
+           * نام کارمند از بدنه‌ی درخواست گرفته می‌شد. اگر درخواست از رابط
+           * نیاید (CLI، ورود داده، یا فورمی که نام را نفرستد) سند معاش با
+           * نام **خالی** ثبت می‌شد و در «فهرست معاشات» و خروجی اکسل یک
+           * ردیف بی‌نام می‌ماند. شناسه که داریم؛ نام را از خود کارمند
+           * می‌خوانیم.
+           */
+          r.name || emp[0].name || '', base, bonus, penalty, overtimeAmount, total, r.payerName || '',
           r.paymentType === 'hawala' ? 'hawala' : 'cash', r.note || '',
         );
       }
