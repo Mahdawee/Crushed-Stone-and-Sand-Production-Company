@@ -206,9 +206,9 @@ export function readFileAsText(file: File): Promise<string> {
 
 export type RecycleTable = { table: string; label: string; count: number; titleCol: string; extraCols: string[] };
 export const listRecycle = () => request<{ items: RecycleTable[]; total: number }>('GET', '/recycle');
-export const listDeleted = (table: string) =>
-  request<{ table: string; label: string; titleCol: string; extraCols: string[]; rows: any[] }>(
-    'GET', `/recycle/${encodeURIComponent(table)}`,
+export const listDeleted = (table: string, page = 1, pageSize = 100) =>
+  request<{ table: string; label: string; titleCol: string; extraCols: string[]; rows: any[]; total?: number; page?: number; pageSize?: number }>(
+    'GET', `/recycle/${encodeURIComponent(table)}?page=${page}&limit=${pageSize}`,
   );
 export const restoreDeleted = (table: string, id: number) =>
   request<{ ok: boolean; message: string }>('POST', `/recycle/${encodeURIComponent(table)}/${id}/restore`, {});

@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards, HttpException } from '@nestjs/common';
 import { AuthGuard, ManagerOnly } from '../common/auth';
-import { SOFT_TABLES, deletedCounts, listDeleted, restore } from '../common/soft-delete';
+import { SOFT_TABLES, deletedCounts, deletedCountOf, listDeleted, restore } from '../common/soft-delete';
 
 /**
  * سطل بازیافت — ردیف‌های «حذف نرم»شده.
@@ -57,7 +57,10 @@ export class RecycleController {
   /** ردیف‌های حذف‌شده‌ی یک جدول */
   @Get(':table')
   @ManagerOnly()
-  async list(@Param('table') table: string, @Query('limit') limit?: string) {
+  async list(
+    @Param('table') table: string, @Query('limit') limit?: string,
+    @Query('page') page?: string,
+  ) {
     if (!SOFT_TABLES[table]) throw new HttpException('جدول ناشناخته است.', 400);
     /*
      * سقف تعداد (شکار باگ دور ۲۹): `limit` از آدرس می‌آمد و `Number('999999')`
@@ -65,11 +68,19 @@ export class RecycleController {
      * ردیف را یک‌جا بکشد و مرورگر را قفل کند.
      */
     const take = Math.min(1000, Math.max(1, Math.trunc(Number(limit)) || 200));
-    const rows = await listDeleted(table, take);
+    /*
+     * صفحه‌بندی سمت سرور (شکار باگ دور ۳۲): قبلاً سقف ۱۰۰۰ ردیف بود و همه
+     * یک‌جا می‌آمد. حالا `page` (از ۱) با همان اندازه‌ی صفحه، به‌همراه
+     * `total` — تا کاربر بداند چند ردیف در سطل است و بقیه کجاست.
+     * بدون `page` رفتار قبلی حفظ می‌شود (اولین صفحه).
+     */
+    const p = Math.max(1, Math.trunc(Number(page)) || 1);
+    const rows = await listDeleted(table, take, (p - 1) * take);
     return {
       table, label: SOFT_TABLES[table].label,
       titleCol: SOFT_TABLES[table].titleCol,
       extraCols: SOFT_TABLES[table].extraCols || [],
+      page: p, pageSize: Math.min(take, 500), total: await deletedCountOf(table),
       rows: rows.map((r) => ({
         ...r,
         /* موتور دیتابیس تاریخ ISO می‌دهد؛ UI خودش شمسی می‌کند */

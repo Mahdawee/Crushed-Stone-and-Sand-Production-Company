@@ -43,7 +43,10 @@ export class CustomersController {
    * صد کیلوبایت بود و باز شدن فورم کند می‌شد.
    */
   @Get()
-  async list(@Query('q') q?: string, @Query('light') light?: string, @Query('walkIn') walkIn?: string) {
+  async list(
+    @Query('q') q?: string, @Query('light') light?: string, @Query('walkIn') walkIn?: string,
+    @Query('page') page?: string, @Query('pageSize') pageSize?: string,
+  ) {
     await ensureSchemaAsync();
     const args: any[] = [];
     /* حذف‌نرم: مشتری حذف‌شده در فهرست نیاید (پرانتز لازم است، وگرنه OR
@@ -63,26 +66,68 @@ export class CustomersController {
       args.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
     }
     const lightMode = light === '1' || light === 'true';
+    /*
+     * ── صفحه‌بندی اختیاری (شکار باگ دور ۳۲: پاسخ بی‌سقف) ───────────────────
+     * با ۵۰۰ مشتری پاسخ این مسیر ۱۳۶ کیلوبایت بود و با هر جستجو کل فهرست
+     * دوباره می‌آمد؛ مرورگر روی سیستم‌های ضعیف چند لحظه قفل می‌کرد.
+     *
+     * چرا «اختیاری»: فورم‌های فروش/رسید همه‌ی مشتریان را برای کشویی
+     * می‌خواهند (`light=1`) و صفحه‌ی کارت حساب هم به همان آرایه‌ی کامل
+     * تکیه می‌کند. اگر پیش‌فرض را صفحه‌بندی می‌کردیم، آن‌ها بی‌صدا ناقص
+     * می‌شدند — همان کلاس باگی که در Select/کشویی دیدیم. پس:
+     *   • بدون `page`/`pageSize` ⇒ رفتار قبلی: آرایه‌ی کامل (سازگار).
+     *   • با `page`/`pageSize`   ⇒ `{rows,total,page,pageSize,debtTotal,...}`.
+     * صفحه‌ی «مشتریان» در UI همین حالت دوم را می‌خواهد.
+     */
+    const wantPaged = page !== undefined || pageSize !== undefined;
+    const lbase = lightMode
+      ? `c."id", c."code", c."name", c."phone", c."openingBalance",`
+      : `c.*,`;
+    const nbase = lightMode
+      ? ''
+      : `, (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND COALESCE(s."deletedAt",'')='' ) AS allSales`;
+    const sums = `
+        (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND COALESCE(s."deletedAt",'')='' AND s."paymentType"='credit') AS creditSales,
+        (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE r."customerId"=c."id" AND COALESCE(r."deletedAt",'')='' AND ${receiptDebtSql('r."sourceName"')}) AS receipts`;
+    const selectSql = `SELECT ${lbase} ${sums}${nbase} FROM "Customer" c ${where}`;
+    const p = Math.max(1, Number(page) || 1);
+    const ps = Math.min(500, Math.max(5, Number(pageSize) || 25));
     const rows: any[] = await db().$queryRawUnsafe(
-      lightMode
-        ? `SELECT c."id", c."code", c."name", c."phone", c."openingBalance",
-        (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND COALESCE(s."deletedAt",'')='' AND s."paymentType"='credit') AS creditSales,
-        (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE r."customerId"=c."id" AND COALESCE(r."deletedAt",'')='' AND ${receiptDebtSql('r."sourceName"')}) AS receipts
-       FROM "Customer" c ${where} ORDER BY c."name"`
-        : `SELECT c.*,
-        (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND COALESCE(s."deletedAt",'')='' AND s."paymentType"='credit') AS creditSales,
-        (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND COALESCE(s."deletedAt",'')='') AS allSales,
-        (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE r."customerId"=c."id" AND COALESCE(r."deletedAt",'')='' AND ${receiptDebtSql('r."sourceName"')}) AS receipts
-       FROM "Customer" c ${where} ORDER BY c."name"`,
-      ...args,
+      wantPaged
+        ? `${selectSql} ORDER BY c."name" LIMIT ? OFFSET ?`
+        : `${selectSql} ORDER BY c."name"`,
+      ...args, ...(wantPaged ? [ps, (p - 1) * ps] : []),
     );
-    return rows.map((r) => ({
+    const mapped = rows.map((r) => ({
       ...r,
       creditSales: Number(r.creditSales) || 0,
       allSales: Number(r.allSales) || 0,
       receipts: Number(r.receipts) || 0,
       balance: (Number(r.openingBalance) || 0) + (Number(r.creditSales) || 0) - (Number(r.receipts) || 0),
     }));
+    if (!wantPaged) return mapped;
+    /*
+     * `debtTotal` روی **کل** نتیجه‌ی فیلتر حساب می‌شود، نه صفحه‌ی جاری —
+     * وگرنه کاربر با صفحه‌بندی عدد «مجموع بدهی» را اشتباه می‌خواند.
+     */
+    const agg: any[] = await db().$queryRawUnsafe(
+      `SELECT COUNT(*) c,
+              COALESCE(SUM(CASE WHEN x.b > 0 THEN x.b ELSE 0 END), 0) debt
+         FROM (
+           SELECT c."openingBalance"
+             + (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE s."customerId"=c."id" AND COALESCE(s."deletedAt",'')='' AND s."paymentType"='credit')
+             - (SELECT COALESCE(SUM(r."amount"),0) FROM "Receipt" r WHERE r."customerId"=c."id" AND COALESCE(r."deletedAt",'')='' AND ${receiptDebtSql('r."sourceName"')})
+             AS b
+           FROM "Customer" c ${where}
+         ) x`,
+      ...args,
+    );
+    return {
+      rows: mapped,
+      total: Number(agg?.[0]?.c ?? 0),
+      debtTotal: Number(agg?.[0]?.debt ?? 0),
+      page: p, pageSize: ps,
+    };
   }
 
   @Get('next-code')

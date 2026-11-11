@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  useToast, Table, Spinner, ListHead, SummaryBar, K, Empty,
+  useToast, Table, Spinner, ListHead, SummaryBar, K, Empty, Pager,
 } from '../components/ui';
 import { listRecycle, listDeleted, restoreDeleted, type RecycleTable } from '../lib/api';
 
@@ -20,6 +20,13 @@ export default function RecyclePage() {
   const [rows, setRows] = useState<any[] | null>(null);
   const [meta, setMeta] = useState<{ titleCol: string; extraCols: string[]; label: string } | null>(null);
   const [busy, setBusy] = useState(0);
+  /*
+   * صفحه‌بندی سمت سرور (شکار باگ دور ۳۲): قبلاً تا ۱۰۰۰ ردیف یک‌جا می‌آمد.
+   * حالا هر صفحه ۱۰۰ ردیف، و «جمع کل» از سرور می‌آید.
+   */
+  const [page, setPage] = useState(1);
+  const [binTotal, setBinTotal] = useState(0);
+  const pageSize = 100;
 
   const loadSummary = () =>
     listRecycle()
@@ -35,10 +42,17 @@ export default function RecyclePage() {
   useEffect(() => {
     if (!active) return;
     setRows(null);
-    listDeleted(active)
-      .then((r) => { setRows(r.rows); setMeta({ titleCol: r.titleCol, extraCols: r.extraCols, label: r.label }); })
+    listDeleted(active, page, pageSize)
+      .then((r) => {
+        setRows(r.rows);
+        setBinTotal(Number(r.total ?? r.rows.length) || 0);
+        setMeta({ titleCol: r.titleCol, extraCols: r.extraCols, label: r.label });
+      })
       .catch((e) => toast.error('بارگذاری نشد', e.message));
-  }, [active]);
+  }, [active, page]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* با عوض شدن جدولِ فعال، به صفحه‌ی اول برگرد (وگرنه صفحه‌ی ۳ یک جدول
+     با ۵ ردیف، «خالی» دیده می‌شود). */
+  useEffect(() => { setPage(1); }, [active]);
 
   const doRestore = (id: number) => toast.confirm({
     title: 'بازگرداندن ردیف',
@@ -103,7 +117,7 @@ export default function RecyclePage() {
             >
               {rows.map((r, i) => (
                 <tr key={r.id}>
-                  <td className="mono small">{i + 1}</td>
+                  <td className="mono small">{(page - 1) * pageSize + i + 1}</td>
                   <td><b>{r[meta?.titleCol || 'id'] ?? r.id}</b></td>
                   {(meta?.extraCols || []).map((c) => (
                     <td key={c} className={c === 'amount' || c === 'total' || c === 'amountAfn' ? 'mono' : ''}>
@@ -123,6 +137,14 @@ export default function RecyclePage() {
               ))}
             </Table>
           )}
+          {rows && rows.length > 0 && binTotal > pageSize ? (
+            <>
+              <Pager page={page} pageSize={pageSize} total={binTotal} onPage={setPage} />
+              <p className="small muted" style={{ margin: 0 }}>
+                {`${binTotal.toLocaleString('fa-IR')} ردیف حذف‌شده در این بخش — صفحه‌ی ${page.toLocaleString('fa-IR')}`}
+              </p>
+            </>
+          ) : null}
         </div>
       </div>
 

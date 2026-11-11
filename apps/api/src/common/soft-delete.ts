@@ -109,16 +109,33 @@ export async function restore(
 }
 
 /** فهرست حذف‌شده‌ها — برای «سطل بازیافت» */
-export async function listDeleted(table: string, limit = 200): Promise<any[]> {
+export async function listDeleted(table: string, limit = 200, offset = 0): Promise<any[]> {
   assertTable(table);
   await ensureSchemaAsync();
   const meta = SOFT_TABLES[table];
   const cols = ['id', meta.titleCol, ...(meta.extraCols || [])].map((c) => `"${c}"`).join(',');
+  const take = Math.min(Math.max(Math.trunc(limit) || 1, 1), 500);
+  const skip = Math.max(Math.trunc(offset) || 0, 0);
   return db().$queryRawUnsafe(
+    /*
+     * `ORDER BY deletedAt DESC, id DESC` — بدون کلید دوم، ردیف‌هایی که در
+     * یک ثانیه حذف شده‌اند ترتیب ثابتی نداشتند و با صفحه‌بندی می‌توانستند
+     * هم دو بار دیده شوند و هم هیچ‌جا. (همان باگ کلاسیک OFFSET)
+     */
     `SELECT ${cols}, "deletedAt", "deletedBy" FROM "${table}"
-     WHERE COALESCE("deletedAt",'') <> '' ORDER BY "deletedAt" DESC LIMIT ?`,
-    Math.min(Math.max(limit, 1), 500),
+     WHERE COALESCE("deletedAt",'') <> '' ORDER BY "deletedAt" DESC, "id" DESC LIMIT ? OFFSET ?`,
+    take, skip,
   );
+}
+
+/** تعداد کل ردیف‌های حذف‌شده‌ی یک جدول (برای صفحه‌بندی سطل بازیافت) */
+export async function deletedCountOf(table: string): Promise<number> {
+  assertTable(table);
+  await ensureSchemaAsync();
+  const r: any[] = await db().$queryRawUnsafe(
+    `SELECT COUNT(*) AS n FROM "${table}" WHERE COALESCE("deletedAt",'') <> ''`,
+  );
+  return Number(r?.[0]?.n) || 0;
 }
 
 /** شمارش حذف‌شده‌ها در همه‌ی جدول‌ها — برای نشان روی منو */

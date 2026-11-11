@@ -10,7 +10,7 @@ import { dataDir } from '../db';
 import { ensureSqliteEngine, nativePackageName, type EngineStatus } from '../common/sqlite-engine';
 import { checkBackupFile } from '../common/backup-check';
 import { SHAPE_VERSION, appVersion, recentUpgrades } from '../common/upgrade';
-import { SOFT_TABLES } from '../common/soft-delete';
+import { SOFT_TABLES, deletedCounts } from '../common/soft-delete';
 import { demoCounts, hasRealData, installDemo, removeDemo } from '../common/demo';
 import {
   RESET_PHRASE, dataInventory, resetMark, resetPlan, resetSystem, workingRowCount, type ResetOptions,
@@ -112,11 +112,28 @@ export class SystemController {
    * ستون زمانی می‌شود دید: چه ثبت شد، چه ویرایش شد، چه حذف شد و کدام‌ها
    * قابل بازگرداندن‌اند.
    */
+  /**
+   * سابقه‌ی فعالیت.
+   *
+   * `trash=0` ⟵ پرچم «قابل بازگرداندن» را نمی‌سازد.
+   *
+   * باگ ضد‌سرعت (شکار باگ دور ۳۲): برای هر بار باز کردن صفحه‌ی فعالیت،
+   * ۹ کوئری `SELECT id FROM "<table>" WHERE deletedAt<>''` روی **همه‌ی**
+   * جدول‌های حذف‌نرم اجرا می‌شد تا فقط پرچم «قابل بازگرداندن» ساخته شود —
+   * با ۱۰ هزار سند و ۹ جدول، این کار باز کردن صفحه را کند می‌کرد و با
+   * بزرگ‌تر شدن داده بدتر می‌شد. حالا: (۱) هر جدول فقط اگر واقعاً ردیف
+   * حذف‌شده داشته باشد پرسیده می‌شود (با `deletedCounts` که از قبل و
+   * به‌صورت شمارشی است)، و (۲) صفحه‌ی «رویدادها» می‌تواند با `trash=0`
+   * این بخش را کامل رد کند.
+   */
   @Get('timeline')
-  async timeline(@Query('limit') limit = '300', @Query('entity') entity?: string) {
+  async timeline(
+    @Query('limit') limit = '300', @Query('entity') entity?: string, @Query('trash') trash?: string,
+  ) {
     await ensureSchemaAsync();
     const p = db();
     const n = Math.min(1000, Math.max(20, Number(limit) || 300));
+    const withTrash = trash !== '0' && trash !== 'false';
     const args: any[] = [];
     let where = '';
     if (entity) { where = `WHERE "entity"=?`; args.push(entity); }
@@ -135,7 +152,15 @@ export class SystemController {
     const labels = Object.keys(SOFT_TABLES);
     const trashed = new Set<string>();
     const titles = new Map<string, { label: string; title: string }>();
-    for (const table of labels) {
+    /* جدول‌های خالی از حذف‌شده را حتی نپرس — شمارش از قبل داریم */
+    let nonEmpty: string[] = labels;
+    if (withTrash) {
+      try {
+        const counts = await deletedCounts();
+        nonEmpty = labels.filter((t) => Number(counts?.[t] ?? 0) > 0);
+      } catch { nonEmpty = labels; }
+    }
+    for (const table of (withTrash ? nonEmpty : [])) {
       try {
         const rows: any[] = await p.$queryRawUnsafe(
           `SELECT "id", COALESCE("deletedAt",'') d FROM "${table}" WHERE COALESCE("deletedAt",'')<>'' LIMIT 500`,

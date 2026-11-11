@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { api, listImportTypes } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useToast, Field, Text, TextArea, Num, Modal, Table, Spinner, ListHead, SearchBox, InlineStat, ImportDialog,
-  ExportButton,
+  ExportButton, Pager,
 } from '../components/ui';
 import { money } from '../lib/calendar';
 import { useDebounced } from '../lib/useDebounced';
@@ -13,7 +13,18 @@ import { useLatestRequest } from '../lib/useLatestRequest';
 export default function CustomersPage() {
   const { isManager } = useSession();
   const toast = useToast();
+  /*
+   * ── صفحه‌بندی سمت سرور (شکار باگ دور ۳۲) ────────────────────────────────
+   * قبلاً **همه‌ی** مشتریان با **همه‌ی** ستون‌ها یک‌جا می‌آمد (با ۵۰۰ مشتری
+   * ۱۳۶ کیلوبایت) و با هر حرف جستجو دوباره دانلود می‌شد. حالا هر صفحه
+   * ۲۵ ردیف است؛ `debtTotal` را سرور روی کل نتیجه حساب می‌کند تا عدد
+   * «مجموع بدهی» با صفحه‌بندی گمراه‌کننده نشود.
+   */
   const [rows, setRows] = useState<any[] | null>(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [debtTotal, setDebtTotal] = useState(0);
+  const pageSize = 25;
   const [q, setQ] = useState('');
   const [form, setForm] = useState<any>(null);
   const [busy, setBusy] = useState(false);
@@ -28,8 +39,23 @@ export default function CustomersPage() {
   const dq = useDebounced(q);
   const latest = useLatestRequest();
   /* فقط نتیجه‌ی آخرین جستجو روی جدول می‌نشیند (پاسخ‌های کهنه دور ریخته می‌شوند) */
-  const load = () => latest(() => api.get(`/customers?q=${encodeURIComponent(dq)}`), setRows);
-  useEffect(() => { load().catch((e) => toast.error('بارگذاری نشد', e.message)); }, [dq]);
+  const load = () => latest(
+    () => api.get(`/customers?q=${encodeURIComponent(dq)}&page=${page}&pageSize=${pageSize}`),
+    (r: any) => {
+      /* پاسخ صفحه‌بندی‌شده شیء است ({rows,total,…})؛ آرایه هم پذیرفته می‌شود
+         تا اگر روزی سرور یا نسخه‌ی قدیمی آرایه داد، صفحه نشکند. */
+      if (Array.isArray(r)) {
+        setRows(r); setTotal(r.length);
+        setDebtTotal(r.reduce((a: number, x: any) => a + Math.max(0, Number(x.balance) || 0), 0));
+      } else {
+        setRows(r.rows || []); setTotal(Number(r.total) || 0); setDebtTotal(Number(r.debtTotal) || 0);
+      }
+    },
+  );
+  useEffect(() => { load().catch((e) => toast.error('بارگذاری نشد', e.message)); }, [dq, page]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* با تغییر جستجو به صفحه‌ی اول برگرد — وگرنه نتیجه‌ی کوتاه «خالی» دیده
+     می‌شود و کاربر فکر می‌کند مشتری‌ای نیست. */
+  useEffect(() => { setPage(1); }, [dq]);
 
   const openNew = async () => {
     /*
@@ -80,7 +106,8 @@ export default function CustomersPage() {
    * کل بدهی شرکت اشتباه بگیرد. حالا معلوم است که عدد مربوط به نتیجه‌ی
    * جستجو است.
    */
-  const totalDebt = (rows || []).reduce((a, r) => a + Math.max(0, Number(r.balance)), 0);
+  /* از سرور می‌آید و روی **کل** نتیجه‌ی فیلتر حساب شده، نه صفحه‌ی جاری */
+  const totalDebt = debtTotal;
 
   /*
    * ورود از اکسل — درخواست کاربر (مورد ۵): «ورود از اکسل هم باید کار کند و
@@ -105,7 +132,7 @@ export default function CustomersPage() {
       <div className="card">
         <ListHead
           summary={<>
-            <InlineStat label="مشتری" value={(rows || []).length} />
+            <InlineStat label={dq.trim() ? 'مشتری (نتیجه‌ی جستجو)' : 'مشتری'} value={total} />
             <span className="sep" />
             <InlineStat
               label={dq.trim() ? 'مجموع بدهی (نتیجه‌ی جستجو)' : 'مجموع بدهی'}
@@ -129,10 +156,19 @@ export default function CustomersPage() {
         </ListHead>
         <div className="card-b tight">
       {!rows ? <Spinner /> : (
-        <Table head={['#', 'کد', 'نام مشتری / شخص رابط', 'تماس', 'پلیت', 'فروش قرضه', 'رسیدات', 'باقی مانده بدهی', '']}>
+        <Table head={['#', 'کد', 'نام مشتری / شخص رابط', 'تماس', 'پلیت', 'فروش قرضه', 'رسیدات', 'باقی مانده بدهی', '']}
+          foot={rows.length ? (
+            <tr>
+              <td colSpan={5} className="small muted">جمع صفحه</td>
+              <td className="num">{money(rows.reduce((a, r) => a + (Number(r.creditSales) || 0), 0))}</td>
+              <td className="num hide-sm">{money(rows.reduce((a, r) => a + (Number(r.receipts) || 0), 0))}</td>
+              <td className="num">{money(rows.reduce((a, r) => a + (Number(r.balance) || 0), 0))}</td>
+              <td />
+            </tr>
+          ) : null}>
           {rows.map((r, i) => (
             <tr key={r.id}>
-              <td className="mono muted-cell">{i + 1}</td>
+              <td className="mono muted-cell">{(page - 1) * pageSize + i + 1}</td>
               <td className="mono">{r.code}</td>
               <td>
                 <Link to={`/customers/${r.id}`} style={{ fontWeight: 600 }}>{r.name}</Link>
@@ -154,6 +190,9 @@ export default function CustomersPage() {
           ))}
         </Table>
       )}
+      {rows && total > pageSize ? (
+        <Pager page={page} pageSize={pageSize} total={total} onPage={setPage} />
+      ) : null}
         </div>
       </div>
 

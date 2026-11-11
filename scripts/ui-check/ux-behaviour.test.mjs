@@ -182,5 +182,28 @@ const lookupsPage = read('apps/web/src/pages/Lookups.tsx');
 ok('صفحه‌ی فهرست‌ها دکمه‌ی بازگرداندن دارد', /بازگرداندن پیش‌فرض‌ها/.test(lookupsPage));
 ok('صفحه‌ی فهرست‌ها دکمه‌ی فعال‌سازی غیرفعال‌ها دارد', /فعال‌کردن غیرفعال‌ها/.test(lookupsPage));
 
+console.log('\n— صفحه‌بندی: نه پاسخ بی‌سقف، نه کشویی ناقص —');
+
+/*
+ * باگ دور ۳۲: `/customers` بی‌سقف بود و با هر جستجو کامل دانلود می‌شد.
+ * قفل اصلی: صفحه‌ی مشتریان باید **صفحه‌بندی‌شده** بخواهد، ولی فورم‌های
+ * فروش/رسید باید همچنان `light=1` و کامل بگیرند (وگرنه کشویی‌شان ناقص
+ * می‌شود — همان کلاس باگی که در Select دیدیم).
+ */
+const customersPage = read('apps/web/src/pages/Customers.tsx');
+ok('صفحه‌ی مشتریان با page/pageSize می‌خواند', /\?q=\$\{encodeURIComponent\(dq\)\}&page=\$\{page\}&pageSize=\$\{pageSize\}/.test(customersPage));
+ok('صفحه‌ی مشتریان Pager دارد', /<Pager page=\{page\}/.test(customersPage));
+ok('«مجموع بدهی» از سرور می‌آید (نه جمع صفحه)', /const totalDebt = debtTotal/.test(customersPage));
+ok('تغییر جستجو صفحه را به ۱ برمی‌گرداند', /useEffect\(\(\) => \{ setPage\(1\); \}, \[dq\]\)/.test(customersPage));
+ok('فورم فروش همچنان فهرست کامل و سبک می‌خواهد', /customers\?light=1/.test(read('apps/web/src/pages/Sales.tsx')));
+ok('فورم رسید همچنان فهرست کامل و سبک می‌خواهد', /customers\?light=1/.test(read('apps/web/src/pages/Receipts.tsx')));
+const recyclePage = read('apps/web/src/pages/Recycle.tsx');
+ok('سطل بازیافت صفحه‌بندی سمت سرور دارد', /listDeleted\(active, page, pageSize\)/.test(recyclePage));
+const soft = read('apps/api/src/common/soft-delete.ts');
+ok('ترتیب سطل بازیافت کلید دوم دارد (OFFSET پایدار)', /ORDER BY "deletedAt" DESC, "id" DESC/.test(soft));
+const sys = read('apps/api/src/modules/system.controller.ts');
+ok('سابقه‌ی فعالیت با trash=0 پیمایش سطل را رد می‌کند', sys.includes('for (const table of (withTrash ? nonEmpty : []))'));
+ok('فقط جدول‌های غیرخالی پرسیده می‌شوند (شمارش قبلی)', /deletedCounts\(\)/.test(sys));
+
 console.log(`\n${fail === 0 ? '✅' : '⛔'} ${pass} موفق، ${fail} ناکام\n`);
 process.exit(fail === 0 ? 0 : 1);
