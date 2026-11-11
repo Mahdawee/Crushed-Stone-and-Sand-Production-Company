@@ -15,6 +15,26 @@ export default function CustomerStatement() {
   const [d, setD] = useState<any>(null);
 
   const [range, setRange] = useState({ from: '', to: '' });
+  /*
+   * ── باگ کارایی (شکار باگ دور ۳۰) ────────────────────────────────────────
+   * کارت حساب یک مشتری قدیمی همه‌ی اسناد را در یک جدول می‌ریخت. مشتری با
+   * چند هزار بل و رسید، یعنی هزاران `<tr>` در یک صفحه: باز شدن کارت حساب
+   * ثانیه‌ها طول می‌کشید و اسکرول می‌پرید — همان «کندی» که کاربر گفت.
+   * حالا صفحه‌بندی سمت مرورگر (۱۵۰ سطر) دارد؛ چاپ همچنان کامل است.
+   */
+  const [page, setPage] = useState(1);
+  const [printAll, setPrintAll] = useState(false);
+  const PAGE = 150;
+  useEffect(() => {
+    const done = () => setPrintAll(false);
+    window.addEventListener('afterprint', done);
+    return () => window.removeEventListener('afterprint', done);
+  }, []);
+  useEffect(() => {
+    if (!printAll) return;
+    const raf = requestAnimationFrame(() => window.print());
+    return () => cancelAnimationFrame(raf);
+  }, [printAll]);
   useEffect(() => { api.get(`/customers/${id}/statement`).then(setD).catch(() => setD(false)); }, [id]);
   if (d === null) return <Spinner />;
   if (d === false) return <Empty icon={<IconAlert size={16} />} title="مشتری پیدا نشد" action={<Link className="btn" to="/customers">بازگشت</Link>} />;
@@ -25,6 +45,13 @@ export default function CustomerStatement() {
   const shown = (d.rows || []).filter((r: any) => (!range.from || r.date >= range.from) && (!range.to || r.date <= range.to));
   const shownTotals = shown.reduce((a: any, r: any) => ({ debit: a.debit + r.debit, credit: a.credit + r.credit }), { debit: 0, credit: 0 });
   const lastInRange = shown.length ? shown[shown.length - 1].balance : d.opening;
+  /*
+   * «باقی مانده» هر سطر از کل گردش حساب می‌آید (نه از بازه‌ی فیلترشده)؛
+   * پس صفحه‌بندی فقط برش نمایش است و عددها را دست نمی‌زند.
+   */
+  const pages = Math.max(1, Math.ceil(shown.length / PAGE));
+  const current = Math.min(page, pages);
+  const visible = printAll ? shown : shown.slice((current - 1) * PAGE, current * PAGE);
   return (
     <div className="col" style={{ gap: 16 }}>
       {/* سرصفحه و پانوشت چاپ — فقط روی کاغذ دیده می‌شوند */}
@@ -40,10 +67,11 @@ export default function CustomerStatement() {
           </div>
           <div style={{ flex: 1 }} />
           <div className="list-actions">
-            <DatePicker compact value={range.from} onChange={(v) => setRange({ ...range, from: v })} calendar={calendar} clearable placeholder="از تاریخ" width={126} />
-            <DatePicker compact value={range.to} onChange={(v) => setRange({ ...range, to: v })} calendar={calendar} clearable placeholder="تا تاریخ" width={126} />
-            {range.from || range.to ? <button className="btn sm ghost" onClick={() => setRange({ from: '', to: '' })}>همه</button> : null}
-            <button className="btn" onClick={() => window.print()}><IconPrint size={15} /> چاپ</button>
+            <DatePicker compact value={range.from} onChange={(v) => { setRange({ ...range, from: v }); setPage(1); }} calendar={calendar} clearable placeholder="از تاریخ" width={126} />
+            <DatePicker compact value={range.to} onChange={(v) => { setRange({ ...range, to: v }); setPage(1); }} calendar={calendar} clearable placeholder="تا تاریخ" width={126} />
+            {range.from || range.to ? <button className="btn sm ghost" onClick={() => { setRange({ from: '', to: '' }); setPage(1); }}>همه</button> : null}
+            {/* چاپ همه‌ی سطرها: اول همه رندر می‌شوند، بعد چاپ (در افکت) */}
+            <button className="btn" onClick={() => setPrintAll(true)}><IconPrint size={15} /> چاپ</button>
             <Link className="btn" to="/customers"><IconChevron dir="start" size={14} /> بازگشت</Link>
           </div>
         </div>
@@ -73,7 +101,7 @@ export default function CustomerStatement() {
               <td className="num">—</td>
               <td className="num">{money(d.opening)}</td>
             </tr>
-            {shown.map((r: any) => (
+            {visible.map((r: any) => (
               <tr key={r.id}>
                 <td className="mono">{formatDate(r.date, calendar)}</td>
                 <td>{r.type}</td>
@@ -85,6 +113,17 @@ export default function CustomerStatement() {
               </tr>
             ))}
           </Table>
+          {shown.length > PAGE ? (
+            <div className="list-head no-print" style={{ padding: '8px 4px' }}>
+              <button className="btn sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={current === 1}>قبلی</button>
+              <span className="small muted">
+                ردیف {(current - 1) * PAGE + 1} تا {Math.min(current * PAGE, shown.length)} از {shown.length} — صفحه‌ی {current} از {pages}
+              </span>
+              <button className="btn sm" onClick={() => setPage((p) => Math.min(pages, p + 1))} disabled={current >= pages}>بعدی</button>
+              <div style={{ flex: 1 }} />
+              <span className="small muted hide-sm">برای دیدن همه‌ی اسناد از «چاپ» استفاده کنید.</span>
+            </div>
+          ) : null}
         </div>
       </div>
 

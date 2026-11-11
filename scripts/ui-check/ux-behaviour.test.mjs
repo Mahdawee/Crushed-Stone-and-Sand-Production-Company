@@ -103,6 +103,21 @@ ok('صندوق: دیگر setTimeout دلبخواه برای چاپ ندارد',
 ok('صندوق: هنگام چاپ همه‌ی سطرها رندر می‌شوند',
   /printAll \? d\.rows : d\.rows\.slice/.test(cashbook));
 
+/*
+ * باگ دور ۳۰: کارت حساب مشتری همه‌ی اسناد را در یک جدول می‌ریخت (مشتری با
+ * چند هزار سند = هزاران <tr>). حالا صفحه‌بندی + چاپ کامل.
+ */
+const stmt = read('apps/web/src/pages/CustomerStatement.tsx');
+ok('کارت حساب: صفحه‌بندی دارد (نه یک جدول بی‌کران)',
+  /const PAGE = \d+/.test(stmt) && /shown\.slice\(/.test(stmt));
+ok('کارت حساب: چاپ همه‌ی سطرها را رندر می‌کند',
+  /printAll \? shown : shown\.slice/.test(stmt));
+ok('کارت حساب: افکت‌ها قبل از بازگشت زودهنگام هستند (قانون هوک‌ها)',
+  stmt.indexOf('return <Spinner />') > stmt.indexOf('useEffect(') &&
+  stmt.indexOf('return <Spinner />') > stmt.lastIndexOf('useEffect('));
+ok('کارت حساب: با عوض شدن بازه، صفحه به ۱ برمی‌گردد',
+  (stmt.match(/setPage\(1\)/g) || []).length >= 3);
+
 console.log('\n— مجموع بدهی در فهرست مشتریان —');
 
 /*
