@@ -35,6 +35,13 @@ const wv = conf.bundle?.windows?.webviewInstallMode || {};
 ok('حالت نصب WebView2 آفلاین است (offlineInstaller)', wv.type === 'offlineInstaller', String(wv.type));
 ok('نصب WebView2 خودکار و بی‌سؤال است', wv.silent === true);
 ok('هدف بسته‌بندی شامل nsis است', (conf.bundle?.targets || []).includes('nsis'));
+/*
+ * باگ: `msi` هم در فهرست بود. هر دو نصب‌کننده در یک اجرا ساخته می‌شوند و
+ * هر کدام ۱۳۰ مگابایت WebView2 را جدا داخل خودشان می‌گذارند — یعنی حجم
+ * ساخت دو برابر و زمانش چند برابر. کاربر فقط به `setup.exe` نیاز دارد.
+ */
+ok('نصب‌کننده‌ی تکراری msi ساخته نمی‌شود (حجم/زمان ساخت نصف)', !(conf.bundle?.targets || []).includes('msi'),
+  (conf.bundle?.targets || []).join(','));
 
 console.log('\n— ماژول آماده‌سازی کش —');
 const mod = await import(path.join(root, 'scripts/lib/webview2.mjs'));

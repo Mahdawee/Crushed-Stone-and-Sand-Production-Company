@@ -319,9 +319,7 @@ npm run desktop:build
 | فایل | مسیر |
 |---|---|
 | **نصب‌کننده ویندوز (پیشنهادی)** | `src-tauri/target/release/bundle/nsis/Farday Roshan_0.1.0_x64-setup.exe` |
-| نصب‌کننده MSI | `src-tauri/target/release/bundle/msi/*.msi` |
 | نسخه بدون نصب (exe تنها) | `src-tauri/target/release/farday-roshan.exe` (کنارش پوشه `api/` لازم است) |
-| لینوکس | `src-tauri/target/release/bundle/deb/*.deb` و `.../appimage/*.AppImage` |
 
 > **برای توزیع به کمپیوتر شرکت:** فقط فایل `*-setup.exe` را کپی کنید. همین.
 

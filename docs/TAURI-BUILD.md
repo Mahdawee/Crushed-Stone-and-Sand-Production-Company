@@ -187,9 +187,13 @@ npm run desktop:build
 
 ```
 src-tauri/target/release/bundle/nsis/Farday Roshan_0.1.0_x64-setup.exe   ← این را توزیع کنید
-src-tauri/target/release/bundle/msi/Farday Roshan_0.1.0_x64_en-US.msi
 src-tauri/target/release/farday-roshan.exe                               (نسخه پرتابل، با پوشه api/)
 ```
+
+> **چرا فقط NSIS؟** هر نصب‌کننده‌ی دیگر (MSI) همان ۱۳۰ مگابایت WebView2 را
+> جدا داخل خودش می‌گذارد؛ ساخت دو نصب‌کننده یعنی دو برابر حجم و دو برابر
+> زمان، بدون هیچ سودی برای نصب روی کمپیوتر شرکت. اگر روزی MSI خواستید:
+> `"targets": ["nsis", "msi"]` در `src-tauri/tauri.conf.json`.
 
 > `npm run package:api` برای گرفتن `node.exe` به انترنت نیاز دارد. اگر می‌خواهید
 > نصب‌شده از Node نصب‌شده روی سیستم استفاده کند (نه پرتابل): `npm run package:api -- --no-node`.
