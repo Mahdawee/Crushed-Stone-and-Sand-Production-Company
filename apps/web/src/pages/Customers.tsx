@@ -72,6 +72,14 @@ export default function CustomersPage() {
     },
   });
 
+  /*
+   * ── باگ (شکار باگ دور ۳۰): عدد گمراه‌کننده ──────────────────────────────
+   * «مجموع بدهی» روی همان ردیف‌هایی جمع می‌شد که در جدول بود؛ یعنی وقتی
+   * کاربر نام یک مشتری را جستجو می‌کرد، بالای صفحه «مجموع بدهی» فقط بدهی
+   * همان یک نفر را نشان می‌داد — بی‌آنکه چیزی بگوید. مدیر ممکن بود آن را با
+   * کل بدهی شرکت اشتباه بگیرد. حالا معلوم است که عدد مربوط به نتیجه‌ی
+   * جستجو است.
+   */
   const totalDebt = (rows || []).reduce((a, r) => a + Math.max(0, Number(r.balance)), 0);
 
   /*
@@ -99,7 +107,11 @@ export default function CustomersPage() {
           summary={<>
             <InlineStat label="مشتری" value={(rows || []).length} />
             <span className="sep" />
-            <InlineStat label="مجموع بدهی" value={`${money(totalDebt)} ؋`} tone="bad" />
+            <InlineStat
+              label={dq.trim() ? 'مجموع بدهی (نتیجه‌ی جستجو)' : 'مجموع بدهی'}
+              value={`${money(totalDebt)} ؋`}
+              tone="bad"
+            />
           </>}
           actions={<>
             <ExportButton type="customers" />

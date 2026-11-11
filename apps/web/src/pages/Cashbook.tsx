@@ -41,6 +41,19 @@ export default function CashbookPage() {
     window.addEventListener('afterprint', done);
     return () => window.removeEventListener('afterprint', done);
   }, []);
+  /*
+   * ── باگ (شکار باگ دور ۳۰): چاپ ناقص ──────────────────────────────────
+   * دکمه‌ی چاپ `setPrintAll(true)` می‌زد و بعد `setTimeout(…, 60)` صدای
+   * `print()` را درمی‌آورد. ۶۰ میلی‌ثانیه یک عدد دلبخواه بود: برای یک سال
+   * کاری واقعی، رندر شدن همه‌ی سطرها بیشتر طول می‌کشد و مرورگر صفحه را
+   * **قبل** از آماده شدن جدول چاپ می‌کرد — کاغذ ناقص یا خالی. حالا چاپ
+   * بعد از آنکه سطرها واقعاً در DOM نشستند (پایان افکتِ رندر) انجام می‌شود.
+   */
+  useEffect(() => {
+    if (!printAll) return;
+    const raf = requestAnimationFrame(() => window.print());
+    return () => cancelAnimationFrame(raf);
+  }, [printAll]);
 
   const load = async () => {
     const qs = new URLSearchParams();
@@ -107,7 +120,8 @@ export default function CashbookPage() {
           <div style={{ flex: 1 }} />
           <div className="list-actions">
             {/* چاپ باید همه‌ی اسناد را داشته باشد — پس قبل از print همه رندر می‌شوند */}
-            <button className="btn" onClick={() => { setPrintAll(true); setTimeout(() => window.print(), 60); }}>
+            {/* چاپ در افکت انجام می‌شود (بالا) — تا جدول کامل رندر شده باشد */}
+            <button className="btn" onClick={() => setPrintAll(true)}>
               <IconPrint size={15} /> چاپ
             </button>
             <ExportButton type="receipts" label="خروجی" range={range} />

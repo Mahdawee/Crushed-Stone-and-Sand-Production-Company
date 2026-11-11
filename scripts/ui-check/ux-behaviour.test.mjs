@@ -87,5 +87,47 @@ const form = read('apps/web/src/components/ui.tsx');
 ok('کادر عددی حرف نمی‌گیرد (sanitize)', /replace\(\/\[[^\]]*\]\/g/.test(form));
 ok('کادر عددی منفی را با allowNegative کنترل می‌کند', /allowNegative/.test(form));
 
+/* ================================================================ */
+console.log('\n— چاپ کامل (نه با تأخیر دلبخواه) —');
+
+/*
+ * باگ دور ۳۰: دکمه‌ی چاپ «حرکت دخل» اول همه‌ی سطرها را رندر می‌کرد و بعد
+ * با `setTimeout(…, 60)` چاپ را صدا می‌زد. ۶۰ms عددی دلبخواه بود؛ روی
+ * داده‌ی زیاد جدول هنوز آماده نبود و کاغذ ناقص می‌آمد.
+ */
+const cashbook = read('apps/web/src/pages/Cashbook.tsx');
+ok('صندوق: چاپ در افکت و بعد از رندر انجام می‌شود',
+  /requestAnimationFrame\(\(\) => window\.print\(\)\)/.test(cashbook));
+ok('صندوق: دیگر setTimeout دلبخواه برای چاپ ندارد',
+  !/setTimeout\(\(\) => window\.print\(\), \d+\)/.test(cashbook));
+ok('صندوق: هنگام چاپ همه‌ی سطرها رندر می‌شوند',
+  /printAll \? d\.rows : d\.rows\.slice/.test(cashbook));
+
+console.log('\n— مجموع بدهی در فهرست مشتریان —');
+
+/*
+ * باگ دور ۳۰: با جستجو، «مجموع بدهی» فقط بدهی نتیجه‌ی جستجو بود و برچسبش
+ * همان «مجموع بدهی» می‌ماند — مدیر می‌توانست آن را کل بدهی شرکت بخواند.
+ */
+const customers = read('apps/web/src/pages/Customers.tsx');
+ok('مشتریان: برچسب مجموع بدهی با جستجو روشن می‌شود',
+  /نتیجه‌ی جستجو/.test(customers) && /dq\.trim\(\)/.test(customers));
+
+console.log('\n— ابزار صفر کردن: پیام‌های روشن —');
+const cli = read('tools/reset-ui/cli.mjs');
+ok('CLI بدون دیتابیس پیام روشن می‌دهد (نه «۰ ردیف»)',
+  /چیزی برای صفر کردن وجود ندارد/.test(cli));
+ok('CLI وجود فایل را قبل از گزارش «پشتیبان» بررسی می‌کند',
+  cli.indexOf('inv.exists') < cli.indexOf('پیش‌فرض'));
+for (const tool of ['license', 'reset-ui']) {
+  const srv = read(`tools/${tool}/server.mjs`);
+  /* فقط کدِ واقعی سنجیده می‌شود؛ توضیح‌ها `req.destroy()` را نام می‌برند */
+  const code = srv.split('\n')
+    .filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l))
+    .join('\n');
+  ok(`${tool}: بدنه‌ی بزرگ اتصال را معلق نمی‌گذارد (pause + reject)`,
+    /req\.pause\(\)/.test(code) && !/req\.destroy\(\)/.test(code));
+}
+
 console.log(`\n${fail === 0 ? '✅' : '⛔'} ${pass} موفق، ${fail} ناکام\n`);
 process.exit(fail === 0 ? 0 : 1);
