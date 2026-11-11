@@ -227,7 +227,18 @@ export default function ReportsDetail() {
           {tab === 'debtors' && (
             <div className="card">
               <div className="card-h"><h3>باقی مانده بدهی مشتریان</h3><div style={{ flex: 1 }} />
-                <span className="badge bad">مجموع: {money(d.debtTotal)}</span></div>
+                {/*
+                  «مجموع» فقط مانده‌های مثبت است (همان قاعده‌ی داشبورد و
+                  صفحه‌ی مشتریان). بستانکارها جدا نشان داده می‌شوند — قبلاً
+                  مانده‌ی منفی از بدهی دیگران کم می‌شد و عدد با بقیه‌ی
+                  صفحه‌ها نمی‌خواند.
+                */}
+                <span className="badge bad">مجموع بدهی: {money(d.debtTotal)}</span>
+                {Number(d.creditTotal || 0) > 0 ? (
+                  <span className="badge ok" style={{ marginInlineStart: 6 }} title="جمع بستانکاری مشتریان (مانده‌ی منفی)">
+                    بستانکار: {money(d.creditTotal)}
+                  </span>
+                ) : null}</div>
               <div className="card-b tight">
                 <Table head={['کد', 'مشتری', 'تماس', 'باقی مانده']}>
                   {d.debtors.map((r: any, i: number) => (

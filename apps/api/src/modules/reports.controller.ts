@@ -18,6 +18,19 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
 @UseGuards(AuthGuard)
 @Controller('reports')
 export class ReportsController {
+  /**
+   * ارزش افغانیِ بخش دالری مصارف — فقط اگر مدیر `usdInProfit='1'` کرده باشد.
+   *
+   * باگ (شکار باگ دور ۳۲): نرخ دالر در تنظیمات بود ولی هیچ‌جا اثر نداشت.
+   * پیش‌فرض خاموش است تا سود/زیان هیچ شرکتی با این نسخه بی‌خبر عوض نشود.
+   */
+  private async usdAfn(usd: number): Promise<{ usdAfn: number; usdRate: number; usdInProfit: boolean }> {
+    const on = String(await settingsService.get('usdInProfit' as any)) === '1';
+    const rate = Number(await settingsService.get('usdRate')) || 0;
+    if (!on || rate <= 0) return { usdAfn: 0, usdRate: rate, usdInProfit: false };
+    return { usdAfn: r2(usd * rate), usdRate: rate, usdInProfit: true };
+  }
+
   /** Daily figures for one Gregorian ISO date (sums in AFN). */
   async dayFigures(dateISO: string) {
     const p = db();
@@ -75,6 +88,9 @@ export class ReportsController {
     const cashOut = cashMode === 'accurate'
       ? num(expenses[0]?.cashFromBox) + num(salaries[0]?.cashFromBox)
       : expenseAfn + salaryTotal;
+    /* دالری — پیش‌فرض خاموش؛ توضیح در `usdAfn` */
+    const usd = num(expenses[0]?.usd);
+    const u = await this.usdAfn(usd);
 
     return {
       date: dateISO,
@@ -89,9 +105,12 @@ export class ReportsController {
       receiptsTrust: r2(receiptTrust),
       receiptsToBox: r2(receiptToBox),
       expensesAfn: r2(expenseAfn),
-      expensesUsd: r2(num(expenses[0]?.usd)),
+      expensesUsd: r2(usd),
+      expensesUsdAfn: u.usdAfn,
+      usdInProfit: u.usdInProfit,
+      usdRate: u.usdRate,
       salaries: r2(salaryTotal),
-      totalExpenses: r2(totalOut),
+      totalExpenses: r2(totalOut + u.usdAfn),
       // موجودی دخل (closing cash for the day)
       cashBalance: r2(cashIn - cashOut),
       cashIn: r2(cashIn),
@@ -222,6 +241,7 @@ export class ReportsController {
       const salaryTotal = num(sa0.total);
       const cashIn = accurate ? cashSales + num(r0.toBox) : cashSales + (receiptTotal - receiptTrust);
       const cashOut = accurate ? num(e0.fromBox) + num(sa0.fromBox) : expenseAfn + salaryTotal;
+      const usdRow = await this.usdAfn(num(e0.usd));
       const cashBalance = r2(cashIn - cashOut);
       running += cashBalance;
 
@@ -239,8 +259,10 @@ export class ReportsController {
         receiptsToBox: r2(num(r0.toBox)),
         expensesAfn: r2(expenseAfn),
         expensesUsd: r2(num(e0.usd)),
+        expensesUsdAfn: usdRow.usdAfn,
+        usdInProfit: usdRow.usdInProfit,
         salaries: r2(salaryTotal),
-        totalExpenses: r2(expenseAfn + salaryTotal),
+        totalExpenses: r2(expenseAfn + salaryTotal + usdRow.usdAfn),
         cashBalance,
         cashIn: r2(cashIn),
         cashOut: r2(cashOut),
@@ -319,13 +341,15 @@ export class ReportsController {
         `SELECT COALESCE(SUM("total"),0) t FROM "Salary" WHERE COALESCE("deletedAt",'')='' AND "payDate">=? AND "payDate"<=?`, start, end);
       const cash = num(s[0]?.cash); const credit = num(s[0]?.credit);
       const exp = num(e[0]?.afn); const sal = num(sa[0]?.t);
-      const net = cash + credit - exp - sal;
+      const usdRow = await this.usdAfn(num(e[0]?.usd));
+      const net = cash + credit - exp - sal - usdRow.usdAfn;
       rows.push({
         year: y, month: m, label: `${monthName(m, mode)} ${y}`,
         start, end,
         cashSales: r2(cash), creditSales: r2(credit), totalSales: r2(cash + credit),
         receipts: r2(num(r[0]?.t)), expenses: r2(exp), salaries: r2(sal),
-        totalExpenses: r2(exp + sal),
+        totalExpenses: r2(exp + sal + usdRow.usdAfn),
+        expensesUsdAfn: usdRow.usdAfn,
         profit: net >= 0 ? r2(net) : 0, loss: net < 0 ? r2(-net) : 0,
         volume: r2(num(s[0]?.volume)), expensesUsd: r2(num(e[0]?.usd)),
       });
@@ -604,7 +628,18 @@ export class ReportsController {
       byCustomerTotal: byCustomer.length,
       byCategory, byPayer, byContractor, salarySummary,
       byRelated, relatedTotals,
-      debtors: debts, debtTotal: r2(debts.reduce((a, d) => a + d.balance, 0)),
+      /*
+       * ── باگ (شکار باگ دور ۳۲): «مجموع بدهی» در سه صفحه سه عدد ─────────
+       * این‌جا همه‌ی مانده‌ها جمع می‌شد، پس بستانکارِ مشتری (مانده‌ی منفی)
+       * از بدهی دیگران **کم** می‌کرد. داشبورد و صفحه‌ی مشتریان فقط مانده‌ی
+       * مثبت را جمع می‌کنند. با یک مشتری بستانکار ۵۰۰۰ و یک بدهکار ۳۰۰۰،
+       * داشبورد ۳۰۰۰ می‌گفت و راپور تفصیلی −۲۰۰۰. حالا همه یک قاعده:
+       * «مجموع بدهی» = جمع مانده‌های مثبت؛ بستانکارها جدا فهرست می‌شوند.
+       */
+      debtors: debts, debtTotal: r2(debts.reduce((a, d) => a + Math.max(0, d.balance), 0)),
+      /* مشتریان بستانکار (پیش‌پرداخت) — قبلاً هیچ‌جا دیده نمی‌شدند */
+      creditors: debts.filter((d) => d.balance < 0),
+      creditTotal: r2(debts.reduce((a, d) => a + Math.max(0, -d.balance), 0)),
     };
   }
 
@@ -624,6 +659,9 @@ export class ReportsController {
       `SELECT COALESCE(SUM("amountAfn"),0) t FROM "Expense" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=?`, mStart, mEnd);
     const monthSal: any[] = await p.$queryRawUnsafe(
       `SELECT COALESCE(SUM("total"),0) t FROM "Salary" WHERE COALESCE("deletedAt",'')='' AND "payDate">=? AND "payDate"<=?`, mStart, mEnd);
+    const monthUsdRow: any[] = await p.$queryRawUnsafe(
+      `SELECT COALESCE(SUM("amountUsd"),0) u FROM "Expense" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=?`, mStart, mEnd);
+    const monthUsd = await this.usdAfn(num(monthUsdRow[0]?.u));
     const debts: any[] = await p.$queryRawUnsafe(
       `SELECT c."id", c."code", c."name",
         c."openingBalance" + (SELECT COALESCE(SUM(s."total"),0) FROM "Sale" s WHERE COALESCE(s."deletedAt",'')='' AND s."customerId"=c."id" AND s."paymentType"='credit')
@@ -712,7 +750,10 @@ export class ReportsController {
         volume: r2(num(monthSales[0]?.v)),
         expenses: r2(num(monthExp[0]?.t)),
         salaries: r2(num(monthSal[0]?.t)),
-        profit: r2(num(monthSales[0]?.t) - num(monthExp[0]?.t) - num(monthSal[0]?.t)),
+        /* دالری (اگر مدیر روشن کرده باشد) — همان قاعده‌ی راپور ماهانه */
+        expensesUsdAfn: monthUsd.usdAfn,
+        usdInProfit: monthUsd.usdInProfit,
+        profit: r2(num(monthSales[0]?.t) - num(monthExp[0]?.t) - num(monthSal[0]?.t) - monthUsd.usdAfn),
       },
       debtTotal: r2(debtList.reduce((a, d) => a + Math.max(0, d.balance), 0)),
       debtors: debtList.filter((d) => d.balance > 0).slice(0, 6),

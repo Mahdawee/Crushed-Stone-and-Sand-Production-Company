@@ -149,6 +149,22 @@ export default function SettingsPage() {
               <input className="input input-num" value={s.overtimeRate ?? ''} placeholder="1.25"
                 inputMode="decimal"
                 onChange={(e) => setS({ ...s, overtimeRate: e.target.value })} /></Field>
+            {/*
+              * باگ (شکار باگ دور ۳۲): نرخ دالر در API بود ولی در هیچ صفحه‌ای
+              * کادر نداشت و در هیچ محاسبه‌ای هم اثر نداشت. حالا هر دو:
+              * نرخ، و کلید «در سود/زیان حساب شود» (پیش‌فرض خاموش تا عددهای
+              * فعلی هیچ شرکتی بی‌خبر عوض نشود).
+              */}
+            <Field label="نرخ دالر (افغانی)" hint="برای تبدیل مصارف دالری — فقط وقتی کلید زیر روشن باشد">
+              <input className="input input-num" value={s.usdRate ?? ''} placeholder="0"
+                inputMode="decimal"
+                onChange={(e) => setS({ ...s, usdRate: e.target.value })} /></Field>
+            <Field label="دالری در سود و زیان" hint="روشن: مصارف دالری با نرخ بالا به افغانی تبدیل و در مجموع مصارف/سود حساب می‌شود">
+              <Select value={s.usdInProfit ?? '0'} onChange={(v) => setS({ ...s, usdInProfit: v })}
+                options={[
+                  { value: '0', label: 'خاموش (پیش‌فرض) — دالری جدا می‌ماند' },
+                  { value: '1', label: 'روشن — با نرخ دالر تبدیل شود' },
+                ]} /></Field>
           </div>
 
           <div className="section-title">رنگ اصلی</div>

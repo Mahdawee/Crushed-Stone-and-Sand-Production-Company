@@ -10,7 +10,18 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   docPrefixReceipt: 'R',
   docPrefixSalary: 'P',
   cashMode: 'simple', // simple | accurate  (موجودی دخل)
+  /*
+   * نرخ دالر و کلید «دالری در سود/زیان».
+   *
+   * باگ (شکار باگ دور ۳۲): `usdRate` در تنظیمات ذخیره و اعتبارسنجی می‌شد
+   * ولی **هیچ‌جا خوانده نمی‌شد** — کاربر نرخ می‌زد و هیچ عددی عوض نمی‌شد.
+   * حالا اگر `usdInProfit='1'` باشد، مصارف دالری با همین نرخ به افغانی
+   * تبدیل و در «مجموع مصارف» و سود/زیان حساب می‌شوند.
+   * پیش‌فرض `0` (خاموش) است تا عددهای فعلی هیچ شرکتی بی‌خبر عوض نشود؛
+   * تصمیمش با مدیر است.
+   */
   usdRate: '0',
+  usdInProfit: '0',
   theme: 'light',
   accent: 'teal',
   density: 'comfortable',
@@ -44,7 +55,8 @@ export const SETTING_RULES: Record<string, (v: string) => boolean> = {
   companyNameInDocs: (v) => v === '0' || v === '1',
   attendanceWorkHours: (v) => Number.isFinite(Number(v)) && Number(v) > 0 && Number(v) <= 24,
   overtimeRate: (v) => Number.isFinite(Number(v)) && Number(v) >= 0 && Number(v) <= 10,
-  usdRate: (v) => Number.isFinite(Number(v)) && Number(v) >= 0,
+  usdRate: (v) => Number.isFinite(Number(v)) && Number(v) >= 0 && Number(v) <= 1_000_000,
+  usdInProfit: (v) => v === '0' || v === '1',
   backupReminderDays: (v) => Number.isInteger(Number(v)) && Number(v) >= 0 && Number(v) <= 365,
 };
 /** نشانه‌ی «کلید ناشناخته — نادیده بگیر» (نه پیام خطا) */

@@ -160,6 +160,53 @@ const daily = (token, from, to) =>
     !nextMonth.employees.some((e) => e.name === 'کارمند ماه قبل'),
     nextMonth.employees.map((e) => e.name).join(','));
 
+  console.log('\n— «مجموع بدهی»: یک عدد در همه‌ی صفحه‌ها —');
+  /*
+   * باگ دور ۳۲: راپور تفصیلی همه‌ی مانده‌ها را جمع می‌زد (بستانکار از بدهی
+   * کم می‌کرد) ولی داشبورد و فهرست مشتریان فقط مانده‌ی مثبت. دو عدد
+   * متفاوت با یک نام.
+   */
+  await api('POST', '/customers', { code: '710', name: 'بستانکار آزمون', openingBalance: -5000 }, token);
+  await api('POST', '/customers', { code: '711', name: 'بدهکار آزمون', openingBalance: 3000 }, token);
+  const dashBody = (await api('GET', '/reports/dashboard', undefined, token)).body;
+  const brk = (await api('GET', '/reports/breakdown?from=2026-01-01&to=2026-12-31', undefined, token)).body;
+  const listPaged = (await api('GET', '/customers?page=1&pageSize=25', undefined, token)).body;
+  check('داشبورد: مجموع بدهی = ۳۰۰۰', dashBody.debtTotal === 3000, String(dashBody.debtTotal));
+  check('راپور تفصیلی همان ۳۰۰۰ را می‌دهد (قبلاً −۲۰۰۰)', brk.debtTotal === 3000, String(brk.debtTotal));
+  check('فهرست مشتریان همان ۳۰۰۰ را می‌دهد', listPaged.debtTotal === 3000, String(listPaged.debtTotal));
+  /*
+   * 「بستانکار」 از قبل هم وجود داشت: ۳۰۰ امانت به مشتری اول داده شده و
+   * هیچ بدهی ندارد ⇒ مانده‌اش ۳۰۰− است. پس جمع بستانکاری ۵۳۰۰ است.
+   * (تست عدد ثابت را روی ۵۰۰۰ تنظیم می‌کند اگر آن امانت را نسازیم.)
+   */
+  /*
+   * «بستانکاری» = جمع مانده‌های منفی. در این سناریو: ۵۰۰۰ (بستانکار آزمون)
+   * + ۳۰۰ امانت مشتری اول + ۴۰۰ امانتِ ۷۰۰/۳۰۰ ⇒ ۵۷۰۰.
+   * تست خودش از روی داده حساب می‌کند تا با تغییر سناریو نشکند.
+   */
+  const allCust = (await api('GET', '/customers', undefined, token)).body;
+  const expectCredit = allCust.reduce((a, c) => a + Math.max(0, -Number(c.balance)), 0);
+  check('بستانکاری جدا گزارش می‌شود', brk.creditTotal === expectCredit, `${brk.creditTotal} ≠ ${expectCredit}`);
+
+  console.log('\n— نرخ دالر: از تنظیمات تا سود/زیان —');
+  /*
+   * باگ دور ۳۲: `usdRate` ذخیره و اعتبارسنجی می‌شد ولی هیچ‌جا خوانده
+   * نمی‌شد؛ کاربر نرخ می‌زد و هیچ عددی عوض نمی‌شد.
+   */
+  await api('POST', '/expenses', { description: 'روغن دالری', amountUsd: 50, date: '2026-11-04', paymentType: 'cash', payerName: 'دخل' }, token);
+  const offDay = (await api('GET', '/reports/daily?from=2026-11-04&to=2026-11-04', undefined, token)).body.rows[0];
+  check('پیش‌فرض: دالری در مجموع مصارف نیست', offDay.usdInProfit === false && offDay.expensesUsdAfn === 0,
+    JSON.stringify({ f: offDay.usdInProfit, a: offDay.expensesUsdAfn }));
+  await api('PUT', '/settings', { usdRate: '70', usdInProfit: '1' }, token);
+  const onDay = (await api('GET', '/reports/daily?from=2026-11-04&to=2026-11-04', undefined, token)).body.rows[0];
+  check('با نرخ ۷۰: ۵۰ دالر = ۳۵۰۰ افغانی', onDay.expensesUsdAfn === 3500, String(onDay.expensesUsdAfn));
+  const aug = (await api('GET', '/reports/monthly?year=1405', undefined, token)).body.rows.find((r) => r.month === 8);
+  check('راپور ماهانه هم همان ۳۵۰۰ را کم می‌کند', aug.expensesUsdAfn === 3500, String(aug.expensesUsdAfn));
+  const dash2 = (await api('GET', '/reports/dashboard', undefined, token)).body;
+  check('داشبورد هم همان تبدیل را داراست', dash2.month.expensesUsdAfn === 3500, String(dash2.month.expensesUsdAfn));
+  const badSet = await api('PUT', '/settings', { usdInProfit: 'yes' }, token);
+  check('مقدار نامعتبر رد می‌شود (۴۰۰)', badSet.status === 400, String(badSet.status));
+
   console.log('\n— سلامت —');
   check('سرور خطای داخلی نداده', !/Internal server error|Unhandled/i.test(log));
   const empty = await daily(token, '2026-12-25', '2026-12-26');

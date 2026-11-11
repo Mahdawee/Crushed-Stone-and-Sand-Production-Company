@@ -244,5 +244,22 @@ ok('ورق ماه فیلتر می‌شود', /employedInRange\(e, bucket\.start,
 ok('ورق روز هم فیلتر می‌شود', /employedInRange\(e, iso, iso/.test(empCtl));
 ok('کارمند رفته با سابقه‌ی همان ماه نمی‌افتد', /return hasAttendance;/.test(empCtl));
 
+console.log('\n— یک عدد برای «مجموع بدهی»، و نرخ دالر که اثر دارد —');
+
+/* باگ دور ۳۲: تفصیلی همه‌ی مانده‌ها را جمع می‌زد (بستانکار از بدهی کم می‌شد) */
+ok('«مجموع بدهی» فقط مانده‌های مثبت است', rep.split('Math.max(0, d.balance)').length - 1 >= 2);
+ok('بستانکاری جدا گزارش می‌شود', /creditTotal: r2\(/.test(rep));
+ok('صفحه‌ی راپور تفصیلی بستانکاری را نشان می‌دهد', /creditTotal/.test(read('apps/web/src/pages/ReportsDetail.tsx')));
+
+/* نرخ دالر: ذخیره می‌شد ولی هیچ‌جا خوانده نمی‌شد */
+const settingsSrc = read('apps/api/src/common/settings.ts');
+ok('کلید «دالری در سود/زیان» تعریف شده', /usdInProfit: '0'/.test(settingsSrc));
+ok('مقدار نامعتبر کلید رد می‌شود', /usdInProfit: \(v\) => v === '0' \|\| v === '1'/.test(settingsSrc));
+ok('نرخ دالر در محاسبات خوانده می‌شود', /private async usdAfn\(/.test(rep));
+ok('راپور ماهانه هم دالری را تبدیل می‌کند', /expensesUsdAfn: usdRow\.usdAfn/.test(rep));
+const setPage = read('apps/web/src/pages/Settings.tsx');
+ok('کادر نرخ دالر در تنظیمات هست', /نرخ دالر \(افغانی\)/.test(setPage));
+ok('کلید روشن/خاموش دالری در تنظیمات هست', /دالری در سود و زیان/.test(setPage));
+
 console.log(`\n${fail === 0 ? '✅' : '⛔'} ${pass} موفق، ${fail} ناکام\n`);
 process.exit(fail === 0 ? 0 : 1);
