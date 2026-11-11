@@ -99,7 +99,19 @@ async function cmdReset() {
     console.error(red('✘ برای اجرا --yes را هم بدهید (و --confirm «صفر کردن»).'));
     return 1;
   }
+  /*
+   * باگ (شکار باگ دور ۳۰): روی کمپیوتری که دیتابیس ندارد (یا FD_DATA_DIR
+   * اشتباه است) CLI اول می‌نوشت «۰ ردیف داده پاک می‌شود؛ پشتیبان گرفته
+   * می‌شود» و بعد ارور می‌داد — کاربر فکر می‌کرد پشتیبان گرفته شده و شاید
+   * داده‌اش جایی هست. حالا اول وجود فایل بررسی می‌شود و پیام روشن است.
+   */
   const inv = await inventory({ dbFile, dataDir });
+  if (!inv.exists) {
+    console.error(yellow('ℹ فایل دیتابیس نیست — چیزی برای صفر کردن وجود ندارد.'));
+    console.error(dim(`   مسیر بررسی‌شده: ${dbFile}`));
+    console.error(dim('   اگر داده در جای دیگری است، FD_DATA_DIR یا FD_DB_FILE را درست بدهید.'));
+    return 1;
+  }
   console.log(bold('قبل از اجرا:'));
   console.log(`  ${fa(inv.total)} ردیف داده‌ی کاری پاک می‌شود.`);
   console.log(yellow(`  یک پشتیبان خودکار در ${path.join(dataDir, 'backups')} گرفته می‌شود.`));
