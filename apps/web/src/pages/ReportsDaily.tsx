@@ -109,8 +109,16 @@ export default function ReportsDaily() {
           <Stat label="داخل دخل (دوره)" value={money(d.totals.cashIn ?? 0)} kind="ok" foot="فروش نقده + رسیدات دخل" />
           <Stat label="خارج دخل (دوره)" value={money(d.totals.cashOut ?? 0)} kind="bad" foot="مصارف + معاشات نقدی" />
           {(() => {
-            const acc = (d.rows || []).reduce((a: number, r: any) => a + Number(r.cashBalance), 0);
-            return <Stat label="موجودی متحرک دخل" value={money(acc)} kind={acc >= 0 ? 'ok' : 'bad'} foot={`حالت ${d.mode === 'accurate' ? 'دقیق' : 'ساده'}`} />;
+            /*
+             * ── باگ (شکار باگ دور ۳۲): دو عدد با یک برچسب ─────────────────
+             * این کارت جمع «موجودی دخل روز» هر روز را نشان می‌داد ولی
+             * «موجودی متحرک دخل» نام داشت — و «متحرک» در ستون آخر جدول
+             * معنای دیگری دارد: مانده‌ی **تجمعی دخل** از اولین سند سیستم تا
+             * امروز. کاربر دو عدد متفاوت با تقریباً یک نام می‌دید.
+             * حالا کارت «متحرک» همان عدد ستون آخر است.
+             */
+            const running = Number(d.rows[0]?.runningCash ?? 0);
+            return <Stat label="موجودی متحرک دخل" value={money(running)} kind={running >= 0 ? 'ok' : 'bad'} foot={`مانده‌ی تجمعی دخل تا امروز — حالت ${d.mode === 'accurate' ? 'دقیق' : 'ساده'}`} />;
           })()}
         </div>
 
@@ -127,8 +135,9 @@ export default function ReportsDaily() {
                 <td className="num">{money(d.totals.expensesAfn)}</td>
                 <td className="num">{money(d.totals.salaries)}</td>
                 <td className="num">{money(d.totals.totalExpenses)}</td>
-                <td className="num">{money(d.totals.cashIn ?? 0)}</td>
-                <td />
+                {/* جمع «موجودی دخل روز» نه «داخل دخل» — با ستون بالای خودش یکی باشد */}
+                <td className="num">{money(d.rows.reduce((a: number, r: any) => a + Number(r.cashBalance || 0), 0))}</td>
+                <td className="num muted">{money(d.rows[0]?.runningCash ?? 0)}</td>
               </tr>}>
               {d.rows.map((r: any) => (
                 <tr key={r.date}>

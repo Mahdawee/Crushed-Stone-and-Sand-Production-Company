@@ -107,6 +107,48 @@ export class ReportsController {
    * خروجی دقیقاً همان شکل `dayFigures` است (به‌علاوه‌ی runningCash)، چون
    * صفحه‌ی «راپور روزانه» ستون‌های آن را مستقیم نشان می‌دهد.
    */
+  /**
+   * مانده‌ی تجمعی دخل **قبل از** تاریخ `before` (آن روز حساب نمی‌شود).
+   *
+   * همان قاعده‌ی `rangeRows`/`dayFigures` — دقیقاً همان شرط‌های SQL، وگرنه
+   * ستون «متحرک دخل» با راپور کل سال یکی نمی‌شد (سه مسیر، یک عدد).
+   */
+  private async cashBefore(before: string, accurate: boolean): Promise<number> {
+    const p = db();
+    const args = [before];
+    const sales = await p.$queryRawUnsafe(
+      `SELECT COALESCE(SUM(CASE WHEN "paymentType"='cash' THEN "total" ELSE 0 END),0) v
+         FROM "Sale" WHERE COALESCE("deletedAt",'')='' AND "date" < ?`, ...args) as any[];
+    const receipts = await p.$queryRawUnsafe(
+      accurate
+        ? `SELECT COALESCE(SUM("amount"),0) v FROM "Receipt"
+             WHERE COALESCE("deletedAt",'')='' AND "date" < ?
+               AND (${receiptDebtSql('"sourceName"')})
+               AND (COALESCE("receivedBy",'')='' OR "receivedBy"='دخل')`
+        : `SELECT COALESCE(SUM("amount"),0) v FROM "Receipt"
+             WHERE COALESCE("deletedAt",'')='' AND "date" < ?
+               AND (${receiptDebtSql('"sourceName"')})`,
+      ...args) as any[];
+    const expenses = await p.$queryRawUnsafe(
+      accurate
+        ? `SELECT COALESCE(SUM("amountAfn"),0) v FROM "Expense"
+             WHERE COALESCE("deletedAt",'')='' AND "date" < ?
+               AND "paymentType"='cash' AND "payerName"='دخل'`
+        : `SELECT COALESCE(SUM("amountAfn"),0) v FROM "Expense"
+             WHERE COALESCE("deletedAt",'')='' AND "date" < ?`,
+      ...args) as any[];
+    const salaries = await p.$queryRawUnsafe(
+      accurate
+        ? `SELECT COALESCE(SUM("total"),0) v FROM "Salary"
+             WHERE COALESCE("deletedAt",'')='' AND COALESCE("payDate",'')<>'' AND "payDate" < ?
+               AND "paymentType"='cash' AND "payerName"='دخل'`
+        : `SELECT COALESCE(SUM("total"),0) v FROM "Salary"
+             WHERE COALESCE("deletedAt",'')='' AND COALESCE("payDate",'')<>'' AND "payDate" < ?`,
+      ...args) as any[];
+    const n = (x: any[]) => Number(x?.[0]?.v) || 0;
+    return r2(n(sales) + n(receipts) - n(expenses) - n(salaries));
+  }
+
   private async rangeRows(start: string, end: string, daysDesc: string[], mode: CalendarMode) {
     const p = db();
     const cashMode = await settingsService.get('cashMode');
@@ -155,7 +197,16 @@ export class ReportsController {
 
     /* قدیمی‌ترین روز اول، تا موجودی دخل تجمعی درست باشد */
     const ascending = [...daysDesc].reverse();
-    let running = 0;
+    /*
+     * ── باگ (شکار باگ دور ۳۲): «متحرک دخل» از صفر بازه شروع می‌شد ────────
+     * `running` از صفر شروع می‌شد، پس ستون «متحرک دخل» در واقع **تغییر**
+     * دخل در همان بازه بود، نه مانده‌ی دخل. کسی که بازه‌ی آبان را باز می‌کرد،
+     * ستون آخر را «موجودی دخل تا امروز» می‌خواند ولی فقط حرکت آبان را
+     * می‌دید — و با راپور کل سال نمی‌خواند.
+     * حالا مانده‌ی واقعیِ قبل از شروع بازه (فروش نقدی + رسید به دخل −
+     * مصارف و معاشات نقدی، از اولین سند) به‌عنوان نقطه‌ی شروع گرفته می‌شود.
+     */
+    let running = r2(await this.cashBefore(start, accurate));
     const out: any[] = [];
     for (const d of ascending) {
       const s0 = sm.get(d) || {};

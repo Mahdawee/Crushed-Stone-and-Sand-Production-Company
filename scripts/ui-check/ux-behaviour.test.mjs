@@ -219,5 +219,15 @@ ok('ردیف حذف‌شده مانع ورود نیست (یک قاعده در د
 ok('استفاده‌ی دوباره از کد اشغال‌شده ۵۰۰ نمی‌دهد', /usedCodes\.has\(wanted\)/.test(ie));
 ok('فایل فقط-سرستون پیام روشن می‌دهد', /فقط سرستون بود/.test(ie));
 
+console.log('\n— صندوق دخل: متحرک یعنی متحرک —');
+
+const rep = read('apps/api/src/modules/reports.controller.ts');
+/* باگ دور ۳۲: running از صفر بازه شروع می‌شد ⇒ ستون «متحرک» برای همه‌ی روزها ثابت بود. */
+ok('متحرک دخل از مانده‌ی قبل از بازه شروع می‌شود', /let running = r2\(await this\.cashBefore\(start, accurate\)\)/.test(rep));
+ok('مانده‌ی قبلی از همان قاعده‌ی صندوق حساب می‌شود', /private async cashBefore\(/.test(rep) && /receiptDebtSql\('"sourceName"'\)/.test(rep));
+const dailyPage = read('apps/web/src/pages/ReportsDaily.tsx');
+ok('جمع ستون «موجودی دخل روز» با ستون خودش یکی است', /d\.rows\.reduce\(\(a: number, r: any\) => a \+ Number\(r\.cashBalance \|\| 0\), 0\)/.test(dailyPage));
+ok('کارت «متحرک» همان عدد ستون آخر را نشان می‌دهد', /const running = Number\(d\.rows\[0\]\?\.runningCash \?\? 0\)/.test(dailyPage));
+
 console.log(`\n${fail === 0 ? '✅' : '⛔'} ${pass} موفق، ${fail} ناکام\n`);
 process.exit(fail === 0 ? 0 : 1);
