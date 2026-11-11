@@ -111,13 +111,15 @@ fn main() {
      */
     if cli_mode() {
         /*
-         * `--print-reset-key`: چاپ کلید «صفر کردن داده» (مُهرشده در باینری)
-         * برای ابزار بیرونی در پوشه‌ی tools.
+         * `--print-reset-key`: چاپ اثر انگشت نسخه‌ی «صفر کردن».
          *
-         * چرا این سوئیچ لازم است: ابزار صفر کردن باید ثابت کند مالکِ همین
-         * نسخه است. کلید داخل باینری است و هیچ فایلی کنار برنامه نیست که
-         * بشود با Notepad عوضش کرد. اینجا فقط چاپ می‌شود — بعد از تأیید
-         * صریح، و بدون تغییر هیچ داده‌ای.
+         * ⚠ دیگر **هیچ ابزاری** این کلید را نمی‌خواهد. درخواست کاربر:
+         * «برای reset کردن سیستم توسط این ابزار باید کلید نیاز نباشد و فقط با
+         * تایید متنی … reset کنم» — پس ابزار صفر کردن کلید را کنار گذاشت و
+         * فقط با عبارت تأیید + تیک + پشتیبان اجباری کار می‌کند.
+         *
+         * این سوئیچ فقط برای این می‌ماند که پشتیبانی بتواند بررسی کند نسخه
+         * مُهرشده است یا نه (و هیچ داده‌ای هم تغییر نمی‌دهد).
          */
         if std::env::args().any(|a| a == "--print-reset-key") {
             let data_dir = std::env::var("APPDATA")
@@ -127,14 +129,14 @@ fn main() {
                 Some(k) => {
                     println!("FARDAY_RESET_KEY {k}");
                     println!();
-                    println!("این کلید را در ابزار «صفر کردن سیستم» (tools/reset-ui) بچسبانید.");
-                    println!("فقط برای همین نسخه معتبر است و اجازه‌ی پاک‌کردن هیچ‌چیز را جز با تأیید صریح نمی‌دهد.");
+                    println!("این «اثر انگشت نسخه» است — برای ابزار صفر کردن لازم نیست.");
+                    println!("ابزار صفر کردن فقط با تیک تأیید و تایپ عبارت «صفر کردن» کار می‌کند.");
                     println!("مسیر داده: {}", data_dir.display());
                     std::process::exit(0);
                 }
                 None => {
-                    eprintln!("⛔ این نسخه کلید صفر کردن ندارد (نسخه‌ی مُهرنشده / توسعه).");
-                    eprintln!("   ابزار صفر کردن روی این نسخه کار نمی‌کند (کلید هنگام ساخت مُهر نشده).");
+                    eprintln!("⛔ این نسخه اثر انگشت «صفر کردن» ندارد (نسخه‌ی مُهرنشده / توسعه).");
+                    eprintln!("   ابزار صفر کردن همچنان کار می‌کند — کلید لازم نیست.");
                     std::process::exit(2);
                 }
             }
@@ -464,13 +466,12 @@ const ERROR_PAGE: &str = r#"<html dir="rtl" lang="fa"><head><meta charset="utf-8
 <div class="btns">
   <button class="btn" onclick="__fd('--reset-admin')">بازنشانی رمز مدیر (admin / admin123)</button>
   <button class="btn" onclick="__fd('--list-backups')">دیدن پشتیبان‌های موجود</button>
-  <button class="btn" onclick="__fd('--print-reset-key')">نمایش کلید صفر کردن داده</button>
   <button class="btn ghost" onclick="__fd('')">باز کردن پوشه داده و لاگ‌ها</button>
 </div>
 <p class="hint">اگر دکمه‌ها کار نکردند، همین کارها را از خط فرمان بزنید (بدون انترنت):<br>
 <code>%LOCALAPPDATA%\Programs\Farday Roshan\Farday Roshan.exe --cli --reset-admin</code><br>
 <code>%LOCALAPPDATA%\Programs\Farday Roshan\Farday Roshan.exe --cli --list-backups</code><br>
-<code>%LOCALAPPDATA%\Programs\Farday Roshan\Farday Roshan.exe --cli --print-reset-key</code></p>
+<code>%LOCALAPPDATA%\Programs\Farday Roshan\Farday Roshan.exe --cli</code></p>
 <script>
   /* این صفحه داخل پنجره‌ی Tauri است؛ invoke به پوسته می‌رسد (بدون اینترنت) */
   function __fd(arg) {

@@ -28,6 +28,12 @@ async function assertLive(table: string, id: number, label: string) {
   }
 }
 
+/** عدد نامعتبر (متن/NaN/Infinity) صفر حساب می‌شود. */
+function numOrZero(v: unknown): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
 @UseGuards(AuthGuard)
 @Controller()
 export class EmployeesController {
@@ -277,7 +283,16 @@ export class EmployeesController {
   @Post('employees')
   async create(@Body() body: any) {
     await ensureSchemaAsync();
-    if (!body?.name) throw new HttpException('نام کارمند لازم است.', 400);
+    /*
+     * ── باگ (شکار باگ دور ۲۵) ───────────────────────────────────────────
+     * `if (!body?.name)` رشته‌ی خالیِ پُر از فاصله را قبول می‌کرد، معاش منفی
+     * هم ذخیره می‌شد (بعداً «جمع معاش منفی» در ورق معاش خطا می‌داد).
+     */
+    const name = String(body?.name ?? '').trim();
+    if (!name) throw new HttpException('نام کارمند لازم است.', 400);
+    if (name.length > 120) throw new HttpException('نام کارمند حداکثر ۱۲۰ حرف باشد.', 400);
+    const baseSalary = numOrZero(body.baseSalary);
+    if (baseSalary < 0) throw new HttpException('معاش ثابت نمی‌تواند منفی باشد.', 400);
     const code = String(body.code || '').trim() || await this.autoCode();
     const mode = await this.cal();
     let hireDate = '';
@@ -290,14 +305,15 @@ export class EmployeesController {
       await db().$executeRawUnsafe(
         `INSERT INTO "Employee" ("code","name","fatherName","position","hireDate","baseSalary","phone","nationalId","address","contractPeriod","status","note")
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-        code, body.name, body.fatherName || '', body.position || '', hireDate,
-        Number(body.baseSalary) || 0, body.phone || '', body.nationalId || '',
-        body.address || '', body.contractPeriod || '', body.status === 'inactive' ? 'inactive' : 'active', body.note || '',
+        code, name, String(body.fatherName ?? '').slice(0, 80), String(body.position ?? '').slice(0, 80), hireDate,
+        baseSalary, String(body.phone ?? '').slice(0, 60), String(body.nationalId ?? '').slice(0, 60),
+        String(body.address ?? '').slice(0, 200), String(body.contractPeriod ?? '').slice(0, 60),
+        body.status === 'inactive' ? 'inactive' : 'active', String(body.note ?? '').slice(0, 300),
       );
     } catch {
       throw new HttpException('این کد کارمند قبلاً ثبت شده است.', 400);
     }
-    await logActivity({ action: 'create', entity: 'Employee', detail: `${code} — ${body.name}` });
+    await logActivity({ action: 'create', entity: 'Employee', detail: `${code} — ${name}` });
     return { ok: true, code };
   }
 
@@ -305,6 +321,22 @@ export class EmployeesController {
   async update(@Param('id') id: string, @Body() body: any) {
     const eid = idParam(id, 'شناسه‌ی کارمند');
     await assertLive('Employee', eid, 'کارمند');
+    /*
+     * ── باگ (شکار باگ دور ۲۵) ───────────────────────────────────────────
+     * ۱) کد بدون بررسی نوشته می‌شد: اگر فورم کد را نمی‌فرستاد، `code` رشته‌ی
+     *    **خالی** می‌شد و کارمند بی‌کد می‌ماند — همان چیزی که در چاپ رسید
+     *    معاش و فهرست حضور دیده می‌شود. اگر دو کارمند این‌طور بی‌کد می‌شدند،
+     *    ایندکس یکتای `Employee_code_key` خطای مبهم «کد تکراری» می‌داد.
+     * ۲) نام خالی/فاصله هم پذیرفته می‌شد.
+     * ۳) معاش منفی ذخیره می‌شد.
+     */
+    const name = String(body?.name ?? '').trim();
+    if (!name) throw new HttpException('نام کارمند لازم است.', 400);
+    const cur: any[] = await db().$queryRawUnsafe(`SELECT "code" FROM "Employee" WHERE "id"=?`, eid);
+    const code = String(body?.code ?? '').trim() || String(cur?.[0]?.code ?? '');
+    if (!code) throw new HttpException('کد کارمند لازم است.', 400);
+    const baseSalary = numOrZero(body.baseSalary);
+    if (baseSalary < 0) throw new HttpException('معاش ثابت نمی‌تواند منفی باشد.', 400);
     const mode = await this.cal();
     let hireDate = body.hireDate || '';
     try {
@@ -316,14 +348,15 @@ export class EmployeesController {
       await db().$executeRawUnsafe(
         `UPDATE "Employee" SET "code"=?, "name"=?, "fatherName"=?, "position"=?, "hireDate"=?, "baseSalary"=?,
          "phone"=?, "nationalId"=?, "address"=?, "contractPeriod"=?, "status"=?, "note"=? WHERE "id"=?`,
-        String(body.code || '').trim(), body.name, body.fatherName || '', body.position || '', hireDate,
-        Number(body.baseSalary) || 0, body.phone || '', body.nationalId || '', body.address || '',
-        body.contractPeriod || '', body.status === 'inactive' ? 'inactive' : 'active', body.note || '', eid,
+        code, name, String(body.fatherName ?? '').slice(0, 80), String(body.position ?? '').slice(0, 80), hireDate,
+        baseSalary, String(body.phone ?? '').slice(0, 60), String(body.nationalId ?? '').slice(0, 60),
+        String(body.address ?? '').slice(0, 200), String(body.contractPeriod ?? '').slice(0, 60),
+        body.status === 'inactive' ? 'inactive' : 'active', String(body.note ?? '').slice(0, 300), eid,
       );
     } catch {
       throw new HttpException('کد کارمند تکراری است یا معلومات ناقص است.', 400);
     }
-    await logActivity({ action: 'update', entity: 'Employee', entityId: eid, detail: body.name });
+    await logActivity({ action: 'update', entity: 'Employee', entityId: eid, detail: name });
     return { ok: true };
   }
 

@@ -15,9 +15,17 @@
  *
  * ## چطور کار می‌کند
  *   ۱) صفحه وضعیت را از `/api/state` می‌گیرد (چه داده‌ای، چقدر، کجا).
- *   ۲) اپراتور کلید «صفر کردن» را می‌چسباند (از `--cli --print-reset-key`).
- *   ۳) دو تأیید: تیک «می‌دانم برگشت‌ناپذیر است» + تایپ عبارت «صفر کردن».
- *   ۴) `POST /api/reset` → پشتیبان اجباری → صفر کردن → گزارش.
+ *   ۲) اپراتور تیک «می‌دانم برگشت‌ناپذیر است» را می‌زند و عبارت «صفر کردن» را
+ *      تایپ می‌کند؛ همین دو کافی است — **کلید لازم نیست**.
+ *   ۳) `POST /api/reset` → پشتیبان اجباری → صفر کردن → گزارش.
+ *
+ * ## چرا کلید برداشته شد (درخواست صریح کاربر)
+ *   «برای reset کردن سیستم توسط این ابزار باید کلید نیاز نباشد و فقط با
+ *   تایید متنی … بتوانم برنامه را reset کنم.»
+ *   ابزار فقط روی `127.0.0.1` گوش می‌دهد و همان کمپیوتر مالک داده است؛ کلید
+ *   فقط یک مانع اضافه بود که کاربر با کاپی‌کردن متن از خط فرمان دور می‌زد.
+ *   اکنون محافظ‌ها: فقط همین کمپیوتر (۱۲۷.۰.۰.۱ + بررسی مبدأ + توکن CSRF)،
+ *   عبارت تأیید متنی، تیک برگشت‌ناپذیری، و **پشتیبان اجباری قبل از هر کاری**.
  *
  * ## اگر برنامه باز باشد
  * دیتابیس قفل است و پاک کردن از بیرون، برنامه را با داده‌ی نیمه‌پاک رها
@@ -49,11 +57,20 @@ const CSRF = crypto.randomBytes(18).toString('hex');
 /* ── api سرور برنامه (اگر باز باشد) ── */
 const API_BASE = String(process.env.FD_API_BASE || 'http://127.0.0.1:4317/api').replace(/\/$/, '');
 
-/* ── کلید صفر کردن ──
- * از `/api/health` برنامه (که بعد از مُهر باینری این متغیر را می‌گیرد)، یا
- * از متغیر محیطی برای اپراتور. اگر هیچ‌کدام نبود، ابزار کار **نمی‌کند** —
- * عمدی است: هر کسی نباید بتواند داده‌ی مشتری را پاک کند. */
-const resetKey = () => String(process.env.FARDAY_RESET_KEY || '').trim();
+/*
+ * ── حذف «کلید صفر کردن» ──────────────────────────────────────────────
+ *
+ * قبلاً این ابزار بدون کلیدِ مُهرشده در باینری کار نمی‌کرد و اپراتور باید
+ * `Farday Roshan.exe --cli --print-reset-key` را اجرا و خروجی را کاپی می‌کرد.
+ * درخواست کاربر: «کلید نیاز نباشد و فقط با تایید متنی … reset کنم».
+ * کلید حذف شد؛ عوضش چیزی که واقعاً امنیت می‌دهد تقویت شد:
+ *   • گوش‌دادن فقط روی ۱۲۷.۰.۰.۱ (از شبکه در دسترس نیست)
+ *   • بررسی مبدأ (Origin) + توکن CSRF برای هر POST
+ *   • عبارت تأیید متنی «صفر کردن» + تیک برگشت‌ناپذیری
+ *   • پشتیبان اجباری قبل از پاک‌سازی
+ * اگر کسی این صفحه را روی همان کمپیوتر باز کند، مالکِ داده است — کلید
+ * مانع مهاجم نمی‌شد، فقط اپراتور را اذیت می‌کرد.
+ */
 
 const json = (res, code, obj) => {
   res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
@@ -139,7 +156,9 @@ async function offlineState() {
   return {
     ...inv,
     available: inv.exists,
-    resetKeyPresent: Boolean(resetKey()),
+    /* دیگر کلیدی در کار نیست — برای سازگاری با UI قدیمی همیشه true */
+    resetKeyPresent: true,
+    keyRequired: false,
     appOpen: false,
     apiMode: false,
   };
@@ -188,9 +207,7 @@ const server = http.createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && (p === '/' || p === '/index.html')) {
       const html = fs.readFileSync(path.join(here, 'ui.html'), 'utf8')
-        .replace('__CSRF__', CSRF)
-        /* کلید صفر کردن **هرگز** در HTML نمی‌آید — فقط به مرورگر اپراتور داده می‌شود */
-        .replace('__RESET_KEY_PRESENT__', resetKey() ? '1' : 'open');
+        .replace('__CSRF__', CSRF);
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
       res.end(html);
       return;
@@ -239,23 +256,9 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
+      /* ── دیگر کلیدی لازم نیست (درخواست کاربر) ──
+         تأیید متنی + تیک + پشتیبان اجباری، محافظ‌های واقعی‌اند. */
       const app = await appStatus();
-      const keyed = resetKey();
-      if (!app.open && !keyed && !process.env.FD_RESET_ALLOW_UNKEYED) {
-        json(res, 403, {
-          ok: false,
-          message: 'کلید «صفر کردن» در دسترس نیست. آن را از برنامه بگیرید: ' +
-            'Farday Roshan.exe --cli --print-reset-key — و در کادر بالای صفحه بچسبانید.',
-        });
-        return;
-      }
-      if (!app.open && keyed) {
-        const got = String(body.resetKey || '').trim();
-        if (got !== keyed) {
-          json(res, 403, { ok: false, message: 'کلید صفر کردن درست نیست.' });
-          return;
-        }
-      }
 
       const opts = {
         confirm: 'صفر کردن',
@@ -289,6 +292,6 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`\n🧹 ابزار «صفر کردن سیستم» → http://${HOST}:${PORT}\n`);
   console.log(`   داده: ${dbFile}`);
-  console.log(`   کلید صفر کردن: ${resetKey() ? 'موجود' : '⚠ نیست (فقط با برنامه‌ی باز یا متغیر FARDAY_RESET_KEY)'}`);
+  console.log('   تأیید: تیک «برگشت‌ناپذیر» + تایپ عبارت «صفر کردن» (کلید لازم نیست)');
   console.log('   برای بستن: Ctrl+C\n');
 });

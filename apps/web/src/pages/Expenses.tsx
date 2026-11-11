@@ -51,7 +51,21 @@ export default function ExpensesPage() {
   const hasFilter = Boolean(filters.q || filters.from || filters.to || filters.category || filters.payer || filters.paymentType);
 
   const openNew = async () => {
-    const { no } = await api.get('/expenses/next-no');
+    /*
+     * باگ (شکار باگ دور ۲۵): این `await` **بیرون از try** بود. اگر شماره‌ی
+     * بعدی گرفته نمی‌شد (سرور تازه بالا آمده، شبکه‌ی محلی شلوغ، نشست منقضی)،
+     * استثنا به هیچ‌جا نمی‌رسید، فورم باز نمی‌شد و کاربر هیچ پیامی نمی‌دید.
+     * حالا پیام روشن می‌دهد و دکمه بی‌صدا مرده نمی‌ماند.
+     */
+    let no = '', code = '';
+    try {
+      const r = await api.get('/expenses/next-no');
+      no = r?.no || ''; code = r?.code || '';
+    } catch {
+      toast.error('فورم باز نشد', 'مشکل در گرفتن شماره‌ی بعدی سند مصرف.');
+      return;
+    }
+
     setForm({ no, description: '', categoryId: '', purchaseBillNo: '', shopName: '', amountAfn: 0, amountUsd: 0, payerId: '', payerName: 'دخل', contractorId: '', paymentType: 'cash', note: '' });
     setDateISO(todayISO());
   };

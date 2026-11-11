@@ -1,4 +1,4 @@
-import { IconCheck, IconClock, IconCoins, IconUsers } from '../components/icons';
+import { IconCheck, IconClock, IconCoins, IconPrint, IconUsers } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -188,7 +188,9 @@ export default function SalariesPage() {
                     <td className="mono">{r.payDateDisplay}</td>
                     <td>
                       <div className="actions hover-actions">
-                        <Link className="btn sm" to={`/print/salary/${r.id}`}>رسید</Link>
+                        <Link className="btn sm" to={`/print/salary/${r.id}?auto=1`} title="چاپ رسید معاش">
+                          <IconPrint size={13} /> رسید
+                        </Link>
                         {isManager ? (
                           <button className="btn sm danger" onClick={() => removeSalary(r)} title="حذف نرم — از سطل بازیافت برمی‌گردد">حذف</button>
                         ) : null}

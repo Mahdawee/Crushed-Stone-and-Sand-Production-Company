@@ -24,6 +24,12 @@ async function assertLive(table: string, id: number, label: string) {
   }
 }
 
+/** عدد نامعتبر (متن/NaN) صفر حساب می‌شود؛ `Infinity` هم صفر است. */
+function numOrZero(v: unknown): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
 @UseGuards(AuthGuard)
 @Controller('customers')
 export class CustomersController {
@@ -149,7 +155,14 @@ export class CustomersController {
   @Post()
   async create(@Body() body: any) {
     await ensureSchemaAsync();
-    if (!body?.name) throw new HttpException('نام مشتری لازم است.', 400);
+    /*
+     * ── باگ (شکار باگ دور ۲۵) ───────────────────────────────────────────
+     * `if (!body?.name)` رشته‌ی «   » را قبول می‌کرد؛ مشتریِ بی‌نام در
+     * فهرست و روی بل فروش ظاهر می‌شد و در راپورها زیر «—» می‌رفت.
+     */
+    const name = String(body?.name ?? '').trim();
+    if (!name) throw new HttpException('نام مشتری لازم است.', 400);
+    if (name.length > 120) throw new HttpException('نام مشتری حداکثر ۱۲۰ حرف باشد.', 400);
     const rows: any[] = await db().$queryRawUnsafe(`SELECT "code" FROM "Customer"`);
     const nums = rows.map((r) => Number(String(r.code).replace(/\D/g, '')) || 0);
     const code = String(body.code || '').trim() || String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, '0');
@@ -158,13 +171,14 @@ export class CustomersController {
     try {
       await db().$executeRawUnsafe(
         `INSERT INTO "Customer" ("code","name","contactPerson","phone","truckPlate","openingBalance","note") VALUES (?,?,?,?,?,?,?)`,
-        code, body.name, body.contactPerson || '', body.phone || '', body.truckPlate || '',
-        Number(body.openingBalance) || 0, body.note || '',
+        code, name, String(body.contactPerson ?? '').slice(0, 80), String(body.phone ?? '').slice(0, 60),
+        String(body.truckPlate ?? '').slice(0, 40),
+        numOrZero(body.openingBalance), String(body.note ?? '').slice(0, 300),
       );
     } catch {
       throw new HttpException('این کد مشتری قبلاً ثبت شده است.', 400);
     }
-    await logActivity({ action: 'create', entity: 'Customer', detail: `${code} — ${body.name}` });
+    await logActivity({ action: 'create', entity: 'Customer', detail: `${code} — ${name}` });
     return { ok: true, code };
   }
 
@@ -177,17 +191,31 @@ export class CustomersController {
     if (Number(row?.[0]?.isWalkIn) === 1) {
       throw new HttpException('«مشتری گذری» یک ردیف سیستمی است و ویرایش نمی‌شود.', 400);
     }
-    if (!String(body?.name ?? '').trim()) throw new HttpException('نام مشتری لازم است.', 400);
+    const name = String(body?.name ?? '').trim();
+    if (!name) throw new HttpException('نام مشتری لازم است.', 400);
+    /*
+     * ── باگ (شکار باگ دور ۲۵) ───────────────────────────────────────────
+     * ویرایش، کد را **بدون هیچ بررسی** می‌نوشت: می‌شد کد یک مشتری را به
+     * «۰۰۰» (کد رزروشده‌ی مشتری گذری) تغییر داد — بعد از آن دو حساب با یک
+     * کد در فهرست بودند و جست‌وجو/چاپ بل گیج‌کننده می‌شد. کد خالی هم
+     * اجازه داشت (پیام «کد تکراری است» می‌داد که ربطی به خطا نداشت).
+     */
+    const wantedCode = String(body?.code ?? '').trim();
+    const curRow: any[] = await db().$queryRawUnsafe(`SELECT "code" FROM "Customer" WHERE "id"=?`, cid);
+    const code = wantedCode || String(curRow?.[0]?.code ?? '');
+    if (!code) throw new HttpException('کد مشتری لازم است.', 400);
+    if (code === '000') throw new HttpException('کد «۰۰۰» برای «مشتری گذری» رزرو است؛ کد دیگری بدهید.', 400);
     try {
       await db().$executeRawUnsafe(
         `UPDATE "Customer" SET "code"=?, "name"=?, "contactPerson"=?, "phone"=?, "truckPlate"=?, "openingBalance"=?, "note"=? WHERE "id"=?`,
-        String(body.code || '').trim(), body.name, body.contactPerson || '', body.phone || '',
-        body.truckPlate || '', Number(body.openingBalance) || 0, body.note || '', cid,
+        code, name, String(body.contactPerson ?? '').slice(0, 80), String(body.phone ?? '').slice(0, 60),
+        String(body.truckPlate ?? '').slice(0, 40), numOrZero(body.openingBalance),
+        String(body.note ?? '').slice(0, 300), cid,
       );
     } catch {
       throw new HttpException('کد مشتری تکراری است یا معلومات ناقص است.', 400);
     }
-    await logActivity({ action: 'update', entity: 'Customer', entityId: cid, detail: body.name });
+    await logActivity({ action: 'update', entity: 'Customer', entityId: cid, detail: name });
     return { ok: true };
   }
 

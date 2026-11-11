@@ -54,7 +54,21 @@ export default function ReceiptsPage() {
   const hasFilter = Boolean(filters.q || filters.from || filters.to || filters.source);
 
   const openNew = async () => {
-    const { no } = await api.get('/receipts/next-no');
+    /*
+     * باگ (شکار باگ دور ۲۵): این `await` **بیرون از try** بود. اگر شماره‌ی
+     * بعدی گرفته نمی‌شد (سرور تازه بالا آمده، شبکه‌ی محلی شلوغ، نشست منقضی)،
+     * استثنا به هیچ‌جا نمی‌رسید، فورم باز نمی‌شد و کاربر هیچ پیامی نمی‌دید.
+     * حالا پیام روشن می‌دهد و دکمه بی‌صدا مرده نمی‌ماند.
+     */
+    let no = '', code = '';
+    try {
+      const r = await api.get('/receipts/next-no');
+      no = r?.no || ''; code = r?.code || '';
+    } catch {
+      toast.error('فورم باز نشد', 'مشکل در گرفتن شماره‌ی بعدی رسید.');
+      return;
+    }
+
     setForm({ no, customerId: '', amount: 0, relatedBillNo: '', sourceId: '', sourceName: 'باقی داری', receivedBy: 'دخل', note: '' });
     setDateISO(todayISO());
   };

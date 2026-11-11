@@ -35,14 +35,36 @@ export default function EmployeesPage() {
   useEffect(() => { load().catch((e) => toast.error('بارگذاری نشد', e.message)); }, [dq, status]);
 
   const openNew = async () => {
-    const { code } = await api.get('/employees/next-code');
+    /*
+     * باگ (شکار باگ دور ۲۵): این `await` **بیرون از try** بود. اگر شماره‌ی
+     * بعدی گرفته نمی‌شد (سرور تازه بالا آمده، شبکه‌ی محلی شلوغ، نشست منقضی)،
+     * استثنا به هیچ‌جا نمی‌رسید، فورم باز نمی‌شد و کاربر هیچ پیامی نمی‌دید.
+     * حالا پیام روشن می‌دهد و دکمه بی‌صدا مرده نمی‌ماند.
+     */
+    let no = '', code = '';
+    try {
+      const r = await api.get('/employees/next-code');
+      no = r?.no || ''; code = r?.code || '';
+    } catch {
+      toast.error('فورم باز نشد', 'مشکل در گرفتن کد بعدی کارمند.');
+      return;
+    }
+
     setForm({ ...empty, code });
     setHire(todayISO());
   };
   const openEdit = (r: any) => { setForm({ ...r }); setHire(r.hireDate || ''); };
 
   const save = async () => {
+    /*
+     * باگ: `openNew` نام را خالی می‌گذاشت ولی `name` فقط با `trim()` بررسی
+     * می‌شد و «کد کارمند» هیچ بررسی‌ای نداشت. اگر سرور کد را رد می‌کرد،
+     * کاربر فقط «ذخیره نشد» می‌دید. حالا همان بررسی‌های سرور، پیش از ارسال،
+     * با پیام روشن انجام می‌شود.
+     */
     if (!form.name?.trim()) { toast.warn('نام کارمند را وارد کنید.'); return; }
+    if (!String(form.code || '').trim()) { toast.warn('کد کارمند خالی است.', 'دکمه‌ی «کد بعدی» را بزنید یا کد بدهید.'); return; }
+    if (Number(form.baseSalary) < 0) { toast.warn('معاش ثابت نمی‌تواند منفی باشد.'); return; }
     const hireDate = hire || '';
     setBusy(true);
     try {

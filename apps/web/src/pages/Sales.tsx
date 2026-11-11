@@ -9,7 +9,7 @@ import {
   ListHead, SearchBox, FilterButton, FilterPanel, FilterChip, InlineStat,
   Computed, ExportButton, validateRequired,
 } from '../components/ui';
-import { IconPlus } from '../components/icons';
+import { IconPlus, IconPrint } from '../components/icons';
 import { DatePicker } from '../components/DatePicker';
 import { money, num, todayISO, formatDate, addDaysISO } from '../lib/calendar';
 import { pageAfterRemove } from '../lib/paging';
@@ -58,7 +58,21 @@ export default function SalesPage() {
   const hasFilter = Boolean(filters.q || filters.from || filters.to || filters.paymentType || filters.material);
 
   const openNew = async () => {
-    const { no } = await api.get('/sales/next-no');
+    /*
+     * باگ (شکار باگ دور ۲۵): این `await` **بیرون از try** بود. اگر شماره‌ی
+     * بعدی گرفته نمی‌شد (سرور تازه بالا آمده، شبکه‌ی محلی شلوغ، نشست منقضی)،
+     * استثنا به هیچ‌جا نمی‌رسید، فورم باز نمی‌شد و کاربر هیچ پیامی نمی‌دید.
+     * حالا پیام روشن می‌دهد و دکمه بی‌صدا مرده نمی‌ماند.
+     */
+    let no = '', code = '';
+    try {
+      const r = await api.get('/sales/next-no');
+      no = r?.no || ''; code = r?.code || '';
+    } catch {
+      toast.error('فورم باز نشد', 'مشکل در گرفتن شماره‌ی بعدی (شاید سرور بالا نیامده باشد).');
+      return;
+    }
+
     setForm({
       no, customerId: '', driverName: '', truckPlate: '', destination: '', materialId: '', materialName: '',
       volume: 0, unitPrice: 0, freightPerUnit: 0, contractorId: '', contractorName: '', paymentType: 'cash', note: '',
@@ -218,7 +232,15 @@ export default function SalesPage() {
                     <td><span className={`badge ${r.paymentType === 'cash' ? 'ok' : 'warn'}`}>{r.paymentType === 'cash' ? 'نقده' : 'باقی'}</span></td>
                     <td>
                       <div className="actions hover-actions">
-                        <Link className="btn sm icon" to={`/print/sale/${r.id}`} title="چاپ بل">چاپ</Link>
+                        {/*
+                          * باگ ظاهری: دکمه‌ی چاپ کلاس `icon` داشت (۳۲×۳۲ و
+                          * `padding:0`) ولی متن «چاپ» داخلش بود، پس متن
+                          * بیرون می‌زد و در ستون عملیات بدقلق دیده می‌شد.
+                          * حالا آیکن + متن، با همان ارتفاع بقیه‌ی دکمه‌ها.
+                          */}
+                        <Link className="btn sm" to={`/print/sale/${r.id}?auto=1`} title="چاپ بل فروش">
+                          <IconPrint size={13} /> چاپ
+                        </Link>
                         <button className="btn sm" onClick={() => openEdit(r)}>ویرایش</button>
                         {isManager ? <button className="btn sm danger" onClick={() => remove(r)}>حذف</button> : null}
                       </div>

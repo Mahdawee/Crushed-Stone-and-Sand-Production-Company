@@ -30,13 +30,19 @@ export default function PrintSale() {
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [id]);
+  /*
+   * چاپ خودکار — فقط وقتی سند از **مسیر چاپ** باز شود (`?auto=1`). باز کردن
+   * دوباره‌ی سند (رفرش، یا برگشت از «بازگشت») نباید ناگهان پنجره‌ی چاپ باز
+   * کند؛ کاربر فقط می‌خواست سند را ببیند. باگ کاربر: «کلید چاپ ... ظاهری
+   * نامناسب داشت» — پنجره‌ای که خودش باز می‌شد و راه برگشت نداشت.
+   */
+  const autoPrint = new URLSearchParams(window.location.search).get('auto') === '1';
   const [printed, setPrinted] = useState(false);
   useEffect(() => {
-    /* در پنجره دسکتاپ چاپ خودکار مزاحم است — فقط در حالت مرورگر یک بار چاپ می‌شود */
-    if (!s || printed) return;
-    const t = setTimeout(() => { window.print(); setPrinted(true); }, 400);
+    if (!s || printed || !autoPrint) return;
+    const t = setTimeout(() => { setPrinted(true); window.print(); }, 350);
     return () => clearTimeout(t);
-  }, [s, printed]);
+  }, [s, printed, autoPrint]);
   if (err) {
     return (
       <div style={{ padding: 30, maxWidth: 520 }}>

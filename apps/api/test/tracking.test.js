@@ -271,6 +271,66 @@ async function main() {
       check('سند معاش با نام کارمند ثبت شد (نه خالی)', sal?.employeeName === 'احمد تست', String(sal?.employeeName));
     }
 
+    /* ---------- اعتبارسنجی نام‌ها (شکار باگ دور ۲۵) ---------- */
+    {
+      const blankCust = await api('POST', '/customers', { name: '   ', code: '777' });
+      check('مشتری با نام فقط-فاصله رد می‌شود', blankCust.status === 400, String(blankCust.status));
+      const dupCust = await api('POST', '/customers', { name: 'یک', code: '778' });
+      const dupCust2 = await api('POST', '/customers', { name: 'دو', code: '778' });
+      check('کد تکراری مشتری رد می‌شود', [200, 201].includes(dupCust.status) && dupCust2.status === 400,
+        `${dupCust.status}/${dupCust2.status}`);
+      /* فهرست مشتریان آرایه‌ی خالص برمی‌گرداند (نه { rows }) */
+      const custRows = (r) => (Array.isArray(r.body) ? r.body : (r.body?.rows || []));
+      const listC = await api('GET', '/customers');
+      const c1 = custRows(listC).find((c) => c.code === '778');
+      check('مشتری آزمایشی ساخته شد', !!c1);
+      const badCode = await api('PUT', `/customers/${c1.id}`, { name: 'دو', code: '000' });
+      check('کد رزروشده ۰۰۰ در ویرایش رد می‌شود', badCode.status === 400, String(badCode.status));
+      const keptCode = await api('PUT', `/customers/${c1.id}`, { name: 'دو', code: '' });
+      check('ویرایش بدون کد، کد فعلی را حفظ می‌کند', [200, 201].includes(keptCode.status), String(keptCode.status));
+      const listC2 = await api('GET', '/customers');
+      const c2 = custRows(listC2).find((c) => c.id === c1.id);
+      check('کد مشتری بعد از ویرایش خالی نشد', c2?.code === '778', String(c2?.code));
+
+      const blankEmp = await api('POST', '/employees', { name: '  ', code: '950' });
+      check('کارمند با نام فقط-فاصله رد می‌شود', blankEmp.status === 400, String(blankEmp.status));
+      const negEmp = await api('POST', '/employees', { name: 'کارمند منفی', code: '951', baseSalary: -5 });
+      check('معاش منفی رد می‌شود', negEmp.status === 400, String(negEmp.status));
+      const emp3 = await api('POST', '/employees', { name: 'کارمند بی‌کد', code: '952' });
+      const empList = await api('GET', '/employees');
+      const e3 = (empList.body?.rows || []).find((e) => e.name === 'کارمند بی‌کد');
+      const e3put = await api('PUT', `/employees/${e3.id}`, { name: 'کارمند بی‌کد', code: '' });
+      const empList2 = await api('GET', '/employees');
+      const e3b = (empList2.body?.rows || []).find((e) => e.id === e3.id);
+      check('ویرایش کارمند بدون کد، کد را خالی نمی‌کند', e3b?.code === '952', `${e3b?.code} (${e3put.status})`);
+
+      const blankCo = await api('PUT', '/company', { name: '  ' });
+      check('نام شرکت خالی رد می‌شود (سرصفحه‌ی همه‌ی اسناد است)', blankCo.status === 400, String(blankCo.status));
+      const co = await api('PUT', '/company', { name: 'شرکت آزمایشی' });
+      check('نام شرکت معتبر ذخیره می‌شود', [200, 201].includes(co.status) && co.body?.name === 'شرکت آزمایشی');
+
+      const mNeg = await api('POST', '/machinery', { name: 'لودر', count: -3 });
+      check('تعداد منفی ماشین رد می‌شود', mNeg.status === 400, String(mNeg.status));
+      const mBadStatus = await api('POST', '/machinery', { name: 'لودر', count: 1, status: 'چیز-نامعتبر' });
+      check('وضعیت نامعتبر ماشین رد می‌شود', mBadStatus.status === 400, String(mBadStatus.status));
+      const mOk = await api('POST', '/machinery', { name: 'لودر ۴۷۰', count: 2, status: 'active' });
+      check('ماشین معتبر ساخته می‌شود', [200, 201].includes(mOk.status), String(mOk.status));
+
+      /* اقلام فهرست: نام تکراری و شناسه‌ی ناموجود */
+      const lk1 = await api('POST', '/lookups', { type: 'material', name: 'خاک سرند' });
+      const lkDup = await api('POST', '/lookups', { type: 'material', name: 'خاک سرند' });
+      check('قلم تکراری فهرست رد می‌شود', [200, 201].includes(lk1.status) && lkDup.status === 409,
+        `${lk1.status}/${lkDup.status}`);
+      const lkBlank = await api('POST', '/lookups', { type: 'material', name: '   ' });
+      check('قلم با نام خالی رد می‌شود', lkBlank.status === 400, String(lkBlank.status));
+      const lkUpdGhost = await api('PUT', '/lookups/999999', { name: 'چیزی' });
+      check('ویرایش قلم ناموجود ۴۰۴ می‌دهد (نه ۲۰۰ دروغ)', lkUpdGhost.status === 404, String(lkUpdGhost.status));
+      const lkList = await api('GET', '/lookups/manage?type=material');
+      const lkRow = (lkList.body?.rows || []).find((r) => r.name === 'خاک سرند');
+      const lkReorderBad = await api('POST', '/lookups/reorder', { type: 'payer', ids: [lkRow.id] });
+      check('جابه‌جایی با شناسه‌ی نوع دیگر رد می‌شود', lkReorderBad.status === 400, String(lkReorderBad.status));
+    }
+
     /* ---------- «شماره بعدی» نباید با شماره‌های موجود قاطی شود ---------- */
     const next = await api('GET', '/sales/next-no?date=1404/06/16');
     check('پیش‌نمایش شماره بعدی کار می‌کند', next.status === 200 && typeof next.body?.no === 'string',

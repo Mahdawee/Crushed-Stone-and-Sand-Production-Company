@@ -87,3 +87,89 @@
   table.tbl td, table.tbl th { font-size: .72rem !important; padding: 4px 5px !important; }
   .table-wrap { overflow: visible !important; }
 }
+
+/* ================================================================== *
+ * نسخه‌ی ۲ چاپ — «کاغذ تمیز و قابل‌ارائه»
+ * ================================================================== *
+ * گزارش کاربر: «کلید چاپ در بعضی جاها ساده و ظاهری نامناسب داشت».
+ * مشکلات واقعی که پیدا شد:
+ *   ۱) جدول در حالت چاپ «لخت» می‌شد — بدون خط سرستون و بدون نوارِ ردیف،
+ *      روی کاغذ سفید فقط متن‌های چسبیده به هم دیده می‌شد.
+ *   ۲) عنوان صفحه‌ی برنامه (h3 کارت) با عنوان سرصفحه دوباره چاپ می‌شد.
+ *   ۳) `page-break-inside` روی ردیف‌های بلند + تکرار نشدن `tfoot` باعث می‌شد
+ *      جمع کل در یک برگه‌ی دیگر تنها بماند.
+ *   ۴) فاصله‌ها با `mm` مخلوط بود؛ روی A4 حاشیه‌ی بالا/پایین ناهمگون می‌شد.
+ */
+
+/* — جدول‌های گزارش روی کاغذ — */
+@media print {
+  /* رنگ متن دقیقاً سیاه (چاپگرهای اداری خاکستری را محو می‌کنند) */
+  body, .doc-page, table.tbl, table.tbl td, table.tbl th { color: #000 !important; }
+
+  table.tbl { width: 100% !important; border-collapse: collapse !important; }
+  table.tbl thead th {
+    background: #eceff1 !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    border-top: 1.4pt solid #000 !important;
+    border-bottom: 1pt solid #000 !important;
+    border-inline: .5pt solid #9aa5ab !important;
+    padding: 5pt 3pt !important;
+    font-size: .70rem !important;
+    white-space: nowrap;
+  }
+  table.tbl tbody td {
+    border-bottom: .5pt solid #b9c2c8 !important;
+    border-inline: .5pt solid #d7dde1 !important;
+    padding: 4pt 3pt !important;
+  }
+  /* نوارِ یک‌درمیان ردیف‌ها — فقط با رنگ‌های خیلی روشن تا مرکب هدر نرود */
+  table.tbl tbody tr:nth-child(even) td {
+    background: #f6f8f9 !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  table.tbl tfoot td, table.tbl tbody tr.total td {
+    border-top: 1.2pt solid #000 !important;
+    font-weight: 700 !important;
+    background: #fff !important;
+  }
+  /* ستون‌های عددی با فونت هم‌عرض و راست‌چین چپ (ترازِ ارقام) */
+  table.tbl td.num, table.tbl th.num {
+    font-variant-numeric: tabular-nums; text-align: left; direction: ltr;
+  }
+  /* عنوان کارت (h3) روی کاغذ لازم نیست؛ سرصفحه‌ی خودمان عنوان دارد */
+  .card-h h3 { font-size: .82rem; color: #000; }
+  .card-h { border-bottom: .8pt solid #000; padding-bottom: 4pt; margin-bottom: 6pt; }
+
+  /* فاصله‌ی عمودی ثابت و قابل‌پیش‌بینی */
+  .card { margin: 0 0 6pt 0 !important; }
+  .col { gap: 0 !important; }
+  .grid { gap: 6pt !important; }
+
+  /* هیچ جدولی در میانه‌ی برگه نصف نشود، مگر خیلی بلند باشد */
+  table.tbl { page-break-inside: auto; }
+  table.tbl tr { page-break-after: auto; }
+  h3, h4 { page-break-after: avoid; }
+
+  /* پانوشت همیشه در انتهای آخرین برگه و هرگز تنها روی برگه‌ی جدا */
+  .print-report-foot { page-break-before: avoid; page-break-inside: avoid; }
+}
+
+/* — دکمه‌ی چاپ: ابزارِ صفحه، نه بخشی از کاغذ — */
+@media screen {
+  .no-print, .print-only { }
+
+  /*
+   * در نسخه‌ی دسکتاپ (Tauri/WebView2) `window.print()` پنجره‌ی سیستمی با
+   * پیش‌نمایش باز می‌کند. اگر صفحه‌ی «چاپ سند» بدون ابزارِ بازگشت در همان
+   * لحظه چاپ شود، کاربر بعد از بستن پنجره روی یک صفحه‌ی بی‌دکمه می‌ماند.
+   * نوار ابزار پایین صفحه همیشه دیده می‌شود و راه برگشت دارد (این استایل
+   * فقط آن را مرتب می‌کند).
+   */
+  .doc-toolbar {
+    position: sticky; top: 0; z-index: 5;
+    background: var(--surface-2, #eef1f3);
+    border-bottom: 1px solid var(--border, #d5dbdf);
+    backdrop-filter: blur(4px);
+  }
+  .doc-toolbar .btn { min-width: 120px; justify-content: center; }
+}

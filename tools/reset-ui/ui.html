@@ -72,6 +72,7 @@
     box-shadow:0 12px 40px rgba(0,0,0,.45);max-width:min(560px,92vw);display:none}
   .toast.show{display:block}
   .toast.ok{border-color:rgba(52,211,153,.5)} .toast.bad{border-color:rgba(248,113,113,.5)}
+  .hintbox{background:#12211d;border:1px solid #1f4a40;border-radius:10px;padding:10px 12px;color:#cfe8e2;font-size:.85rem;line-height:1.9}
   .hint{font-size:.74rem;color:var(--text-3);margin-top:5px}
   .sep{height:1px;background:var(--border);margin:14px 0}
   .danger-text{color:var(--bad)}
@@ -141,10 +142,10 @@
         </div>
       </div>
 
-      <div id="keyBox">
-        <label>کلید «صفر کردن» <span class="muted small">(از برنامه: <span class="mono">--cli --print-reset-key</span>)</span></label>
-        <input id="resetKey" dir="ltr" placeholder="FARDAY-RESET-…">
-        <p class="hint" id="keyHint">کلید داخل فایل اجرایی مُهر شده است؛ بدون آن، ابزار هیچ کاری نمی‌کند.</p>
+      <div class="hintbox" style="margin-bottom:12px">
+        <b>کلید لازم نیست.</b> برای صفر کردن، تیک زیر را بزنید و عبارت
+        <b class="mono">صفر کردن</b> را تایپ کنید. قبل از هر تغییری یک پشتیبان
+        خودکار گرفته می‌شود.
       </div>
 
       <div class="sep"></div>
@@ -262,24 +263,18 @@ function render(){
     : 'سیستم آک است؛ صفر کردن فقط فهرست‌های پیش‌فرض و کاربر مدیر را بازسازی می‌کند.';
 
   $('appOpenBox').style.display = open ? '' : 'none';
-  $('keyBox').style.display = open ? 'none' : '';
-  $('keyHint').textContent = st.resetKeyPresent
-    ? 'کلید روی این کمپیوتر پیدا شد — اگر در کادر نیست، از فایل اجرایی بگیرید (--cli --print-reset-key).'
-    : 'کلید داخل فایل اجرایی مُهر شده است؛ بدون آن، ابزار هیچ کاری نمی‌کند.';
   syncBtn();
 }
 
 function syncBtn(){
   const ack = $('ack').checked;
   const typed = $('confirm').value.trim() === 'صفر کردن';
-  const needKey = !state.appOpen;
-  const keyOk = !needKey || ($('resetKey').value.trim().length > 0);
   const passOk = !state.appOpen || $('password').value.length > 0;
-  $('go').disabled = !(ack && typed && keyOk && passOk);
+  /* کلید لازم نیست — فقط تیک، عبارت تأیید، و (در حالت باز) رمز مدیر */
+  $('go').disabled = !(ack && typed && passOk);
   $('confirmHint').textContent = typed ? '' : 'با حروف فارسی: صفر کردن';
 }
 
-$('resetKey').addEventListener('input', syncBtn);
 $('password').addEventListener('input', syncBtn);
 
 /**
@@ -306,7 +301,6 @@ async function run(){
     const body = {
       confirm: $('confirm').value.trim(),
       acknowledged: $('ack').checked,
-      resetKey: $('resetKey').value.trim(),
       operator: $('operator').value.trim(),
       reason: $('reason').value.trim(),
       username: $('username').value.trim() || 'admin',

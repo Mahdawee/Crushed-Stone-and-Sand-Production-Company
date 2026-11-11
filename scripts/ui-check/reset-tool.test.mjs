@@ -83,7 +83,11 @@ console.log('\n— صفحه و وضعیت ابزار —');
 
 const child = spawn(process.execPath, [path.join(root, 'tools', 'reset-ui', 'server.mjs')], {
   cwd: root,
-  env: { ...process.env, FD_DATA_DIR: dir, FD_DB_FILE: dbFile, FD_RESET_UI_PORT: String(PORT), FARDAY_RESET_KEY: 'FD-TEST-RESET-KEY' },
+  /*
+   * عمداً **بدون** FARDAY_RESET_KEY: درخواست کاربر این است که ابزار بدون کلید
+   * کار کند. اگر روزی کسی کلید را دوباره اجباری کند، همین تست می‌شکند.
+   */
+  env: { ...process.env, FD_DATA_DIR: dir, FD_DB_FILE: dbFile, FD_RESET_UI_PORT: String(PORT) },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let log = '';
@@ -112,7 +116,8 @@ const post = async (p, b) => {
 check('صفحه‌ی ابزار راست‌به‌چپ و فارسی است', /dir="rtl"/.test(html) && /صفر کردن سیستم/.test(html));
 check('صفحه هشدار صریح «برگشت‌ناپذیر» دارد', /برگشت‌ناپذیر/.test(html));
 check('صفحه دو تأیید می‌گیرد (تیک + عبارت)', /id="ack"/.test(html) && /id="confirm"/.test(html));
-check('کلید صفر کردن هرگز در HTML نمی‌آید', !html.includes('FD-TEST-RESET-KEY'));
+check('کلید صفر کردن در صفحه نیست (دیگر لازم نیست)', !/id="resetKey"/.test(html) && !/print-reset-key/.test(html));
+check('صفحه صریح می‌گوید «کلید لازم نیست»', /کلید لازم نیست/.test(html));
 check('صفحه‌ی نمایش بخش «گزارش عملیات» دارد', /گزارش عملیات/.test(html));
 
 const st = await (await fetch(BASE + '/api/state')).json();
@@ -139,21 +144,25 @@ const countNow = () => {
 const c0 = countNow();
 check('داده قبل از هر کاری سر جایش است', c0.customers >= 1, JSON.stringify(c0));
 
-const noPhrase = await post('/api/reset', { acknowledge: true, acknowledged: true, resetKey: 'FD-TEST-RESET-KEY' });
+const noPhrase = await post('/api/reset', { acknowledge: true, acknowledged: true });
 check('بدون عبارت تأیید رد می‌شود', noPhrase.status === 400, String(noPhrase.status));
 check('پیام می‌گوید هیچ داده‌ای تغییر نکرد', /هیچ داده‌ای تغییر نکرد/.test(String(noPhrase.body?.message || '')),
   String(noPhrase.body?.message));
 
-const noAck = await post('/api/reset', { confirm: 'صفر کردن', resetKey: 'FD-TEST-RESET-KEY' });
+const noAck = await post('/api/reset', { confirm: 'صفر کردن' });
 check('بدون تیک «می‌دانم» رد می‌شود', noAck.status === 400, String(noAck.status));
 
-const wrongKey = await post('/api/reset', { confirm: 'صفر کردن', acknowledged: true, resetKey: 'WRONG' });
-check('کلید نادرست رد می‌شود', wrongKey.status === 403, String(wrongKey.status));
+/*
+ * درخواست کاربر: «کلید نیاز نباشد». پس درخواستی که هیچ کلیدی ندارد باید
+ * جلو برود تا مرحله‌ی اجرا (و اگر همه‌چیز درست باشد، صفر کند).
+ */
+const noKeyState = await (await fetch(BASE + '/api/state')).json();
+check('وضعیت می‌گوید کلید لازم نیست', noKeyState.keyRequired === false);
 
 const noCsrf = await fetch(BASE + '/api/reset', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ confirm: 'صفر کردن', acknowledged: true, resetKey: 'FD-TEST-RESET-KEY' }),
+  body: JSON.stringify({ confirm: 'صفر کردن', acknowledged: true }),
 });
 check('بدون توکن CSRF رد می‌شود', noCsrf.status === 400, String(noCsrf.status));
 
@@ -164,7 +173,7 @@ check('بعد از رد شدن‌ها، داده دست‌نخورده است',
 console.log('\n— صفر کردن واقعی —');
 
 const done = await post('/api/reset', {
-  confirm: 'صفر کردن', acknowledged: true, resetKey: 'FD-TEST-RESET-KEY',
+  confirm: 'صفر کردن', acknowledged: true,
   operator: 'اپراتور تست', reason: 'تحویل به مشتری آزمایشی',
 });
 check('صفر کردن انجام شد', done.status === 200 && done.body.ok === true,
@@ -289,6 +298,7 @@ for (const f of ['tools/license/start.cmd', 'tools/license/start.sh', 'tools/res
 /* ================================================================ */
 console.log('\n— زنجیره‌ی «کلید صفر کردن» (مُهر در باینری) —');
 {
+  const serverSrc = fs.readFileSync(path.join(root, 'tools', 'reset-ui', 'server.mjs'), 'utf8');
   const buildRs = fs.readFileSync(path.join(root, 'src-tauri', 'build.rs'), 'utf8');
   const sealRs = fs.readFileSync(path.join(root, 'src-tauri', 'src', 'seal.rs'), 'utf8');
   const sidecar = fs.readFileSync(path.join(root, 'src-tauri', 'src', 'api_sidecar.rs'), 'utf8');
@@ -301,8 +311,11 @@ console.log('\n— زنجیره‌ی «کلید صفر کردن» (مُهر در
   check('seal.rs مُهر را باز می‌کند و اثر انگشت را بررسی می‌کند',
     /unsealed_reset_key/.test(sealRs) && /RESET_FINGERPRINT/.test(sealRs) && /has_reset_key/.test(sealRs));
   check('کلید صفر کردن به سرویس داخلی داده می‌شود', /FARDAY_RESET_KEY/.test(sidecar));
-  check('سوئیچ --cli --print-reset-key وجود دارد',
-    /print-reset-key/.test(mainRs) && /FARDAY_RESET_KEY/.test(mainRs));
+  check('سوئیچ --cli --print-reset-key برای بررسی نسخه وجود دارد',
+    /print-reset-key/.test(mainRs));
+  check('ابزار صفر کردن دیگر کلید نمی‌خواهد (درخواست کاربر)',
+    !/resetKey\(\)/.test(serverSrc) && !/FARDAY_RESET_KEY/.test(serverSrc),
+    'server.mjs باید بدون کلید کار کند');
   check('کلید صفر کردن در git نیست', /reset-key\.txt/.test(gitignore));
   check('اسکریپت ساخت کلید هست و کامیت‌نشدن را هشدار می‌دهد',
     /reset-key\.txt/.test(keyScript) && /کامیت نکنید/.test(keyScript));
@@ -313,8 +326,9 @@ console.log('\n— زنجیره‌ی «کلید صفر کردن» (مُهر در
 {
   const doc = fs.readFileSync(path.join(root, 'docs', 'RESET.md'), 'utf8');
   check('راهنمای صفر کردن نوشته شده است', doc.length > 1200);
-  check('راهنما اجراکننده‌ها، کلید و پشتیبان را توضیح می‌دهد',
-    /start\.cmd/.test(doc) && /start\.sh/.test(doc) && /print-reset-key/.test(doc) && /pre-reset/.test(doc));
+  check('راهنما اجراکننده‌ها، تأیید متنی و پشتیبان را توضیح می‌دهد',
+    /start\.cmd/.test(doc) && /start\.sh/.test(doc) && /صفر کردن/.test(doc) && /pre-reset/.test(doc));
+  check('راهنما صریح می‌گوید کلید لازم نیست', /کلید/.test(doc) && /بدون کلید|کلید برداشته شد|کلید لازم نیست/.test(doc));
   check('راهنما می‌گوید چه چیزی پاک می‌شود و چه چیزی می‌ماند',
     /مشتری گذری/.test(doc) && /admin123/.test(doc) && /برگشت‌ناپذیر/.test(doc));
 }
