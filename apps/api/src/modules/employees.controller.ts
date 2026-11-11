@@ -6,6 +6,27 @@ import { logActivity } from '../common/activity';
 import { softDelete } from '../common/soft-delete';
 import { settingsService } from '../common/settings';
 import { parseUserDate, monthBucket, todayISO, CalendarMode, daysBetween } from '../common/calendar';
+import { idParam } from '../common/params';
+
+/**
+ * ردیفی که در «سطل بازیافت» است نباید ویرایش شود.
+ *
+ * ## باگ واقعی
+ * مسیرهای `PUT` وجود ردیف را بررسی نمی‌کردند. اگر سند حذف شده بود و کاربر
+ * (یا یک تبِ بازِ قدیمی، یا فورمی که بعد از حذف باز مانده بود) دوباره
+ * «ذخیره» می‌زد، پاسخ **۲۰۰ «ذخیره شد»** می‌گرفت؛ ردیف در سطل بازیافت با
+ * عددهای تازه می‌ماند و با «بازگرداندن»، سندی با مبلغ/مشتریِ غلط به
+ * حساب‌ها برمی‌گشت. حالا با پیام روشن (۴۰۹) رد می‌شود.
+ */
+async function assertLive(table: string, id: number, label: string) {
+  const rows: any[] = await db().$queryRawUnsafe(
+    `SELECT "id", "deletedAt" FROM "${table}" WHERE "id"=?`, id,
+  );
+  if (!rows?.length) throw new HttpException(`${label} پیدا نشد.`, 404);
+  if (rows[0].deletedAt) {
+    throw new HttpException(`این ${label} در «سطل بازیافت» است؛ اول آن را بازگردانید، بعد ویرایش کنید.`, 409);
+  }
+}
 
 @UseGuards(AuthGuard)
 @Controller()
@@ -190,7 +211,8 @@ export class EmployeesController {
 
   @Get('employees/:id')
   async one(@Param('id') id: string) {
-    const rows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Employee" WHERE "id"=?`, Number(id));
+    const eid = idParam(id, 'شناسه‌ی کارمند');
+    const rows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Employee" WHERE "id"=?`, eid);
     /*
      * ⚠ عمداً حذف‌شده‌ها هم برمی‌گردند: صفحه‌ی «کارمند» با لینک مستقیم
      * (`/employees/12`) باز می‌شود و اگر ردیف در سطل بازیافت باشد، فقط یک
@@ -201,11 +223,11 @@ export class EmployeesController {
     if (!rows?.length) throw new HttpException('کارمند پیدا نشد.', 404);
     const salary: any[] = await db().$queryRawUnsafe(
       `SELECT * FROM "Salary" WHERE "employeeId"=? AND COALESCE("deletedAt",'')='' ORDER BY "periodStart" DESC`,
-      Number(id),
+      eid,
     );
     const att: any[] = await db().$queryRawUnsafe(
       `SELECT * FROM "Attendance" WHERE "employeeId"=? AND COALESCE("deletedAt",'')='' ORDER BY "date" DESC LIMIT 60`,
-      Number(id),
+      eid,
     );
     return {
       employee: rows[0],
@@ -252,6 +274,8 @@ export class EmployeesController {
 
   @Put('employees/:id')
   async update(@Param('id') id: string, @Body() body: any) {
+    const eid = idParam(id, 'شناسه‌ی کارمند');
+    await assertLive('Employee', eid, 'کارمند');
     const mode = await this.cal();
     let hireDate = body.hireDate || '';
     try {
@@ -265,12 +289,12 @@ export class EmployeesController {
          "phone"=?, "nationalId"=?, "address"=?, "contractPeriod"=?, "status"=?, "note"=? WHERE "id"=?`,
         String(body.code || '').trim(), body.name, body.fatherName || '', body.position || '', hireDate,
         Number(body.baseSalary) || 0, body.phone || '', body.nationalId || '', body.address || '',
-        body.contractPeriod || '', body.status === 'inactive' ? 'inactive' : 'active', body.note || '', Number(id),
+        body.contractPeriod || '', body.status === 'inactive' ? 'inactive' : 'active', body.note || '', eid,
       );
     } catch {
       throw new HttpException('کد کارمند تکراری است یا معلومات ناقص است.', 400);
     }
-    await logActivity({ action: 'update', entity: 'Employee', entityId: Number(id), detail: body.name });
+    await logActivity({ action: 'update', entity: 'Employee', entityId: eid, detail: body.name });
     return { ok: true };
   }
 
@@ -285,13 +309,14 @@ export class EmployeesController {
   @Delete('employees/:id')
   @ManagerOnly()
   async remove(@Param('id') id: string) {
+    const eid = idParam(id, 'شناسه‌ی کارمند');
     const used: any[] = await db().$queryRawUnsafe(
-      `SELECT COUNT(*) as c FROM "Salary" WHERE "employeeId"=? AND COALESCE("deletedAt",'')=''`, Number(id));
+      `SELECT COUNT(*) as c FROM "Salary" WHERE "employeeId"=? AND COALESCE("deletedAt",'')=''`, eid);
     if (Number(used?.[0]?.c) > 0) {
       throw new HttpException('این کارمند دارای سابقه معاش است؛ به جای حذف، وضعیت او را «غیر فعال» کنید.', 400);
     }
     const att: any[] = await db().$queryRawUnsafe(
-      `SELECT COUNT(*) as c FROM "Attendance" WHERE "employeeId"=? AND COALESCE("deletedAt",'')=''`, Number(id));
+      `SELECT COUNT(*) as c FROM "Attendance" WHERE "employeeId"=? AND COALESCE("deletedAt",'')=''`, eid);
     if (Number(att?.[0]?.c) > 0) {
       throw new HttpException('این کارمند سابقه حضور و غیاب دارد؛ به جای حذف، وضعیت او را «غیر فعال» کنید.', 400);
     }
@@ -300,14 +325,14 @@ export class EmployeesController {
      * قابل بازیابی بدون آسیب». ردیف می‌ماند، فقط از همه‌ی فهرست‌ها و
      * گزارش‌ها پنهان می‌شود و از «سطل بازیافت» برمی‌گردد.
      */
-    const del = await softDelete("Employee", Number(id));
+    const del = await softDelete("Employee", eid);
     if (!del.ok) throw new HttpException('ردیف پیدا نشد.', 404);
     /*
      * باگ: این ثبت سابقه **بعد از return** بود و هرگز اجرا نمی‌شد؛ یعنی
      * حذف در «سابقه فعالیت‌ها» نمی‌آمد و «قابل بازیابی بودن» فقط روی
      * کاغذ بود. حالا قبل از برگشت ثبت می‌شود.
      */
-    await logActivity({ action: 'delete', entity: 'Employee', entityId: Number(id) });
+    await logActivity({ action: 'delete', entity: 'Employee', entityId: eid });
     return { ok: true, softDeleted: true, message: 'حذف شد — از «سطل بازیافت» قابل بازگرداندن است.' };
   }
 

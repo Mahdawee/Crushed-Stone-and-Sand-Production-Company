@@ -8,6 +8,7 @@ import { resolveRelatedBranch } from '../common/related';
 import { settingsService } from '../common/settings';
 import { nextDocNo } from '../common/sequence';
 import { parseUserDate, formatDate, CalendarMode } from '../common/calendar';
+import { idParam } from '../common/params';
 
 /**
  * مقادیر عددی بل فروش.
@@ -38,6 +39,31 @@ function readNumbers(body: any) {
    */
   const total = Math.round((volume * unitPrice + freightTotal) * 100) / 100;
   return { volume, unitPrice, freightPerUnit, freightTotal, total };
+}
+
+/**
+ * ردیفی که در «سطل بازیافت» است نباید ویرایش شود.
+ *
+ * ## باگ واقعی
+ * `PUT /sales/:id` وجود ردیف را بررسی نمی‌کرد. اگر بل حذف شده بود و کاربر
+ * (یا یک تبِ بازِ قدیمی، یا دکمه‌ی «ذخیره»ی یک فورم که بعد از حذف باز مانده)
+ * همان بل را ویرایش می‌کرد، پاسخ **۲۰۰ «ذخیره شد»** می‌گرفت؛ ردیف در
+ * سطل بازیافت با عددهای تازه می‌ماند و بعد از «بازگرداندن» یک بل با
+ * مبلغ/مشتریِ غلط به حساب‌ها برمی‌گشت. کاربر فکر می‌کرد ویرایش‌اش روی
+ * سند زنده اثر کرده است.
+ *
+ * حالا ویرایش ردیفِ سطل بازیافت با پیام روشن رد می‌شود.
+ */
+async function assertLiveRow(table: string, id: number, label: string) {
+  const rows: any[] = await db().$queryRawUnsafe(
+    `SELECT "id", "deletedAt" FROM "${table}" WHERE "id"=?`, id,
+  );
+  if (!rows?.length) throw new HttpException(`${label} پیدا نشد.`, 404);
+  if (rows[0].deletedAt) {
+    throw new HttpException(
+      `این ${label} در «سطل بازیافت» است؛ اول آن را بازگردانید، بعد ویرایش کنید.`, 409,
+    );
+  }
 }
 
 @UseGuards(AuthGuard)
@@ -146,6 +172,8 @@ export class SalesController {
 
   @Put(':id')
   async update(@Param('id') id: string, @Body() body: any) {
+    const sid = idParam(id, 'شناسه‌ی بل');
+    await assertLiveRow('Sale', sid, 'بل فروش');
     const mode = await settingsService.calendar();
     let date = '';
     try { date = body.date ? parseUserDate(body.date, mode) : ''; }
@@ -171,32 +199,33 @@ export class SalesController {
         body.truckPlate || '', body.destination || '', body.materialId ? Number(body.materialId) : null,
         body.materialName || '', volume, unitPrice, freightPerUnit, freightTotal, total,
         branch.contractorId, branch.contractorName,
-        body.paymentType === 'credit' ? 'credit' : 'cash', body.note || '', Number(id),
+        body.paymentType === 'credit' ? 'credit' : 'cash', body.note || '', sid,
       );
     } catch {
       throw new HttpException('ویرایش انجام نشد.', 400);
     }
-    await logActivity({ action: 'update', entity: 'Sale', entityId: Number(id), detail: body.no || '' });
+    await logActivity({ action: 'update', entity: 'Sale', entityId: sid, detail: body.no || '' });
     return { ok: true, total };
   }
 
   @Delete(':id')
   @ManagerOnly()
   async remove(@Param('id') id: string) {
+    const sid = idParam(id, 'شناسه‌ی بل');
     /*
      * باگ (که تست دور ۱۶ گرفت): اینجا ردیف با `deletedAt` هم شمرده می‌شد، پس
      * حذف یک بل قبلاً حذف‌شده پیام «پیدا نشد» می‌داد (گمراه‌کننده) — و از
      * طرفی اگر ردیف واقعاً نبود، `softDelete` خودش ۴۰۴ می‌دهد.
      * حالا فقط وجود ردیف را می‌سنجیم، بدون شرط حذف.
      */
-    const rows: any[] = await db().$queryRawUnsafe(`SELECT "id", "deletedAt" FROM "Sale" WHERE "id"=?`, Number(id));
+    const rows: any[] = await db().$queryRawUnsafe(`SELECT "id", "deletedAt" FROM "Sale" WHERE "id"=?`, sid);
     if (!rows?.length) throw new HttpException('بل فروش پیدا نشد.', 404);
     /*
      * حذف «نرم» — درخواست کاربر: «حذف‌ها نرم باشند... از سابقه فعالیت‌ها
      * قابل بازیابی بدون آسیب». ردیف می‌ماند، فقط از همه‌ی فهرست‌ها و
      * گزارش‌ها پنهان می‌شود و از «سطل بازیافت» برمی‌گردد.
      */
-    const del = await softDelete("Sale", Number(id));
+    const del = await softDelete("Sale", sid);
     if (!del.ok) throw new HttpException('ردیف پیدا نشد.', 404);
     return {
       ok: true,
@@ -210,7 +239,8 @@ export class SalesController {
 
   @Get(':id')
   async one(@Param('id') id: string) {
-    const rows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Sale" WHERE "id"=?`, Number(id));
+    const sid = idParam(id, 'شناسه‌ی بل');
+    const rows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Sale" WHERE "id"=?`, sid);
     if (!rows?.length) throw new HttpException('بل فروش پیدا نشد.', 404);
     const mode = await settingsService.calendar();
     return { ...rows[0], dateDisplay: formatDate(rows[0].date, mode, true) };

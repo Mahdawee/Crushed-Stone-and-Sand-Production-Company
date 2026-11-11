@@ -8,6 +8,7 @@ import { settingsService } from '../common/settings';
 import { nextDocNo } from '../common/sequence';
 import { parseUserDate, formatDate, todayISO } from '../common/calendar';
 import { allocationForSource, canonicalReceiptSource, receiptSourceVariants, reducesCustomerDebt } from '../common/domain';
+import { idParam } from '../common/params';
 
 /**
  * نام منبع رسید را از شناسه/نام بگیر و به نام رسمی تبدیل کن.
@@ -26,6 +27,26 @@ async function resolveSourceName(sourceId: unknown, sourceName: unknown): Promis
     id,
   );
   return canonicalReceiptSource(rows?.[0]?.name);
+}
+
+/**
+ * ردیفی که در «سطل بازیافت» است نباید ویرایش شود.
+ *
+ * ## باگ واقعی
+ * مسیرهای `PUT` وجود ردیف را بررسی نمی‌کردند. اگر سند حذف شده بود و کاربر
+ * (یا یک تبِ بازِ قدیمی، یا فورمی که بعد از حذف باز مانده بود) دوباره
+ * «ذخیره» می‌زد، پاسخ **۲۰۰ «ذخیره شد»** می‌گرفت؛ ردیف در سطل بازیافت با
+ * عددهای تازه می‌ماند و با «بازگرداندن»، سندی با مبلغ/مشتریِ غلط به
+ * حساب‌ها برمی‌گشت. حالا با پیام روشن (۴۰۹) رد می‌شود.
+ */
+async function assertLive(table: string, id: number, label: string) {
+  const rows: any[] = await db().$queryRawUnsafe(
+    `SELECT "id", "deletedAt" FROM "${table}" WHERE "id"=?`, id,
+  );
+  if (!rows?.length) throw new HttpException(`${label} پیدا نشد.`, 404);
+  if (rows[0].deletedAt) {
+    throw new HttpException(`این ${label} در «سطل بازیافت» است؛ اول آن را بازگردانید، بعد ویرایش کنید.`, 409);
+  }
 }
 
 @UseGuards(AuthGuard)
@@ -133,6 +154,8 @@ export class ReceiptsController {
 
   @Put(':id')
   async update(@Param('id') id: string, @Body() body: any) {
+    const rid = idParam(id, 'شناسه‌ی رسید');
+    await assertLive('Receipt', rid, 'رسید');
     const mode = await settingsService.calendar();
     let date = '';
     try { date = parseUserDate(body.date, mode); }
@@ -153,16 +176,17 @@ export class ReceiptsController {
        "sourceId"=?, "sourceName"=?, "receivedBy"=?, "note"=? WHERE "id"=?`,
       date, Number(body.customerId), cust?.[0]?.name || body.customerName || '', amount,
       body.relatedBillNo || '', body.sourceId ? Number(body.sourceId) : null, sourceName,
-      body.receivedBy || '', body.note || '', Number(id),
+      body.receivedBy || '', body.note || '', rid,
     );
-    await logActivity({ action: 'update', entity: 'Receipt', entityId: Number(id) });
+    await logActivity({ action: 'update', entity: 'Receipt', entityId: rid });
     return { ok: true };
   }
 
   @Delete(':id')
   @ManagerOnly()
   async remove(@Param('id') id: string) {
-    const rows: any[] = await db().$queryRawUnsafe(`SELECT "no" FROM "Receipt" WHERE "id"=?`, Number(id));
+    const rid = idParam(id, 'شناسه‌ی رسید');
+    const rows: any[] = await db().$queryRawUnsafe(`SELECT "no" FROM "Receipt" WHERE "id"=?`, rid);
     /* باگ: حذف شناسه‌ی ناموجود ۲۰۰ و یک ردیف ساختگی در «فعالیت‌ها» */
     if (!rows?.length) throw new HttpException('رسید پیدا نشد.', 404);
     /*
@@ -170,19 +194,20 @@ export class ReceiptsController {
      * قابل بازیابی بدون آسیب». ردیف می‌ماند، فقط از همه‌ی فهرست‌ها و
      * گزارش‌ها پنهان می‌شود و از «سطل بازیافت» برمی‌گردد.
      */
-    const del = await softDelete("Receipt", Number(id));
+    const del = await softDelete("Receipt", rid);
     if (!del.ok) throw new HttpException('ردیف پیدا نشد.', 404);
     /*
      * باگ: این لاگ بعد از `return` بود و هرگز اجرا نمی‌شد — یعنی حذف رسید
      * در «سابقه فعالیت‌ها» ثبت نمی‌شد و قابل بازیابی نبود.
      */
-    await logActivity({ action: 'delete', entity: 'Receipt', entityId: Number(id), detail: rows?.[0]?.no || '' });
+    await logActivity({ action: 'delete', entity: 'Receipt', entityId: rid, detail: rows?.[0]?.no || '' });
     return { ok: true, softDeleted: true, message: 'حذف شد — از «سطل بازیافت» قابل بازگرداندن است.' };
   }
 
   @Get(':id')
   async one(@Param('id') id: string) {
-    const rows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Receipt" WHERE "id"=?`, Number(id));
+    const rid = idParam(id, 'شناسه‌ی رسید');
+    const rows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Receipt" WHERE "id"=?`, rid);
     if (!rows?.length) throw new HttpException('رسید پیدا نشد.', 404);
     const mode = await settingsService.calendar();
     return { ...rows[0], dateDisplay: formatDate(rows[0].date, mode, true) };

@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Post, Put, Delete, Param, Query, UseGuards, HttpException } from '@nestjs/common';
 import { db } from '../db';
+import { idParam } from '../common/params';
 import { ensureSchemaAsync } from '../schema';
 import { AuthGuard, ManagerOnly } from '../common/auth';
 import { logActivity } from '../common/activity';
@@ -109,11 +110,13 @@ export class LookupsController {
   @Put(':id')
   @ManagerOnly()
   async update(@Param('id') id: string, @Body() body: any) {
+    const lid = idParam(id, 'شناسه‌ی قلم');
+    if (!String(body?.name ?? '').trim()) throw new HttpException('نام قلم لازم است.', 400);
     await db().$executeRawUnsafe(
       `UPDATE "LookupItem" SET "name"=?, "extra"=?, "sortOrder"=?, "active"=? WHERE "id"=?`,
-      body.name, body.extra || '', Number(body.sortOrder) || 0, body.active ? 1 : 0, Number(id),
+      body.name, body.extra || '', Number(body.sortOrder) || 0, body.active ? 1 : 0, lid,
     );
-    await logActivity({ action: 'update', entity: 'LookupItem', entityId: Number(id), detail: body.name });
+    await logActivity({ action: 'update', entity: 'LookupItem', entityId: lid, detail: body.name });
     return { ok: true };
   }
 
@@ -121,16 +124,17 @@ export class LookupsController {
   @Delete(':id')
   @ManagerOnly()
   async remove(@Param('id') id: string) {
-    const rows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "LookupItem" WHERE "id"=?`, Number(id));
+    const lid = idParam(id, 'شناسه‌ی قلم');
+    const rows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "LookupItem" WHERE "id"=?`, lid);
     if (!rows?.length) throw new HttpException('ردیف پیدا نشد.', 404);
     const used = await usageCount(rows[0].type, rows[0].id, rows[0].name);
     if (used > 0) {
-      await db().$executeRawUnsafe(`UPDATE "LookupItem" SET "active"=0 WHERE "id"=?`, Number(id));
-      await logActivity({ action: 'update', entity: 'LookupItem', entityId: Number(id), detail: `غیر فعال شد (${used} سند)` });
+      await db().$executeRawUnsafe(`UPDATE "LookupItem" SET "active"=0 WHERE "id"=?`, lid);
+      await logActivity({ action: 'update', entity: 'LookupItem', entityId: lid, detail: `غیر فعال شد (${used} سند)` });
       return { ok: true, deactivated: true, usage: used };
     }
-    await db().$executeRawUnsafe(`DELETE FROM "LookupItem" WHERE "id"=?`, Number(id));
-    await logActivity({ action: 'delete', entity: 'LookupItem', entityId: Number(id) });
+    await db().$executeRawUnsafe(`DELETE FROM "LookupItem" WHERE "id"=?`, lid);
+    await logActivity({ action: 'delete', entity: 'LookupItem', entityId: lid });
     return { ok: true, deactivated: false, usage: 0 };
   }
 

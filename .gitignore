@@ -46,3 +46,6 @@ scripts/ui-check/.out*/
 license-keys/
 !license-keys/.gitkeep
 *.lic
+# خروجی تست‌های DOM
+scripts/ui-check/.out-*
+scripts/ui-check/.mock

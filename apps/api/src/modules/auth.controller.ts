@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Post, Req, Delete, Param, HttpException } from '@nestjs/common';
 import { db } from '../db';
+import { idParam } from '../common/params';
 import { ensureSchemaAsync } from '../schema';
 import {
   AuthGuard, Public, ManagerOnly, hashPassword, createSession, destroySession, getSession,
@@ -124,8 +125,9 @@ export class AuthController {
   @Post('users/:id')
   @ManagerOnly()
   async update(@Req() req: any, @Param('id') id: string, @Body() body: any) {
+    const uid = idParam(id, 'شناسه‌ی کاربر');
     const p = db();
-    const current: any[] = await p.$queryRawUnsafe(`SELECT * FROM "User" WHERE "id"=?`, Number(id));
+    const current: any[] = await p.$queryRawUnsafe(`SELECT * FROM "User" WHERE "id"=?`, uid);
     if (!current?.length) throw new HttpException('کاربر پیدا نشد.', 404);
     const becomingNonManager = current[0].role === 'manager' && body.role === 'employee';
     const becomingInactive = current[0].active && body.active === false;
@@ -143,19 +145,20 @@ export class AuthController {
       body.fullName || '',
       body.role === 'employee' ? 'employee' : 'manager',
       body.active === false ? 0 : 1,
-      Number(id),
+      uid,
     );
     if (body.password) {
-      await p.$executeRawUnsafe(`UPDATE "User" SET "passwordHash"=? WHERE "id"=?`, hashPassword(body.password), Number(id));
+      await p.$executeRawUnsafe(`UPDATE "User" SET "passwordHash"=? WHERE "id"=?`, hashPassword(body.password), uid);
     }
-    await logActivity({ username: req.session.username, action: 'update', entity: 'User', entityId: Number(id), detail: `کاربر ${body.username || ''}` });
+    await logActivity({ username: req.session.username, action: 'update', entity: 'User', entityId: uid, detail: `کاربر ${body.username || ''}` });
     return { ok: true };
   }
 
   @Delete('users/:id')
   @ManagerOnly()
   async remove(@Req() req: any, @Param('id') id: string) {
-    const target: any[] = await db().$queryRawUnsafe(`SELECT * FROM "User" WHERE "id"=?`, Number(id));
+    const uid = idParam(id, 'شناسه‌ی کاربر');
+    const target: any[] = await db().$queryRawUnsafe(`SELECT * FROM "User" WHERE "id"=?`, uid);
     if (!target?.length) throw new HttpException('کاربر پیدا نشد.', 404);
     if (target[0].id === req.session.userId) {
       throw new HttpException('حساب خودتان را نمی‌توانید حذف کنید.', 400);
@@ -164,8 +167,8 @@ export class AuthController {
       const man: any[] = await db().$queryRawUnsafe(`SELECT COUNT(*) c FROM "User" WHERE "role"='manager' AND "active"=1`);
       if (Number(man?.[0]?.c ?? 0) <= 1) throw new HttpException('آخرین مدیر فعال را نمی‌توان حذف کرد.', 400);
     }
-    await db().$executeRawUnsafe(`DELETE FROM "User" WHERE "id"=?`, Number(id));
-    await logActivity({ username: req.session.username, action: 'delete', entity: 'User', entityId: Number(id) });
+    await db().$executeRawUnsafe(`DELETE FROM "User" WHERE "id"=?`, uid);
+    await logActivity({ username: req.session.username, action: 'delete', entity: 'User', entityId: uid });
     return { ok: true };
   }
 }

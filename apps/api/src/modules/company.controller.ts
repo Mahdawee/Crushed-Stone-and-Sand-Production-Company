@@ -5,6 +5,17 @@ import { AuthGuard, ManagerOnly } from '../common/auth';
 import { logActivity } from '../common/activity';
 import { softDelete } from '../common/soft-delete';
 import { settingsService, SettingsService, isSettingError } from '../common/settings';
+import { idParam } from '../common/params';
+
+async function assertLive(table: string, id: number, label: string) {
+  const rows: any[] = await db().$queryRawUnsafe(
+    `SELECT "id", "deletedAt" FROM "${table}" WHERE "id"=?`, id,
+  );
+  if (!rows?.length) throw new HttpException(`${label} پیدا نشد.`, 404);
+  if (rows[0].deletedAt) {
+    throw new HttpException(`این ${label} در «سطل بازیافت» است؛ اول آن را بازگردانید، بعد ویرایش کنید.`, 409);
+  }
+}
 
 @UseGuards(AuthGuard)
 @Controller()
@@ -65,10 +76,14 @@ export class CompanyController {
   @Put('machinery/:id')
   @ManagerOnly()
   async updateMachinery(@Param('id') id: string, @Body() body: any) {
+    const mid = idParam(id, 'شناسه‌ی ماشین');
+    await assertLive('Machinery', mid, 'ماشین');
+    if (!String(body?.name ?? '').trim()) throw new HttpException('نام ماشین لازم است.', 400);
     await db().$executeRawUnsafe(
       `UPDATE "Machinery" SET "name"=?, "model"=?, "plateNo"=?, "count"=?, "status"=?, "note"=? WHERE "id"=?`,
-      body.name, body.model || '', body.plateNo || '', Number(body.count) || 1, body.status || 'active', body.note || '', Number(id),
+      body.name, body.model || '', body.plateNo || '', Number(body.count) || 1, body.status || 'active', body.note || '', mid,
     );
+    await logActivity({ action: 'update', entity: 'Machinery', entityId: mid, detail: body.name });
     return { ok: true };
   }
 
@@ -81,7 +96,7 @@ export class CompanyController {
   @Delete('machinery/:id')
   @ManagerOnly()
   async removeMachinery(@Param('id') id: string) {
-    const del = await softDelete('Machinery', Number(id));
+    const del = await softDelete('Machinery', idParam(id, 'شناسه‌ی ماشین'));
     if (!del.ok) throw new HttpException('ماشین پیدا نشد.', 404);
     return {
       ok: true,

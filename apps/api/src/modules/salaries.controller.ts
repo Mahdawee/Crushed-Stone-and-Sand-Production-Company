@@ -4,6 +4,7 @@ import { ensureSchemaAsync } from '../schema';
 import { AuthGuard, ManagerOnly } from '../common/auth';
 import { logActivity } from '../common/activity';
 import { softDelete } from '../common/soft-delete';
+import { idParam } from '../common/params';
 import { settingsService } from '../common/settings';
 import { nextDocNo } from '../common/sequence';
 import {
@@ -223,7 +224,8 @@ export class SalariesController {
 
   @Get(':id')
   async one(@Param('id') id: string) {
-    const rows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Salary" WHERE "id"=?`, Number(id));
+    const sid = idParam(id, 'شناسه‌ی سند معاش');
+    const rows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Salary" WHERE "id"=?`, sid);
     if (!rows?.length) throw new HttpException('سند معاش پیدا نشد.', 404);
     const mode = await settingsService.calendar();
     return { ...rows[0], payDateDisplay: rows[0].payDate ? formatDate(rows[0].payDate, mode, true) : '' };
@@ -232,7 +234,8 @@ export class SalariesController {
   @Delete(':id')
   @ManagerOnly()
   async remove(@Param('id') id: string) {
-    const rows: any[] = await db().$queryRawUnsafe(`SELECT "no" FROM "Salary" WHERE "id"=?`, Number(id));
+    const sid = idParam(id, 'شناسه‌ی سند معاش');
+    const rows: any[] = await db().$queryRawUnsafe(`SELECT "no" FROM "Salary" WHERE "id"=?`, sid);
     /* باگ: حذف شناسه‌ی ناموجود ۲۰۰ و ردیف ساختگی در «فعالیت‌ها» */
     if (!rows?.length) throw new HttpException('سند معاش پیدا نشد.', 404);
     /*
@@ -240,14 +243,14 @@ export class SalariesController {
      * قابل بازیابی بدون آسیب». ردیف می‌ماند، فقط از همه‌ی فهرست‌ها و
      * گزارش‌ها پنهان می‌شود و از «سطل بازیافت» برمی‌گردد.
      */
-    const del = await softDelete("Salary", Number(id));
+    const del = await softDelete("Salary", sid);
     if (!del.ok) throw new HttpException('ردیف پیدا نشد.', 404);
     /*
      * باگ: این ثبت سابقه **بعد از return** بود و هرگز اجرا نمی‌شد؛ یعنی
      * حذف در «سابقه فعالیت‌ها» نمی‌آمد و «قابل بازیابی بودن» فقط روی
      * کاغذ بود. حالا قبل از برگشت ثبت می‌شود.
      */
-    await logActivity({ action: 'delete', entity: 'Salary', entityId: Number(id) });
+    await logActivity({ action: 'delete', entity: 'Salary', entityId: sid });
     return { ok: true, softDeleted: true, message: 'حذف شد — از «سطل بازیافت» قابل بازگرداندن است.' };
   }
 }

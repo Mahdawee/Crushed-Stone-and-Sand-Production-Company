@@ -285,6 +285,51 @@ const makeLicense = ({ privateKey, payload }) => {
   check('ثبت دوباره‌ی همان ماه بدون خطای تکراری', resave.status === 200 || resave.status === 201, `${resave.status} ${JSON.stringify(resave.body).slice(0, 120)}`);
 
   /* ================================================================ */
+  console.log('\n— ویرایش ردیفِ سطل بازیافت (باگ: ۲۰۰ «ذخیره شد» ولی اثری نداشت) —');
+
+  const s2 = await api('POST', '/sales', {
+    customerId: cid, materialName: 'ریگ', volume: 2, unitPrice: 100, freightPerUnit: 0,
+    paymentType: 'credit', date: todayISO(),
+  }, token);
+  const sale2Id = ((await api('GET', `/sales?q=${encodeURIComponent(s2.body.no)}`, undefined, token)).body?.rows || [])[0]?.id;
+  await api('DELETE', `/sales/${sale2Id}`, undefined, token);
+  const editTrashed = await api('PUT', `/sales/${sale2Id}`, {
+    customerId: cid, volume: 99, unitPrice: 100, freightPerUnit: 0, paymentType: 'credit', date: todayISO(),
+  }, token);
+  check('ویرایش بلِ سطل بازیافت رد می‌شود (نه ۲۰۰ بی‌اثر)', editTrashed.status === 409, `${editTrashed.status}`);
+  check('پیام می‌گوید اول بازگردانید',
+    String(editTrashed.body?.message || '').includes('سطل بازیافت'), String(editTrashed.body?.message));
+  await api('POST', `/recycle/Sale/${sale2Id}/restore`, {}, token);
+  const afterRestore = await api('GET', `/sales/${sale2Id}`, undefined, token);
+  check('پس از بازیابی، عددهای بل دست‌نخورده‌اند (۲ متر، ۲۰۰ افغانی)',
+    Number(afterRestore.body?.volume) === 2 && Number(afterRestore.body?.total) === 200,
+    `${afterRestore.body?.volume} / ${afterRestore.body?.total}`);
+  await api('DELETE', `/sales/${sale2Id}`, undefined, token);
+
+  /* رسید و مصرف هم همین قاعده را دارند */
+  const r2 = await api('POST', '/receipts', { customerId: cid, amount: 150, date: todayISO(), sourceName: 'بیانیه' }, token);
+  const r2id = ((await api('GET', `/receipts?q=${encodeURIComponent(r2.body?.no || '')}`, undefined, token)).body?.rows || [])[0]?.id;
+  await api('DELETE', `/receipts/${r2id}`, undefined, token);
+  const r2edit = await api('PUT', `/receipts/${r2id}`, { customerId: cid, amount: 9999, date: todayISO() }, token);
+  check('ویرایش رسیدِ سطل بازیافت رد می‌شود', r2edit.status === 409, `${r2edit.status}`);
+  await api('POST', `/recycle/Receipt/${r2id}/restore`, {}, token);
+  const r2one = await api('GET', `/receipts/${r2id}`, undefined, token);
+  check('مبلغ رسید بعد از بازیابی ۱۵۰ مانده (نه ۹۹۹۹)', Number(r2one.body?.amount) === 150, String(r2one.body?.amount));
+
+  /* ================================================================ */
+  console.log('\n— شناسه‌ی نامعتبر: ۴۰۰ روشن، نه ۴۰۴ گمراه‌کننده —');
+  for (const [path, label] of [
+    ['/sales/abc', 'بل فروش'], ['/receipts/abc', 'رسید'], ['/expenses/abc', 'مصرف'],
+    ['/employees/abc', 'کارمند'], ['/customers/abc/statement', 'مشتری'], ['/salaries/abc', 'سند معاش'],
+  ]) {
+    const r = await api('GET', path, undefined, token);
+    check(`GET ${path} → ۴۰۰ (${label})`, r.status === 400, `${r.status}`);
+    check(`GET ${path} پیام فارسی دارد`, /نامعتبر/.test(String(r.body?.message || '')), String(r.body?.message));
+  }
+  const putBad = await api('PUT', '/sales/abc', { customerId: cid, volume: 1, unitPrice: 1, date: todayISO() }, token);
+  check('PUT با شناسه‌ی نامعتبر ۴۰۰ می‌دهد', putBad.status === 400, `${putBad.status}`);
+
+  /* ================================================================ */
   console.log('\n— سابقه: حذف‌ها در «فعالیت‌ها» می‌مانند —');
   const acts = await api('GET', '/system/activity?entity=Sale&limit=50', undefined, token);
   const saleActs = (Array.isArray(acts.body) ? acts.body : []).filter((a) => a.action === 'soft-delete' || a.action === 'delete');

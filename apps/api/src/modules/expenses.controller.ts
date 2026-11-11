@@ -8,6 +8,27 @@ import { resolveRelatedBranch } from '../common/related';
 import { settingsService } from '../common/settings';
 import { nextDocNo } from '../common/sequence';
 import { parseUserDate, formatDate, todayISO } from '../common/calendar';
+import { idParam } from '../common/params';
+
+/**
+ * ردیفی که در «سطل بازیافت» است نباید ویرایش شود.
+ *
+ * ## باگ واقعی
+ * مسیرهای `PUT` وجود ردیف را بررسی نمی‌کردند. اگر سند حذف شده بود و کاربر
+ * (یا یک تبِ بازِ قدیمی، یا فورمی که بعد از حذف باز مانده بود) دوباره
+ * «ذخیره» می‌زد، پاسخ **۲۰۰ «ذخیره شد»** می‌گرفت؛ ردیف در سطل بازیافت با
+ * عددهای تازه می‌ماند و با «بازگرداندن»، سندی با مبلغ/مشتریِ غلط به
+ * حساب‌ها برمی‌گشت. حالا با پیام روشن (۴۰۹) رد می‌شود.
+ */
+async function assertLive(table: string, id: number, label: string) {
+  const rows: any[] = await db().$queryRawUnsafe(
+    `SELECT "id", "deletedAt" FROM "${table}" WHERE "id"=?`, id,
+  );
+  if (!rows?.length) throw new HttpException(`${label} پیدا نشد.`, 404);
+  if (rows[0].deletedAt) {
+    throw new HttpException(`این ${label} در «سطل بازیافت» است؛ اول آن را بازگردانید، بعد ویرایش کنید.`, 409);
+  }
+}
 
 @UseGuards(AuthGuard)
 @Controller('expenses')
@@ -101,6 +122,8 @@ export class ExpensesController {
 
   @Put(':id')
   async update(@Param('id') id: string, @Body() body: any) {
+    const eid = idParam(id, 'شناسه‌ی سند مصرف');
+    await assertLive('Expense', eid, 'سند مصرف');
     const mode = await settingsService.calendar();
     let date = '';
     try { date = parseUserDate(body.date, mode); }
@@ -119,16 +142,17 @@ export class ExpensesController {
       branch.contractorId, branch.contractorName,
       body.purchaseBillNo || '', body.shopName || '', amountAfn, amountUsd,
       body.payerId ? Number(body.payerId) : null, body.payerName || '',
-      body.paymentType === 'credit' ? 'credit' : 'cash', body.note || '', Number(id),
+      body.paymentType === 'credit' ? 'credit' : 'cash', body.note || '', eid,
     );
-    await logActivity({ action: 'update', entity: 'Expense', entityId: Number(id) });
+    await logActivity({ action: 'update', entity: 'Expense', entityId: eid });
     return { ok: true };
   }
 
   @Delete(':id')
   @ManagerOnly()
   async remove(@Param('id') id: string) {
-    const rows: any[] = await db().$queryRawUnsafe(`SELECT "no" FROM "Expense" WHERE "id"=?`, Number(id));
+    const eid = idParam(id, 'شناسه‌ی سند مصرف');
+    const rows: any[] = await db().$queryRawUnsafe(`SELECT "no" FROM "Expense" WHERE "id"=?`, eid);
     /* باگ: حذف شناسه‌ی ناموجود ۲۰۰ و ردیف ساختگی در «فعالیت‌ها» */
     if (!rows?.length) throw new HttpException('سند مصرف پیدا نشد.', 404);
     /*
@@ -136,20 +160,21 @@ export class ExpensesController {
      * قابل بازیابی بدون آسیب». ردیف می‌ماند، فقط از همه‌ی فهرست‌ها و
      * گزارش‌ها پنهان می‌شود و از «سطل بازیافت» برمی‌گردد.
      */
-    const del = await softDelete("Expense", Number(id));
+    const del = await softDelete("Expense", eid);
     if (!del.ok) throw new HttpException('ردیف پیدا نشد.', 404);
     /*
      * باگ: این ثبت سابقه **بعد از return** بود و هرگز اجرا نمی‌شد؛ یعنی
      * حذف در «سابقه فعالیت‌ها» نمی‌آمد و «قابل بازیابی بودن» فقط روی
      * کاغذ بود. حالا قبل از برگشت ثبت می‌شود.
      */
-    await logActivity({ action: 'delete', entity: 'Expense', entityId: Number(id), detail: rows?.[0]?.no || '' });
+    await logActivity({ action: 'delete', entity: 'Expense', entityId: eid, detail: rows?.[0]?.no || '' });
     return { ok: true, softDeleted: true, message: 'حذف شد — از «سطل بازیافت» قابل بازگرداندن است.' };
   }
 
   @Get(':id')
   async one(@Param('id') id: string) {
-    const rows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Expense" WHERE "id"=?`, Number(id));
+    const eid = idParam(id, 'شناسه‌ی سند مصرف');
+    const rows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Expense" WHERE "id"=?`, eid);
     if (!rows?.length) throw new HttpException('سند مصرف پیدا نشد.', 404);
     const mode = await settingsService.calendar();
     return { ...rows[0], dateDisplay: formatDate(rows[0].date, mode, true) };
