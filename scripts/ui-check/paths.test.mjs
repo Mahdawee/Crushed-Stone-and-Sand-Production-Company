@@ -22,6 +22,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 import { projectRoot } from '../lib/project-root.mjs';
 
@@ -93,7 +94,13 @@ check('projectRoot مستقل از cwd است', (() => {
 })());
 check('projectRoot با فاصله در مسیر هم کار می‌کند', (() => {
   const fake = path.join(os.tmpdir(), 'my folder with space', 'scripts', 'x.mjs');
-  const u = new URL(`file://${fake}`).href;
+  /*
+   * ⚠ باگ دور ۴۳: `new URL('file://' + مسیر)` فقط روی لینوکس درست است.
+   * روی ویندوز مسیر `D:\...` است و `file://D:\...` URL معتبر نیست.
+   * `pathToFileURL` هر دو را درست می‌سازد — و هم‌زمان فاصله‌ها را
+   * درصدگذاری می‌کند، که این بررسی دقیقاً برای آزمودنش هست.
+   */
+  const u = pathToFileURL(fake).href;
   return projectRoot(u, 1) === path.join(os.tmpdir(), 'my folder with space');
 })());
 

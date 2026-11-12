@@ -6,6 +6,7 @@
 import { JSDOM } from 'jsdom';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
 
@@ -38,7 +39,7 @@ await build({ configFile: path.join(root, 'scripts/ui-check/vite.config.mjs'), l
 
 const React = await import('react');
 const { createRoot } = await import('react-dom/client');
-const { mountApp } = await import(path.join(root, 'scripts/ui-check/.out-sidebar/bundle.mjs'));
+const { mountApp } = await import(pathToFileURL(path.join(root, 'scripts/ui-check/.out-sidebar/bundle.mjs')).href);
 
 const act = React.act || ((fn) => fn());
 const tick = () => new Promise((r) => setTimeout(r, 25));

@@ -19,6 +19,7 @@ const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
 const root = path.resolve(__dirname, '..', '..', '..');
 const dist = path.join(root, 'apps/api/dist');
@@ -51,7 +52,7 @@ const run = (args) => {
   process.env.FD_DATA_DIR = dir;
   process.env.FD_DB_FILE = dbFile;
   process.env.FD_LICENSE_DEV = '1';
-  const { ensureSchemaAsync } = await import(`file://${path.join(dist, 'schema.js')}`);
+  const { ensureSchemaAsync } = await import(pathToFileURL(path.join(dist, 'schema.js')).href);
   await ensureSchemaAsync(true);
   const { DatabaseSync } = await import('node:sqlite');
   const db = new DatabaseSync(dbFile);

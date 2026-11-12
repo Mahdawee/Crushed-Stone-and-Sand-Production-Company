@@ -9,6 +9,7 @@
 import { JSDOM } from 'jsdom';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -101,7 +102,7 @@ ok('ذخیره تنظیمات تم را فوری اعمال می‌کند (بد�
 /* --- اعمال واقعی روی DOM --- */
 const { build } = await import('vite');
 await build({ configFile: path.join(root, 'scripts/ui-check/theme.vite.config.mjs') });
-const mod = await import(path.join(root, 'scripts/ui-check/.out-theme/session.mjs')).catch(() => null);
+const mod = await import(pathToFileURL(path.join(root, 'scripts/ui-check/.out-theme/session.mjs')).href).catch(() => null);
 if (mod) {
   for (const [mode, expected] of [['light', 'light'], ['vivid', 'vivid'], ['dark', 'dark'], ['high-contrast', 'vivid'], ['outdoor', 'vivid']]) {
     mod.applyThemeToDocument({ theme: mode });

@@ -7,6 +7,7 @@
 import { JSDOM } from 'jsdom';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -70,7 +71,7 @@ const fireEvent = {
     el.dispatchEvent(new window.Event('change', { bubbles: true }));
   }),
 };
-const { Picker } = await import(path.join(outDir, 'bundle.mjs'));
+const { Picker } = await import(pathToFileURL(path.join(outDir, 'bundle.mjs')).href);
 
 let pass = 0, fail = 0;
 const ok = (n, c, extra = '') => { c ? (pass++, console.log(`  ✔ ${n}`)) : (fail++, console.log(`  ✘ ${n}${extra ? ' → ' + extra : ''}`)); };

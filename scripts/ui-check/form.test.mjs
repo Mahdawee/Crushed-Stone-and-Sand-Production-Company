@@ -11,6 +11,7 @@
  */
 import { JSDOM } from 'jsdom';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -69,7 +70,7 @@ const describe = (el) => (el ? `${el.tagName.toLowerCase()}${el.className ? '.' 
 let pass = 0, fail = 0;
 const ok = (n, c, extra = '') => { c ? (pass++, console.log(`  ✔ ${n}`)) : (fail++, console.log(`  ✘ ${n}${extra ? ' → ' + extra : ''}`)); };
 
-const { FormHarness, NumHarness } = await import(path.join(outDir, 'bundle.mjs'));
+const { FormHarness, NumHarness } = await import(pathToFileURL(path.join(outDir, 'bundle.mjs')).href);
 
 /* ------------------------------------------------------------------ */
 console.log('\n— تایپ در فرم مودال (چند حرف پشت‌سرهم) —');

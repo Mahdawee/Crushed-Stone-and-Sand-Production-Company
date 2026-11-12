@@ -18,6 +18,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const { DatabaseSync } = require('node:sqlite');
 
 const root = path.resolve(__dirname, '..', '..', '..');
@@ -184,7 +185,7 @@ async function main() {
     check('رمز غلط بعد از ارتقا رد می‌شود', legacyWrong.status === 401, String(legacyWrong.status));
 
     console.log('\n— ۶) ابزار صفر کردن همان الگوریتم را دارد —');
-    const core = await import(path.join(root, 'tools', 'reset-ui', 'reset-core.mjs'));
+    const core = await import(pathToFileURL(path.join(root, 'tools', 'reset-ui', 'reset-core.mjs')).href);
     const h1 = core.hashPassword('admin123');
     check('reset-core هم فرمت scrypt می‌سازد', /^scrypt\$16384\$8\$1\$[0-9a-f]+\$[0-9a-f]+$/.test(h1), h1.slice(0, 24));
     check('هش ساخته‌شده توسط ابزار، با سرور قابل بررسی است', (() => {

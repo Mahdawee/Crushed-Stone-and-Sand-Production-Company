@@ -19,6 +19,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -75,7 +76,7 @@ try {
   db.exec(`INSERT INTO "Sale"("no","total") VALUES('S-1', 100), ('S-2', 200)`);
   db.close();
 
-  const { resetOffline } = await import(path.join(root, 'tools/reset-ui/reset-core.mjs'));
+  const { resetOffline } = await import(pathToFileURL(path.join(root, 'tools/reset-ui/reset-core.mjs')).href);
   /*
    * امضای واقعی: resetOffline(paths, opts) — ترتیب برعکس ننوشتن، وگرنه
    * عبارت تأیید داخل «مسیرها» می‌رود و همیشه «تأیید نشد» می‌گیریم.

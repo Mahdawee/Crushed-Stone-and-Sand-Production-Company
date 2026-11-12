@@ -18,6 +18,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -44,7 +45,7 @@ ok('نصب‌کننده‌ی تکراری msi ساخته نمی‌شود (حجم
   (conf.bundle?.targets || []).join(','));
 
 console.log('\n— ماژول آماده‌سازی کش —');
-const mod = await import(path.join(root, 'scripts/lib/webview2.mjs'));
+const mod = await import(pathToFileURL(path.join(root, 'scripts/lib/webview2.mjs')).href);
 ok('مسیر کش ابزارهای Tauri محاسبه می‌شود', typeof mod.tauriToolsDir() === 'string' && mod.tauriToolsDir().endsWith('tauri'));
 ok('مسیر کش از LOCALAPPDATA ویندوز استفاده می‌کند', mod.tauriToolsDir().includes('tauri'));
 

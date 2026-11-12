@@ -15,7 +15,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -45,7 +45,7 @@ console.log('\n— ساخت یک دیتابیس «داده‌دار» —');
   process.env.FD_LICENSE_DEV = '1';
   const schemaDist = path.join(root, 'apps', 'api', 'dist', 'schema.js');
   check('ساختار API ساخته شده است', fs.existsSync(schemaDist), 'اول npm run build -w @farday/api');
-  const { ensureSchemaAsync } = await import(`file://${schemaDist}`);
+  const { ensureSchemaAsync } = await import(pathToFileURL(schemaDist).href);
   await ensureSchemaAsync(true);
 }
 const db = new DatabaseSync(dbFile);
@@ -418,7 +418,7 @@ try { child.kill(); } catch { /* */ }
  */
 console.log('\n— رگرسیون: صفر کردن روی دیتابیس نصب قدیمی (isWalkIn) —');
 {
-  const core = await import(path.join(root, 'tools', 'reset-ui', 'reset-core.mjs'));
+  const core = await import(pathToFileURL(path.join(root, 'tools', 'reset-ui', 'reset-core.mjs')).href);
   const oldDir = fs.mkdtempSync(path.join(os.tmpdir(), 'farday-reset-old-'));
   const oldDb = path.join(oldDir, 'farday.db');
   const odb = new DatabaseSync(oldDb);
@@ -496,7 +496,7 @@ console.log('\n— رگرسیون: صفر کردن روی دیتابیس نصب 
 /* ================================================================ */
 console.log('\n— تشخیص پوشه‌ی داده‌ی نسخه‌ی نصب‌شده (باگ دور ۳۴) —');
 {
-  const dd = await import(`file://${path.join(root, 'tools', 'reset-ui', 'data-dir.mjs')}`);
+  const dd = await import(pathToFileURL(path.join(root, 'tools', 'reset-ui', 'data-dir.mjs')).href);
 
   /* ۱) APPDATA ویندوز: اولین جایی که `farday.db` دارد باید انتخاب شود */
   const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'farday-home-'));
@@ -571,7 +571,7 @@ console.log('\n— تشخیص پوشه‌ی داده‌ی نسخه‌ی نصب�
 /* ================================================================ */
 console.log('\n— جدول‌های لایسنس و شمارنده هم صفر می‌شوند (باگ دور ۳۴) —');
 {
-  const core = await import(`file://${path.join(root, 'tools', 'reset-ui', 'reset-core.mjs')}`);
+  const core = await import(pathToFileURL(path.join(root, 'tools', 'reset-ui', 'reset-core.mjs')).href);
   for (const t of ['License', 'LicenseClock', 'LicenseEvent', 'Sequence']) {
     check(`جدول ${t} در فهرست صفر کردن هست`, core.RESET_ORDER.includes(t), core.RESET_ORDER.join(','));
   }
@@ -702,7 +702,7 @@ console.log('\n— تشخیص «برنامه باز است» —');
 /* ================================================================ */
 console.log('\n— نسخه‌ی Node و node:sqlite —');
 {
-  const core = await import(`file://${path.join(root, 'tools', 'reset-ui', 'reset-core.mjs')}`);
+  const core = await import(pathToFileURL(path.join(root, 'tools', 'reset-ui', 'reset-core.mjs')).href);
   const rt = await core.runtimeInfo();
   check('وضعیت Node گزارش می‌شود', typeof rt.node === 'string' && rt.node.length > 0, rt.node);
   check('node:sqlite در این نسخه کار می‌کند', rt.sqlite === true, rt.message);

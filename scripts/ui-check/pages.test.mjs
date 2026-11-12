@@ -13,6 +13,7 @@
 import { JSDOM } from 'jsdom';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -126,7 +127,7 @@ await build({
 
 const React = await import('react');
 const { createRoot } = await import('react-dom/client');
-const pages = await import(path.join(outDir, 'bundle.mjs'));
+const pages = await import(pathToFileURL(path.join(outDir, 'bundle.mjs')).href);
 
 
 const act = React.act || ((fn) => fn());

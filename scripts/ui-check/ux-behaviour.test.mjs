@@ -14,6 +14,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -27,7 +28,7 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 /* ================================================================ */
 console.log('\n— صفحه‌بندی بعد از حذف —');
 
-const paging = await import(path.join(root, 'apps/web/src/lib/paging.ts')).catch(() => null);
+const paging = await import(pathToFileURL(path.join(root, 'apps/web/src/lib/paging.ts')).href).catch(() => null);
 /* ماژول TS است؛ اگر import مستقیم نشد، منطق را از روی فایل می‌سنجیم */
 if (paging) {
   ok('صفحه‌ی آخر با ۵۱ ردیف و ۲۵ تا = ۳', paging.lastPage(51, 25) === 3);

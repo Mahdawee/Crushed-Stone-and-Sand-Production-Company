@@ -18,6 +18,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -53,7 +54,7 @@ await build({
     rollupOptions: { external: ['jalaali-js'] },
   },
 });
-const uiHelpers = await import(path.join(outDir, 'calendar.mjs'));
+const uiHelpers = await import(pathToFileURL(path.join(outDir, 'calendar.mjs')).href);
 
 check('تابع parseInputDate از سورس UI در دسترس است', typeof uiHelpers.parseInputDate === 'function');
 
@@ -97,7 +98,7 @@ const apiDist = path.join(root, 'apps/api/dist/common/calendar.js');
 if (!fs.existsSync(apiDist)) {
   check('بسته‌ی API برای مقایسه موجود است', false, `${apiDist} — اول npm run build -w @farday/api`);
 } else {
-  const cal = await import(`file://${apiDist}`);
+  const cal = await import(pathToFileURL(apiDist).href);
   const aj = (s) => cal.parseUserDate(s, 'jalali');
   const ag = (s) => cal.parseUserDate(s, 'gregorian');
   check('API: «1405/08/19» → 2026-11-10', aj('1405/08/19') === '2026-11-10', aj('1405/08/19'));
