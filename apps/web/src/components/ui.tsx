@@ -321,6 +321,15 @@ export function Num({ value, onChange, placeholder, readOnly, className = '', al
         let v = e.target.value
           .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
           .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+          /*
+           * ── باگ (شکار باگ دور ۳۴): «۱۲,۵» متر به ۱۲۵ متر تبدیل می‌شد ────
+           * کاما کامل حذف می‌شد، پس ممیز فارسی/کاما تایپ‌شده عدد را ده برابر
+           * می‌کرد (بی‌هیچ خطایی، در متراژ بل و مبلغ آن). حالا کاما یا «٫»
+           * وقتی بعدش یک/دو رقم آمده **ممیز** است؛ «۱,۲۵۰» مثل قبل هزارگان
+           * (حذف) می‌ماند.
+           */
+          .replace(/٫/g, '.')
+          .replace(/(\d),(\d{1,2})(?!\d)/g, '$1.$2')
           .replace(/[^0-9.\-]/g, '');
         if (!allowNegative) v = v.replace(/-/g, '');
         else if (v.indexOf('-') > 0) v = v.replace(/-/g, '');

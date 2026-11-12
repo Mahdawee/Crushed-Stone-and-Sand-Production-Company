@@ -129,8 +129,32 @@ export function startOfMonthISO(mode: CalendarMode) {
 export const normalizeDigits = (s: string) =>
   String(s ?? '').replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
 
+/**
+ * متن کاربر → عدد.
+ *
+ * ── باگ (شکار باگ دور ۳۴) ──────────────────────────────────────────────────
+ * نسخه‌ی قبلی **همه‌ی** کاماها را حذف می‌کرد: کارمندی که «۱۲,۵» متر (دوازده
+ * و نیم) تایپ می‌کرد، در بل فروش **۱۲۵ متر** ثبت می‌شد — ده برابر، بی‌هیچ
+ * خطا یا هشداری، و مبلغ بل هم همان‌قدر. ممیز فارسی «٫» هم «۱۲٫۵» را ۱۲۵
+ * می‌کرد.
+ * حالا همان قاعده‌ی ورود اکسل در سرور (`common/csv.normalizeNumber`) به کار
+ * می‌رود: اگر هم `,` و هم `.` بود، آخری ممیز است؛ اگر فقط `,` بود و شکل
+ * «۱٬۲۵۰» داشت جداکننده‌ی هزارگان، وگرنه ممیز.
+ */
 export const num = (v: any): number => {
-  const n = Number(normalizeDigits(String(v ?? '')).replace(/,/g, ''));
+  let s = normalizeDigits(String(v ?? '')).trim();
+  if (!s) return 0;
+  /* فاصله‌های دیداری/نیم‌فاصله و ممیز فارسی */
+  s = s.replace(/[\s\u200c\u200e\u200f]/g, '').replace(/٫/g, '.').replace(/٬/g, ',');
+  if (s.includes(',') && s.includes('.')) {
+    /* آخرین جداکننده، ممیز است */
+    if (s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g, '').replace(',', '.');
+    else s = s.replace(/,/g, '');
+  } else if (s.includes(',')) {
+    /* «۱,۲۵۰» یا «1,234,567» → هزارگان؛ «۱۲,۵» → ممیز */
+    s = /^-?\d{1,3}(,\d{3})+$/.test(s) ? s.replace(/,/g, '') : s.replace(',', '.');
+  }
+  const n = Number(s);
   return Number.isFinite(n) ? n : 0;
 };
 
