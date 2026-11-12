@@ -90,13 +90,12 @@ const groupBtn = $('.nav-group-head');
 const groupWrap = groupBtn.parentElement;
 /* React ‏onMouseEnter را از طریق mouseover پیاده می‌کند */
 act(() => { groupWrap.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })); });
-await tick();
+await waitFor(() => !!$('.nav-pop'));
 ok('در ریل، هاور گروه → پنل شناور باز می‌شود', !!$('.nav-pop'));
 ok('آیتم‌های پنل شناور لینک هستند', document.querySelectorAll('.nav-pop-link').length >= 3);
 
 key({ key: 'Escape' });
-await tick();
-ok('Esc → پنل شناور بسته می‌شود', !$('.nav-pop'));
+ok('Esc → پنل شناور بسته می‌شود', await waitFor(() => !$('.nav-pop')));
 
 click($('.sb-toggle'));
 await tick();
@@ -200,7 +199,8 @@ ok('Esc → کشو بسته می‌شود', !$('.sidebar').classList.contains('o
 
 /* ---------- ماندگاری بعد از «رفرش» ---------- */
 console.log('\n— ماندگاری وضعیت گروه‌ها —');
-act(() => { rootReact.unmount(); });
+const beforeRefresh = openGroups();
+act(() => { root2.unmount(); });
 host.innerHTML = '';
 const root3 = createRoot(host);
 act(() => { root3.render(mountApp()); });
@@ -208,8 +208,8 @@ await tick();
 const reopened = [...document.querySelectorAll('.nav-group')]
   .filter((g) => g.querySelector('.nav-items.expanded'))
   .map((g) => g.querySelector('.nav-group-title').textContent);
-ok('بعد از رفرش همان گروه‌ها باز می‌مانند', reopened.length === openGroups().length,
-  `${reopened.join(' | ')} vs ${openGroups().join(' | ')}`);
+ok('بعد از رفرش همان گروه‌ها باز می‌مانند', JSON.stringify(reopened) === JSON.stringify(beforeRefresh),
+  `${reopened.join(' | ')} vs ${beforeRefresh.join(' | ')}`);
 
 console.log(`\n${fail === 0 ? '✅' : '⛔'} ${pass} موفق، ${fail} ناکام\n`);
 process.exit(fail === 0 ? 0 : 1);

@@ -140,7 +140,8 @@ function badEscapes(text) {
     if (text[i] !== '\\') continue;
     const c = text[i + 1];
     if (c === undefined) { bad.push('\\<پایان رشته>'); continue; }
-    if (c === '\n') { i++; continue; } // ادامه‌ی خط: بک‌اسلش + خط جدید مجاز است
+    if (c === '\n') { i++; continue; } // ادامه‌ی خط LF
+    if (c === '\r' && text[i + 2] === '\n') { i += 2; continue; } // ادامه‌ی خط CRLF در checkout ویندوز
     if (VALID_ESCAPES.has(c)) { i++; continue; }
     if (c === 'x') { i += 3; continue; }
     if (c === 'u' && text[i + 2] === '{') {
@@ -159,6 +160,10 @@ const sampleBad = badEscapes('(' + BS + BS + '?' + BS + 'C:)' + '(' + BS + '…'
 const sampleGood = badEscapes('(' + BS + BS + BS + BS + '?' + BS + BS + 'C:' + BS + BS + '…' + ')');
 ok('سنجه‌ی escape: نمونه‌ی خطادار کاربر را می‌گیرد', sampleBad.length >= 1, sampleBad.join(' '));
 ok('سنجه‌ی escape: شکل درست (بک‌اسلش دوبل) را قبول می‌کند', sampleGood.length === 0, sampleGood.join(' '));
+ok('ادامه‌ی خط Rust با LF و CRLF معتبر است', badEscapes('text' + BS + '\n  next').length === 0 && badEscapes('text' + BS + '\r\n  next').length === 0);
+ok('بک‌اسلش پیش از CR بدون LF نامعتبر است', badEscapes('text' + BS + '\rnext').length > 0);
+const crlfRust = '"text' + BS + '\r\n  next"';
+ok('رشتهٔ چندخطی CRLF در lexer هم درست تشخیص داده می‌شود', badEscapes(parseRust(crlfRust).normalStrings[0].text).length === 0);
 
 let escapeProblems = 0;
 for (const f of files) {
