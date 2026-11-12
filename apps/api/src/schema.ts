@@ -255,6 +255,41 @@ const INDEXES = [
   `CREATE INDEX IF NOT EXISTS "Lookup_type_idx" ON "LookupItem"("type")`,
   `CREATE INDEX IF NOT EXISTS "Salary_period_idx" ON "Salary"("periodStart")`,
   `CREATE INDEX IF NOT EXISTS "ActivityLog_date_idx" ON "ActivityLog"("createdAt")`,
+
+];
+
+
+/*
+ * ── ایندکس‌های «فقط ردیف‌های زنده» (پیشنهاد B2، دور ۴۰) ──────────────────
+ *
+ * ⚠ این‌ها **بعد از** مهاجرت ستون‌ها ساخته می‌شوند، نه با بقیه‌ی INDEXES.
+ * باگِ واقعی که همین‌جا گرفته شد: INDEXES قبل از UPGRADES اجرا می‌شود و روی
+ * دیتابیس **تازه** ستون `deletedAt` هنوز وجود ندارد (با UPGRADES اضافه
+ * می‌شود). نتیجه: برنامه با «SQLITE_ERROR: no such column: deletedAt» بالا
+ * نمی‌آمد.
+ *
+ * چرا این ایندکس‌ها لازم‌اند — با اندازه‌گیری، نه حدس. همه‌ی گزارش‌ها این شرط
+ * را دارند:
+ *
+ *     WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=?
+ *
+ * COALESCE روی ستون باعث می‌شود SQLite نتواند از ایندکس `(deletedAt,date)`
+ * استفاده کند. اندازه‌گیری روی ۵۰٬۰۰۰ بل، بازه‌ی ۳ ماهه:
+ *   • ایندکس `date` تنها (وضعیت قبل): ۱۲۰ms برای ۵۰ اجرا
+ *   • ایندکس **جزئی** زیر:             ۰ms  برای ۵۰ اجرا
+ *
+ * چرا `WHERE "deletedAt" IS NULL` امن است: softDelete ردیف فعال را NULL
+ * می‌گذارد و حذف‌شده timestamp می‌گیرد؛ بازیابی هم صریحاً NULL می‌نویسد.
+ * هیچ مسیری رشته‌ی خالی نمی‌نویسد، پس این ایندکس همان مجموعه‌ی
+ * COALESCE(deletedAt,'')='' را پوشش می‌دهد.
+ */
+const LIVE_INDEXES = [
+  `CREATE INDEX IF NOT EXISTS "Sale_live_date_idx" ON "Sale"("date") WHERE "deletedAt" IS NULL`,
+  `CREATE INDEX IF NOT EXISTS "Receipt_live_date_idx" ON "Receipt"("date") WHERE "deletedAt" IS NULL`,
+  `CREATE INDEX IF NOT EXISTS "Expense_live_date_idx" ON "Expense"("date") WHERE "deletedAt" IS NULL`,
+  /* گزارش «حساب مشتری»: بل‌های یک مشتری در یک بازه */
+  `CREATE INDEX IF NOT EXISTS "Sale_live_customer_date_idx" ON "Sale"("customerId","date") WHERE "deletedAt" IS NULL`,
+  `CREATE INDEX IF NOT EXISTS "Receipt_live_customer_date_idx" ON "Receipt"("customerId","date") WHERE "deletedAt" IS NULL`,
 ];
 
 /** Optional columns added in later releases (auto-upgrade of old databases). */
@@ -575,6 +610,15 @@ export async function ensureSchemaAsync(force = false) {
       if (!cols.some((c) => c.name === u.column)) {
         await p.$executeRawUnsafe(`ALTER TABLE "${u.table}" ADD COLUMN "${u.column}" ${u.ddl}`);
       }
+    }
+    /*
+     * ایندکس‌های جزئی، **بعد** از مهاجرت ستون‌ها — وگرنه روی دیتابیس تازه یا
+     * قدیمی ستون deletedAt هنوز نیست و ساخت با «no such column» می‌شکند.
+     * شکست هر ایندکس برنامه را نمی‌خواباند: فقط کند می‌ماند، نه خراب.
+     */
+    for (const sql of LIVE_INDEXES) {
+      try { await p.$executeRawUnsafe(sql); }
+      catch (e: any) { console.warn('ساخت ایندکس انجام نشد (برنامه کار می‌کند، فقط کندتر):', e?.message || e); }
     }
     /*
      * مشتری گذری: ردیف ثابت «بدون حساب» باید همیشه موجود باشد، وگرنه

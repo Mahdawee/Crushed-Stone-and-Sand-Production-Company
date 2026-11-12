@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useSession, applyThemeToDocument } from '../lib/session';
 import { formatDate, todayISO } from '../lib/calendar';
 import Notifications from './Notifications';
+import GlobalSearch from './GlobalSearch';
 import LicenseAlert, { licenseStrip } from './LicenseAlert';
 import {
   IconAlert, IconBuilding, IconCalendar, IconCash, IconChart, IconChevron, IconClose, IconCoins,
@@ -147,6 +148,8 @@ export default function Layout() {
   const [open, setOpen] = useState(false);
   /** حالت ریل (فقط پهلو) — انتخاب کاربر */
   const [rail, setRail] = useState(() => localStorage.getItem(RAIL_KEY) === '1');
+  /* جست‌وجوی سراسری (Ctrl+K) — پیشنهاد C1 */
+  const [searchOpen, setSearchOpen] = useState(false);
   /**
    * گروه‌های **باز** — هر گروه مستقل باز/بسته می‌شود (نه آکاردئون) و گروهی که
    * شاخه‌ی فعال دارد هم قابل بستن است. عمداً «باز» ذخیره می‌شود نه «بسته»،
@@ -222,6 +225,26 @@ export default function Layout() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [hoverGroup, open]);
+
+  /*
+   * Ctrl+K (و ⌘K در مک): جست‌وجوی سراسری.
+   *
+   * عمداً روی `window` گرفته می‌شود، نه روی یک عنصر: کاربر می‌خواهد **از هر
+   * جای برنامه** کار کند. `preventDefault` لازم است، وگرنه در بعضی مرورگرها
+   * نوار آدرس/جست‌وجوی مرورگر باز می‌شود و پنجره‌ی ما هیچ‌وقت دیده نمی‌شود.
+   *
+   * اگر پنجره باز است، Ctrl+K دوباره آن را می‌بندد (رفتار کلید جابه‌جایی).
+   */
+  useEffect(() => {
+    const onCtrlK = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearchOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onCtrlK);
+    return () => window.removeEventListener('keydown', onCtrlK);
+  }, []);
 
   /* Alt+S جمع/باز کردن سایدبار — Alt+G همه‌ی گروه‌ها (وقتی در فیلد نیستیم) */
   useEffect(() => {
@@ -400,6 +423,8 @@ export default function Layout() {
 
       {drawer && open ? <div className="sb-backdrop no-print" onClick={() => setOpen(false)} /> : null}
 
+      <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
+
       <div className="main">
         <header className="topbar no-print">
           {/* سه‌خط: فقط در حالت کشو */}
@@ -413,6 +438,18 @@ export default function Layout() {
 
           <div className="page-title">{title.t}<small>{title.s}</small></div>
           <div className="topbar-spacer" />
+
+          {/*
+            دکمه‌ی ذره‌بین: کاربری که میان‌بر را نمی‌داند هم باید جست‌وجو را
+            پیدا کند. میان‌بر در tooltip نوشته می‌شود.
+          */}
+          <button
+            type="button"
+            className="btn ghost icon topbar-search"
+            onClick={() => setSearchOpen(true)}
+            title="جست‌وجوی سراسری (Ctrl+K)"
+            aria-label="جست‌وجوی سراسری"
+          ><IconSearchDoc size={17} /></button>
 
           <span className="today-chip" title="امروز">
             <span className="dot" />

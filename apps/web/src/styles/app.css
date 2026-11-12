@@ -1346,3 +1346,68 @@ table.tbl tfoot .computed-box { background-color: color-mix(in srgb, var(--accen
 .lic-strip.tone-info { background: var(--accent-soft); color: var(--accent-dark); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
 html[data-theme='dark'] .lic-strip.tone-info { color: #8ff0e2; }
 @media (max-width: 720px) { .lic-strip { display: none; } }
+
+/* ==================================================================== */
+/* جست‌وجوی سراسری Ctrl+K (پیشنهاد C1، دور ۴۰)                          */
+/* ==================================================================== */
+/*
+ * چرا z-index بالاتر از مودال‌ها (۱۰۰): کاربر ممکن است روی یک فرم باز
+ * Ctrl+K بزند؛ پنجره‌ی جست‌وجو باید روی آن بیاید، نه پشتش.
+ */
+.gs-backdrop {
+  position: fixed; inset: 0; z-index: 130;
+  background: rgba(8, 18, 26, .45); backdrop-filter: blur(2px);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 8vh 14px 4vh;
+  animation: fade .12s ease;
+}
+.gs-panel {
+  width: min(680px, 100%); max-height: 78vh; display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px; box-shadow: var(--shadow-lg); overflow: hidden;
+  animation: pop .16s ease;
+}
+.gs-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; border-bottom: 1px solid var(--border);
+  color: var(--text-3);
+}
+.gs-input {
+  flex: 1; border: 0; background: transparent; outline: none;
+  font: inherit; font-size: 1rem; color: var(--text); padding: 4px 2px;
+}
+.gs-input::placeholder { color: var(--text-3); }
+.gs-close {
+  border: 0; background: transparent; color: var(--text-3); cursor: pointer;
+  display: grid; place-items: center; padding: 4px; border-radius: 8px;
+}
+.gs-close:hover { background: var(--surface-3); color: var(--text); }
+
+.gs-body { overflow-y: auto; padding: 6px; }
+.gs-hint { padding: 14px 12px; color: var(--text-3); font-size: .875rem; line-height: 1.7; }
+.gs-err { color: var(--danger); }
+.gs-group { padding: 4px 0; }
+.gs-group-title {
+  font-size: .75rem; font-weight: 700; color: var(--text-3);
+  padding: 8px 10px 4px;
+}
+.gs-row {
+  width: 100%; display: grid; grid-template-columns: 1fr auto;
+  grid-template-areas: 'title amt' 'sub amt';
+  gap: 0 8px; text-align: start; align-items: center;
+  border: 0; background: transparent; cursor: pointer;
+  padding: 8px 10px; border-radius: 10px; color: var(--text);
+}
+.gs-row.on { background: var(--surface-3); }
+.gs-row .gs-title { grid-area: title; font-weight: 600; font-size: .9rem; }
+.gs-row .gs-sub { grid-area: sub; font-size: .78rem; color: var(--text-3); }
+.gs-row .gs-amt {
+  grid-area: amt; font-variant-numeric: tabular-nums;
+  font-size: .82rem; color: var(--text-2); white-space: nowrap;
+}
+.gs-foot {
+  display: flex; gap: 14px; padding: 8px 14px;
+  border-top: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text-3); font-size: .72rem;
+}
+.topbar-search { margin-inline-end: 4px; }

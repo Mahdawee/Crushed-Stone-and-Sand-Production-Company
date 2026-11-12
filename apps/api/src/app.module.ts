@@ -18,13 +18,14 @@ import { SystemController } from './modules/system.controller';
 import { ExportController, ImportController } from './modules/importexport.controller';
 import { RecycleController } from './modules/recycle.controller';
 import { LicenseController } from './modules/license.controller';
+import { SearchController } from './modules/search.controller';
 
 @Module({
   controllers: [
     RootController, AuthController, CompanyController, EmployeesController, CustomersController,
     SalesController, ReceiptsController, ExpensesController, SalariesController,
     LookupsController, ReportsController, SystemController, ExportController, ImportController,
-    RecycleController, LicenseController,
+    RecycleController, LicenseController, SearchController,
   ],
   providers: [
     PrismaService,
