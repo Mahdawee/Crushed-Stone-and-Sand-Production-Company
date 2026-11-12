@@ -1,5 +1,5 @@
 /**
- * قفل زمان (ضد جابه‌جایی ساعت) — «ساعت را عقب/جلو نکش».
+ * قفل زمان (ضد عقب‌بردن ساعت).
  *
  * ## چرا این لازم است
  * بدون قفل زمان، کاربری که لایسنسش تمام شده کافی است ساعت ویندوز را به عقب
@@ -9,9 +9,10 @@
  * ## راهکار
  * ۱) **ساعت مرجع (بودجه‌ی زمان):** هر بار که برنامه باز می‌شود یک «امضا» با
  *    زمان واقعی ثبت می‌شود. بزرگ‌ترین زمانی که تا حالا دیده‌ایم = مرجع.
- * ۲) **تلورانس ۲۴ ساعت:** اگر ساعت سیستم بیش از ۲۴ ساعت از مرجع **جلو** باشد
- *    یعنی کاربر ساعت را جلو کشیده؛ اگر بیش از ۲۴ ساعت **عقب** باشد یعنی عقب
- *    کشیده. در هر دو حالت برنامه «قفل زمان» می‌دهد.
+ * ۲) **تلورانس ۲۴ ساعت:** عقب‌رفتن ساعت بیش از تلورانس قفل می‌شود.
+ *    جلو رفتن ممکن است صرفاً چند روز خاموش بودن برنامه باشد؛ در حالت آفلاین
+ *    نمی‌توان آن را از تغییر عمدی ساعت تشخیص داد. مرجع جلو می‌رود و تاریخ
+ *    پایان همچنان بررسی می‌شود؛ برگشت بعدی ساعت همچنان قفل خواهد شد.
  * ۳) **راه‌حل برای ساعت اشتباه واقعی:** کاربر می‌تواند با *همان* لایسنس دوباره
  *    فعال‌سازی کند؛ در این صورت ساعت مرجع با ساعت فعلی هم‌تراز می‌شود — ولی
  *    تاریخ پایان لایسنس هرگز جلو نمی‌رود (امضاشده است).
@@ -102,7 +103,7 @@ export type ClockCheck = {
   ok: boolean;
   /** اختلاف با مرجع (ms) — مثبت = ساعت جلو، منفی = عقب */
   skewMs: number;
-  /** ساعت سیستم بیش از تلورانس با مرجع فاصله دارد */
+  /** ساعت سیستم بیش از تلورانس از مرجع عقب است */
   tampered: boolean;
   state: ClockState;
   message?: string;
@@ -113,14 +114,14 @@ export type ClockCheck = {
  *
  * قاعده:
  *   • ref = max(anchor, lastSeen, savedOnDisk)
- *   • |now − ref| > 24h → jابه‌جایی
+ *   • now < ref − 24h → عقب‌بردن ساعت
  *   • وگرنه anchor = max(anchor, now)
  */
 export function checkClock(state: ClockState, now: number, toleranceMs = CLOCK_TOLERANCE_MS): ClockCheck {
   const anchors = [state.anchor || 0, state.lastSeen || 0].filter((n) => n > 0);
   const ref = anchors.length ? Math.max(...anchors) : now;
   const skew = now - ref;
-  const tampered = Math.abs(skew) > toleranceMs;
+  const tampered = skew < -toleranceMs;
   const next: ClockState = {
     anchor: Math.max(state.anchor || 0, ref, now),
     lastSeen: now,
@@ -134,10 +135,7 @@ export function checkClock(state: ClockState, now: number, toleranceMs = CLOCK_T
       skewMs: skew,
       tampered: true,
       state: next,
-      message:
-        skew > 0
-          ? `ساعت کمپیوتر ${hours} ساعت جلوتر از آخرین اجرای برنامه است (بیش از ۲۴ ساعت) — برنامه قفل شد.`
-          : `ساعت کمپیوتر ${hours} ساعت عقب‌تر از آخرین اجرای برنامه است (بیش از ۲۴ ساعت) — برنامه قفل شد.`,
+      message: `ساعت کمپیوتر ${hours} ساعت عقب‌تر از آخرین اجرای برنامه است (بیش از ۲۴ ساعت) — برنامه قفل شد.`,
     };
   }
   return { ok: true, skewMs: skew, tampered: false, state: next };

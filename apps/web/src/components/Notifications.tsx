@@ -64,7 +64,7 @@ export function buildNotes(license: any): Note[] {
       id: 'clock',
       tone: 'warn',
       title: 'ساعت سیستم درست نیست',
-      body: license.message || 'ساعت ویندوز عقب یا جلو است؛ روزهای باقی‌مانده‌ی لایسنس درست حساب نمی‌شود.',
+      body: license.message || 'ساعت ویندوز از زمان ثبت‌شده عقب‌تر است؛ روزهای باقی‌مانده‌ی لایسنس درست حساب نمی‌شود.',
       href: '/license',
       remindEvery: 1,
     });

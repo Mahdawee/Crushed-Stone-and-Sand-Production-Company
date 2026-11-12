@@ -7,7 +7,7 @@
  *   ۱) امضای Ed25519: لایسنس دست‌نخورده پذیرفته، هر تغییر (نام/تاریخ/کلید
  *      دستگاه) رد می‌شود، امضای لایسنس دیگر روی این لایسنس کار نمی‌کند.
  *   ۲) قفل دستگاه: لایسنس دستگاه دیگر روی این کمپیوتر رد می‌شود.
- *   ۳) قفل زمان: عقب‌بردن/جلوبردن ساعت بیش از ۲۴ ساعت تشخیص داده می‌شود،
+ *   ۳) قفل زمان: عقب‌بردن ساعت بیش از ۲۴ ساعت تشخیص داده می‌شود،
  *      و داخل تلورانس پذیرفته است.
  *   ۴) لایسنس منقضی، با ساعت عقب‌برده‌شده هم زنده نمی‌شود (effectiveNow).
  *   ۵) فعال‌سازی زنده از طریق HTTP: قفل نصب تازه → صفحه‌ی لایسنس → فعال‌سازی
@@ -127,12 +127,17 @@ const machine = require(path.join(common, 'license-machine.js'));
   console.log('\n— قفل زمان (۲۴ ساعت تلورانس) —');
   const t0 = Date.parse('2026-11-10T10:00:00Z');
   const st = { anchor: t0, lastSeen: t0, violations: 0, lastViolationAt: 0 };
-  const inTol = clock.checkClock(st, t0 + 20 * 3600 * 1000);
+  const inTol = clock.checkClock(st, t0 - 20 * 3600 * 1000);
   check('۲۰ ساعت عقب → پذیرفته', inTol.ok === true && inTol.tampered === false);
   const overBack = clock.checkClock(st, t0 - 25 * 3600 * 1000);
   check('۲۵ ساعت عقب → قفل', overBack.tampered === true && overBack.ok === false);
   const overFwd = clock.checkClock(st, t0 + 26 * 3600 * 1000);
-  check('۲۶ ساعت جلو → قفل', overFwd.tampered === true);
+  check('بعد از ۲۶ ساعت بدون استفاده، برنامه قفل نمی‌شود', overFwd.ok && !overFwd.tampered);
+  check('مرجع به زمان تازه می‌رسد', overFwd.state.anchor === t0 + 26 * 3600 * 1000);
+  check('برگشت بیش از ۲۴ ساعت پس از پیشروی قفل می‌شود', clock.checkClock(overFwd.state, t0).tampered);
+  const afterMonth = clock.checkClock(st, t0 + 30 * 86400000);
+  check('پس از یک ماه عدم استفاده قفل کاذب نیست', afterMonth.ok && !afterMonth.tampered);
+  check('پس از یک ماه تاریخ انقضای امضاشده همچنان بررسی می‌شود', !clock.licenseInWindow({start: '2026-11-01', end: '2026-11-20'}, new Date(clock.effectiveNow(afterMonth.state, t0)).toISOString().slice(0, 10)).ok);
   check('پیام قفل فارسی و روشن است', /ساعت کمپیوتر/.test(overBack.message || ''), overBack.message);
   check('مرجع هرگز عقب نمی‌رود', overBack.state.anchor >= t0);
   check('شمارنده‌ی تخلف زیاد می‌شود', overBack.state.violations === 1);
