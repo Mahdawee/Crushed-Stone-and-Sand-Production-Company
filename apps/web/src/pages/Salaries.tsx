@@ -1,0 +1,215 @@
+import { IconCheck, IconClock, IconCoins, IconPrint, IconUsers } from '../components/icons';
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { api } from '../lib/api';
+import { useSession } from '../lib/session';
+import { useToast, Num, Table, Spinner, Select, Stat, InlineStat, ExportButton, Computed } from '../components/ui';
+import { DatePicker, MonthPicker } from '../components/DatePicker';
+import { money, monthKey, todayISO, formatDate } from '../lib/calendar';
+
+export default function SalariesPage() {
+  const { calendar, isManager } = useSession();
+  const toast = useToast();
+  const [month, setMonth] = useState(monthKey(calendar));
+  const [sheet, setSheet] = useState<any>(null);
+  const [rows, setRows] = useState<any[]>([]);
+  const [payDate, setPayDate] = useState(todayISO());
+  const [payers, setPayers] = useState<any[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [history, setHistory] = useState<any>(null);
+
+  /**
+   * حذف سند معاش — نرم: سند از فهرست و جمع‌ها بیرون می‌رود ولی در «سطل
+   * بازیافت» می‌ماند و کامل برمی‌گردد (درخواست کاربر: حذف بدون از دست رفتن داده).
+   */
+  const removeSalary = (r: any) => {
+    toast.confirm({
+      title: 'حذف سند معاش',
+      body: `سند ${r.no} مربوط به «${r.employeeName}» از فهرست حذف می‌شود. با «سطل بازیافت» قابل بازگرداندن است.`,
+      confirmText: 'حذف کن',
+      onConfirm: async () => {
+        try {
+          await api.del(`/salaries/${r.id}`);
+          setHistory(null);
+          await loadHistory();
+          toast.success('حذف شد', 'از سطل بازیافت قابل بازگرداندن است.');
+        } catch (e: any) { toast.error('حذف نشد', e.message); }
+      },
+    });
+  };
+  const [tab, setTab] = useState<'sheet' | 'history'>('sheet');
+  const [y, m] = month.split('-').map(Number);
+
+  const load = async () => {
+    const s = await api.get(`/salaries/sheet?month=${month}`);
+    setSheet(s); setRows(s.rows);
+    if (s.rows[0]?.payDate) setPayDate(s.rows[0].payDate);
+  };
+  useEffect(() => { load().catch((e) => toast.error('بارگذاری نشد', e.message)); }, [month]);
+  useEffect(() => { api.get('/lookups').then((r) => setPayers(r.items.payer || [])).catch(() => {}); }, []);
+  const loadHistory = React.useCallback(
+    () => api.get(`/salaries?month=${month}&pageSize=200`).then(setHistory).catch(() => setHistory({ rows: [], total: 0 })),
+    [month],
+  );
+  useEffect(() => {
+    if (tab === 'history') loadHistory();
+  }, [tab, loadHistory]);
+
+  const edit = (i: number, patch: any) => {
+    setRows((prev) => prev.map((r, idx) => {
+      if (idx !== i) return r;
+      const next = { ...r, ...patch };
+      next.total = Math.round((Number(next.baseSalary) + Number(next.bonus) + Number(next.overtimeAmount) - Number(next.penalty)) * 100) / 100;
+      return next;
+    }));
+  };
+
+  const save = async () => {
+    if (!payDate) { toast.error('تاریخ پرداخت', 'تاریخ پرداخت را انتخاب کنید.'); return; }
+    setBusy(true);
+    try {
+      const res = await api.post('/salaries/sheet', { month, payDate, rows });
+      toast.success(`معاش ${res.label} ذخیره شد`, `${res.saved} کارمند — تاریخ پرداخت ${formatDate(payDate, calendar)}`);
+      await load();
+    } catch (e: any) { toast.error('ذخیره نشد', e.message); }
+    finally { setBusy(false); }
+  };
+
+  const total = rows.reduce((a, r) => a + Number(r.total || 0), 0);
+
+  return (
+    <div className="col" style={{ gap: 14 }}>
+      <div className="card">
+        <div className="list-head">
+          <div className="pill-tabs">
+            <button className={tab === 'sheet' ? 'on' : ''} onClick={() => setTab('sheet')}>ورق معاش</button>
+            <button className={tab === 'history' ? 'on' : ''} onClick={() => setTab('history')}>سابقه</button>
+          </div>
+          <MonthPicker value={month} onChange={setMonth} calendar={calendar} yearsBack={3} />
+          <span className="badge muted">{sheet?.label || ''}</span>
+          <div style={{ flex: 1 }} />
+          <div className="list-actions">
+            <ExportButton type="salaries" />
+            {tab === 'sheet' ? (
+              <>
+                <DatePicker compact value={payDate} onChange={setPayDate} calendar={calendar} width={140} title="تاریخ پرداخت" />
+                <button className="btn primary" onClick={save} disabled={busy}>{busy ? 'ذخیره…' : 'ذخیره ورق'}</button>
+              </>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      {tab === 'sheet' ? (
+        !sheet ? <Spinner /> : (
+          <>
+            <div className="card">
+              <div className="card-h">
+                <h3>ورق معاش — {sheet.label}</h3>
+                <div style={{ flex: 1 }} />
+                <div className="list-summary">
+                  <InlineStat label="کارمند" value={rows.length} />
+                  <span className="sep" />
+                  <InlineStat label="معاش ثابت" value={money(rows.reduce((a, r) => a + Number(r.baseSalary || 0), 0))} />
+                  <span className="sep" />
+                  <InlineStat label="اضافه (ساعت)" value={rows.reduce((a, r) => a + Number(r.overtimeHours || 0), 0)} />
+                  <span className="sep" />
+                  {/*
+                    جمعِ همین ورق، و جدا از آن آنچه «ثبت شده» است — وگرنه
+                    مدیر جمعی را می‌بیند که بخشی از آن هنوز فقط روی صفحه
+                    است و در صندوق/راپور نیامده.
+                  */}
+                  <InlineStat label="مجموع پرداخت" value={money(total)} tone="ok" />
+                  <span className="sep" />
+                  <InlineStat label="ثبت‌شده این ماه" value={money(sheet.totalPaid || 0)} />
+                </div>
+              </div>
+              <div className="card-b tight">
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="tbl compact">
+                    <thead><tr>
+                      <th>#</th><th>کد</th><th>نام</th><th>معاش ثابت</th><th>پاداش</th><th>جریمه</th>
+                      <th>ساعت اضافه</th><th>روز کسر</th><th>مبلغ اضافه کاری</th>
+                      <th title="مجموع = معاش + پاداش + اضافه‌کاری − جریمه (خودکار)">مجموع پرداخت <span className="auto-tag">خودکار</span></th><th className="hide-sm">پرداخت‌کننده</th><th>نوع</th><th>سند</th>
+                    </tr></thead>
+                    <tbody>
+                      {rows.map((r, i) => (
+                        <tr key={r.employeeId}>
+                          <td>{i + 1}</td>
+                          <td className="mono">{r.code}</td>
+                          <td style={{ whiteSpace: 'nowrap' }}>{r.name}</td>
+                          <td style={{ width: 110 }}><Num value={r.baseSalary} onChange={(v) => edit(i, { baseSalary: v })} /></td>
+                          <td style={{ width: 100 }}><Num value={r.bonus} onChange={(v) => edit(i, { bonus: v })} /></td>
+                          <td style={{ width: 100 }}><Num value={r.penalty} onChange={(v) => edit(i, { penalty: v })} /></td>
+                          <td className="num">{r.overtimeHours}</td>
+                          <td className="num">
+                            {r.deductionDays ? <span className="badge bad" title="غیبت، رخصت یا مریضی — در جریمه دستی حساب کنید">{r.deductionDays}</span> : <span className="muted">—</span>}
+                          </td>
+                          <td style={{ width: 110 }}><Num value={r.overtimeAmount} onChange={(v) => edit(i, { overtimeAmount: v })} /></td>
+                          <td>
+                            <Computed value={money(r.total)} suffix="؋" />
+                          </td>
+                          <td style={{ width: 130 }} className="hide-sm">
+                            <Select value={r.payerName} placeholder="—" onChange={(v) => {
+                              const p = payers.find((x) => x.name === v);
+                              edit(i, { payerName: v, payerId: p?.id });
+                            }} options={payers.map((p) => ({ value: p.name, label: p.name }))} />
+                          </td>
+                          <td style={{ width: 90 }}>
+                            <Select value={r.paymentType} onChange={(v) => edit(i, { paymentType: v })}
+                              options={[{ value: 'cash', label: 'نقد' }, { value: 'hawala', label: 'حواله' }]} />
+                          </td>
+                          <td>{r.saved ? <span className="badge ok">ثبت شده</span> : <span className="badge muted">جدید</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot><tr>
+                      <td colSpan={9}>مجموع</td>
+                      <td><Computed value={money(total)} suffix="؋" big /></td>
+                      <td colSpan={3} />
+                    </tr></tfoot>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </>
+        )
+      ) : (
+        !history ? <Spinner /> : (
+          <div className="card">
+            <div className="card-h"><h3>اسناد معاش ثبت‌شده</h3><div style={{ flex: 1 }} /><span className="badge info">{history.total} سند</span></div>
+            <div className="card-b tight">
+              <Table head={['شماره سند', 'ماه/سال', 'کارمند', 'معاش', 'پاداش', 'جریمه', 'اضافه', 'مجموع', 'پرداخت‌کننده', 'نوع', 'تاریخ پرداخت', '']}>
+                {history.rows.map((r: any) => (
+                  <tr key={r.id}>
+                    <td className="mono">{r.no}</td>
+                    <td>{r.periodLabel}</td>
+                    <td>{r.employeeName}</td>
+                    <td className="num">{money(r.baseSalary)}</td>
+                    <td className="num">{money(r.bonus)}</td>
+                    <td className="num">{money(r.penalty)}</td>
+                    <td className="num">{money(r.overtimeAmount)}</td>
+                    <td className="num" style={{ fontWeight: 700 }}>{money(r.total)}</td>
+                    <td>{r.payerName}</td>
+                    <td><span className="badge info">{r.paymentType === 'cash' ? 'نقد' : 'حواله'}</span></td>
+                    <td className="mono">{r.payDateDisplay}</td>
+                    <td>
+                      <div className="actions hover-actions">
+                        <Link className="btn sm" to={`/print/salary/${r.id}?auto=1`} title="چاپ رسید معاش">
+                          <IconPrint size={13} /> رسید
+                        </Link>
+                        {isManager ? (
+                          <button className="btn sm danger" onClick={() => removeSalary(r)} title="حذف نرم — از سطل بازیافت برمی‌گردد">حذف</button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </Table>
+            </div>
+          </div>
+        )
+      )}
+    </div>
+  );
+}

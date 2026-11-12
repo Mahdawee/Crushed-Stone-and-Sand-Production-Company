@@ -1,0 +1,155 @@
+# ─────────────────────────────────────────────────────────────────────────
+#  آزمون خودکار — پیشنهاد A2 (دور ۴۰)
+#
+#  چرا ویندوز: سه باگ اخیر **فقط روی ویندوز** ظاهر شدند و هیچ‌کدام روی
+#  لینوکسِ توسعه دیده نشدند:
+#    • `start.cmd` با پایان‌خط LF (cmd.exe می‌شکند)
+#    • الگوی `bundle.resources` که هیچ فایلی پیدا نمی‌کرد (ساخت می‌شکند)
+#    • کامنت بلوکی با دنباله‌ی «ستاره + اسلش» (SyntaxError)
+#  هر سه با یک اجرای `npm test` روی windows-latest قبل از رسیدن به کاربر
+#  گرفته می‌شدند.
+# ─────────────────────────────────────────────────────────────────────────
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # ── ۱) تست کد روی لینوکس (سریع‌ترین بازخورد) ──────────────────────────
+  test-linux:
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 — باگ دور ۴۳: کلون کم‌عمق، تست تاریخچه را قرمز می‌کرد
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: نصب وابستگی‌ها
+        run: npm ci || npm install
+      - name: بررسی نحوی (ارزان و کشنده‌ترین)
+        run: npm run test:syntax
+      - name: ساخت بسته‌ی API (پیش‌نیاز تست‌ها)
+        run: npm run build -w @farday/api
+      # ── باگ دور ۴۳: لاگ CI از بیرون خوانده نمی‌شد ──────────────────────
+      # «کل تست‌ها» قرمز بود ولی هیچ‌کس نمی‌توانست بگوید **کدام** بررسی.
+      # خروجی حالا در یک فایل ذخیره و به‌عنوان artifact گذاشته می‌شود، تا
+      # هم این‌جا و هم بعداً قابل خواندن باشد.
+      - name: کل تست‌ها
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee /tmp/test-linux.log
+          exit ${PIPESTATUS[0]}
+
+      # ── خطاها را به «annotation» تبدیل می‌کند ───────────────────────────
+      # لاگ و artifact از بعضی محیط‌ها (از جمله ساندباکس ما) خوانده نمی‌شوند،
+      # ولی annotationها از api.github.com خوانده می‌شوند. با این کار «کدام
+      # بررسی قرمز شد» بدون دانلود هیچ فایلی معلوم است.
+      # ── چرا این‌قدر پرگو (دور ۴۳) ────────────────────────────────────────
+      # نسخه‌ی اول فقط دنبال `✘` می‌گشت و روی ویندوز گفت «هیچ بررسی قرمزی
+      # پیدا نشد»، در حالی که خودِ مرحله قرمز بود. یعنی سیگنال را از دست
+      # می‌داد. حالا اگر خطای شناخته‌شده‌ای نبود، **۲۰ خط آخر خروجی** را
+      # به‌عنوان annotation می‌گذارد — که همیشه علت را نشان می‌دهد.
+      - name: خلاصه‌ی خطاها در annotation
+        if: always()
+        shell: bash
+        run: |
+          LOG=/tmp/test-linux.log
+          if [ ! -s "$LOG" ]; then
+            echo "::error title=لاگ خالی::فایل $LOG خالی است — npm test حتی شروع نشد"
+            exit 0
+          fi
+          node -e '
+            const fs = require("fs");
+            const t = fs.readFileSync(process.argv[1], "utf8");
+            const esc = (s) => s.replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, " ").slice(0, 400);
+            const bad = t.split("\n").filter((l) => /^\s*✘|^⛔|FAIL|Error:|Cannot find|ENOENT|npm error/.test(l));
+            if (bad.length) {
+              for (const l of bad.slice(0, 30)) console.log("::error title=بررسی قرمز::" + esc(l.trim()));
+            } else {
+              console.log("::error title=علت نامعلوم — ۲۰ خط آخر::");
+              const tail = t.trim().split("\n").slice(-20);
+              for (const l of tail) console.log("::error title=tail::" + esc(l.trim()));
+            }
+          ' "$LOG"
+
+  # ── ۲) تست روی ویندوز: رفتار cmd.exe و مسیرهای ویندوزی ────────────────
+  test-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # fetch-depth: 0 — باگ دور ۴۳: کلون کم‌عمق، تست تاریخچه را قرمز می‌کرد
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      # ── باگ دور ۴۳: این مرحله از دور ۴۰ تا امروز **هیچ‌وقت سبز نشد** ──
+      # دلیلش خودِ چک بود، نه فایل‌ها: `grep -q $'\r'` به رفتار grep و به
+      # تبدیل نقل‌قول در bash ویندوز وابسته است. جای این‌که یک ابزار را
+      # حدس بزنیم، با Node می‌خوانیم — Node روی هر دو سیستم یکسان است و
+      # اگر چیزی خراب بود، دقیقاً می‌گوید کدام خط.
+      - name: پایان‌خط فایل‌های cmd باید CRLF باشد (باگ دور ۳۶)
+        shell: bash
+        run: node scripts/check-cmd-crlf.mjs
+      - name: نصب وابستگی‌ها
+        run: npm ci || npm install
+      - name: بررسی نحوی
+        run: npm run test:syntax
+      - name: ساخت بسته‌ی API
+        run: npm run build -w @farday/api
+      - name: کل تست‌ها روی ویندوز
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test-windows.log
+          exit ${PIPESTATUS[0]}
+
+      - name: خلاصه‌ی خطاها در annotation (ویندوز)
+        if: always()
+        shell: bash
+        run: |
+          LOG=test-windows.log
+          if [ ! -s "$LOG" ]; then
+            echo "::error title=لاگ خالی::فایل $LOG خالی است — npm test حتی شروع نشد"
+            exit 0
+          fi
+          node -e '
+            const fs = require("fs");
+            const t = fs.readFileSync(process.argv[1], "utf8");
+            const esc = (s) => s.replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, " ").slice(0, 400);
+            const bad = t.split("\n").filter((l) => /^\s*✘|^⛔|FAIL|Error:|Cannot find|ENOENT|npm error/.test(l));
+            if (bad.length) {
+              for (const l of bad.slice(0, 30)) console.log("::error title=بررسی قرمز::" + esc(l.trim()));
+            } else {
+              console.log("::error title=علت نامعلوم — ۲۰ خط آخر::");
+              const tail = t.trim().split("\n").slice(-20);
+              for (const l of tail) console.log("::error title=tail::" + esc(l.trim()));
+            }
+          ' "$LOG"
+
+  # ── ۳) آمادگی انتشار (فقط روی PR) ─────────────────────────────────────
+  release-readiness:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 — باگ دور ۴۳: کلون کم‌عمق، تست تاریخچه را قرمز می‌کرد
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci || npm install
+      - run: npm run build -w @farday/api
+      - name: بررسی آمادگی انتشار
+        run: npm run release:check

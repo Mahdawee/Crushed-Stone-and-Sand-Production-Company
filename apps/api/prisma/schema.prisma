@@ -1,0 +1,243 @@
+// ---------------------------------------------------------------------------
+//  فردای روشن — سیستم مدیریت شرکت تولیدی سنگ، کرش، جغل و ریگ
+//  Prisma schema (SQLite / local file database)
+//  NOTE: every date is stored as a Gregorian ISO string "YYYY-MM-DD".
+//  Input, display and month/year grouping are converted to the calendar
+//  selected in Settings (Jalali / Gregorian) — data itself never changes.
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../../../apps/api/src/generated/prisma"
+  moduleFormat        = "cjs"
+  importFileExtension = ""
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ----------------------------- مشخصات شرکت --------------------------------
+model Company {
+  id           Int      @id @default(1)
+  name         String   @default("فردای روشن")
+  activityType String   @default("تولید مواد ساختمانی")
+  address      String   @default("")
+  fiscalYear   String   @default("")
+  financeManager String @default("")
+  supervisor   String   @default("")
+  logoPath     String?
+  phone        String   @default("")
+  email        String   @default("")
+  updatedAt    DateTime @updatedAt
+}
+
+// ------------------------------- کارمندان --------------------------------
+model Employee {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  name        String
+  fatherName  String   @default("")
+  position    String   @default("")
+  hireDate    String   @default("")
+  baseSalary  Float    @default(0)
+  phone       String   @default("")
+  nationalId  String   @default("")
+  address     String   @default("")
+  contractPeriod String @default("")
+  status      String   @default("active") // active | inactive
+  note        String   @default("")
+  createdAt   DateTime @default(now())
+
+  attendances Attendance[]
+  salaries    Salary[]
+}
+
+// ----------------------------- حضور و غیاب --------------------------------
+model Attendance {
+  id          Int    @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date        String // YYYY-MM-DD
+  // present | absent | leave | sick | official_holiday | friday
+  status      String @default("present")
+  checkIn     String @default("")
+  checkOut    String @default("")
+  overtime    Float  @default(0) // hours
+  note        String @default("")
+
+  @@unique([employeeId, date])
+  @@index([date])
+}
+
+// ------------------------------ مشتریان -----------------------------------
+model Customer {
+  id             Int      @id @default(autoincrement())
+  code           String   @unique
+  name           String
+  contactPerson  String   @default("")
+  phone          String   @default("")
+  truckPlate     String   @default("")
+  openingBalance Float    @default(0)
+  note           String   @default("")
+  createdAt      DateTime @default(now())
+
+  sales    Sale[]
+  receipts Receipt[]
+}
+
+// ------------------------------- فروشات -----------------------------------
+model Sale {
+  id            Int     @id @default(autoincrement())
+  no            String  @unique // BL number, e.g. S-1404-0001
+  date          String // YYYY-MM-DD
+  customerId    Int
+  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  customerName  String  @default("")
+  driverName    String  @default("")
+  truckPlate    String  @default("")
+  destination   String  @default("")
+  materialId    Int?
+  materialName  String  @default("")
+  volume        Float   @default(0) // cubic metres
+  unitPrice     Float   @default(0) // per cubic metre
+  freightPerUnit Float  @default(0) // کرایه فی متر
+  freightTotal  Float   @default(0) // مجموع کرایه
+  total         Float   @default(0) // مجموع قیمت و کرایه
+  contractorId  Int? // مربوط (باربری/دمترک)
+  contractorName String @default("")
+  paymentType   String  @default("cash") // cash | credit
+  note          String  @default("")
+  createdAt     DateTime @default(now())
+
+  @@index([date])
+  @@index([customerId])
+}
+
+// ------------------------------- مصارف ------------------------------------
+model Expense {
+  id            Int     @id @default(autoincrement())
+  no            String  @unique
+  date          String
+  description   String  @default("")
+  categoryId    Int?
+  categoryName  String  @default("")
+  contractorId  Int?
+  contractorName String @default("")
+  purchaseBillNo String @default("")
+  shopName      String  @default("")
+  amountAfn     Float   @default(0)
+  amountUsd     Float   @default(0)
+  payerId       Int?
+  payerName     String  @default("")
+  paymentType   String  @default("cash") // cash | credit
+  note          String  @default("")
+  createdAt     DateTime @default(now())
+
+  @@index([date])
+}
+
+// ------------------------------- رسیدات -----------------------------------
+model Receipt {
+  id          Int     @id @default(autoincrement())
+  no          String  @unique
+  date        String
+  customerId  Int
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  customerName String @default("")
+  amount      Float   @default(0)
+  relatedBillNo String @default("")
+  sourceId    Int?
+  sourceName  String  @default("") // باقی داری | امانت | بیانیه
+  receivedBy  String  @default("")
+  note        String  @default("")
+  createdAt   DateTime @default(now())
+
+  @@index([date])
+  @@index([customerId])
+}
+
+// ------------------------------- معاشات -----------------------------------
+model Salary {
+  id          Int    @id @default(autoincrement())
+  no          String @unique
+  periodStart String // first day of the pay period, Gregorian ISO
+  periodLabel String // e.g. "میزان ۱۴۰۴"
+  calendar    String @default("jalali")
+  year        Int
+  month       Int
+  payDate     String @default("") // Gregorian ISO, when the money left the cash box
+  employeeId  Int
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  employeeName String @default("")
+  baseSalary  Float  @default(0)
+  bonus       Float  @default(0)
+  penalty     Float  @default(0)
+  overtimeAmount Float @default(0)
+  total       Float  @default(0)
+  payerName   String @default("")
+  paymentType String @default("cash") // cash | hawala
+  note        String @default("")
+  createdAt   DateTime @default(now())
+
+  @@unique([employeeId, periodStart])
+  @@index([periodStart])
+}
+
+// ------------------------- فهرست‌های کشویی (lookups) ----------------------
+model LookupItem {
+  id       Int     @id @default(autoincrement())
+  type     String // material | expense_category | payer | receipt_source | contractor
+  name     String
+  extra    String  @default("") // unit for materials, kind for others
+  sortOrder Int    @default(0)
+  active   Boolean @default(true)
+
+  @@index([type])
+}
+
+// -------------------------------- کاربران ---------------------------------
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  fullName     String   @default("")
+  passwordHash String
+  role         String   @default("manager") // manager | employee
+  active       Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+}
+
+// ------------------------------ تنظیمات -----------------------------------
+model Setting {
+  key   String @id
+  value String
+}
+
+// ------------------------------ ماشینری -----------------------------------
+model Machinery {
+  id       Int     @id @default(autoincrement())
+  name     String
+  model    String  @default("")
+  plateNo  String  @default("")
+  count    Int     @default(1)
+  status   String  @default("active") // active | repair | idle
+  note     String  @default("")
+}
+
+// ------------------------------ لاگ فعالیت --------------------------------
+model ActivityLog {
+  id        Int      @id @default(autoincrement())
+  username  String   @default("")
+  action    String // create | update | delete | login | logout | export | backup | restore
+  entity    String   @default("")
+  entityId  Int?
+  detail    String   @default("")
+  createdAt DateTime @default(now())
+}
+
+// --------------------------- شمارنده اسناد ---------------------------------
+model Sequence {
+  scope String @id // sale | expense | receipt | salary — per fiscal year
+  value Int    @default(0)
+}

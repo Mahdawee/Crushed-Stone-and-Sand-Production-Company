@@ -1,0 +1,268 @@
+import { IconPrint } from '../components/icons';
+import React, { useEffect, useRef, useState } from 'react';
+import { api } from '../lib/api';
+import { useToast, Table, Spinner, Stat, ExportButton,
+} from '../components/ui';
+import { DatePicker } from '../components/DatePicker';
+import { money, todayISO, toCalendar, fromCalendar, addDaysISO, formatDate } from '../lib/calendar';
+import { useSession } from '../lib/session';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
+import '../styles/print.css';
+import { PrintReportHeader, PrintReportFooter } from '../components/DocHeader';
+
+const TABS = [
+  { key: 'material', label: 'فروشات به نوع مواد' },
+  { key: 'customer', label: 'فروشات به مشتری' },
+  { key: 'category', label: 'مصارف به نوع' },
+  { key: 'payer', label: 'مصارف به پرداخت‌کننده' },
+  { key: 'contractor', label: 'کرایه به باربری' },
+  { key: 'related', label: 'مربوط (شاخه مصرف)' },
+  { key: 'debtors', label: 'باقی مانده بدهی' },
+  { key: 'salary', label: 'خلاصه معاشات' },
+];
+
+
+/* بازه‌های آماده — کمتر کلیک، کمتر تایپ */
+const QUICK = [
+  { key: 'today', label: 'امروز' },
+  { key: 'week', label: '۷ روز' },
+  { key: 'month', label: 'این ماه' },
+  { key: 'year', label: 'این سال' },
+] as const;
+
+export default function ReportsDetail() {
+  const { calendar } = useSession();
+  const toast = useToast();
+  const now = toCalendar(todayISO(), calendar);
+  const [range, setRange] = useState({ from: fromCalendar(now.jy, 1, 1, calendar), to: todayISO() });
+  const [tab, setTab] = useState('material');
+  const [d, setD] = useState<any>(null);
+
+  const load = async () => {
+    const qs = new URLSearchParams();
+    if (range.from) qs.set('from', range.from);
+    if (range.to) qs.set('to', range.to);
+    try { setD(await api.get(`/reports/breakdown?${qs.toString()}`)); }
+    catch (e: any) { toast.error('راپور بارگذاری نشد', e.message); }
+  };
+  /*
+   * باگ کاربر: کلیدهای «امروز / ۷ روز / این ماه / این سال» بازه را عوض
+   * می‌کردند ولی راپور **بارگذاری نمی‌شد**؛ کاربر باید بعدش «نمایش» را
+   * می‌زد و تا آن موقع اعداد بازه‌ی قبلی روی صفحه می‌ماند (گمراه‌کننده).
+   * حالا تغییر بازه خودش بارگذاری می‌کند و «نمایش» برای بازخوانی دستی است.
+   */
+  const loadedRef = useRef('');
+  useEffect(() => {
+    const key = `${range.from}|${range.to}`;
+    if (loadedRef.current === key) return;
+    loadedRef.current = key;
+    load();
+  }, [range.from, range.to]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const sum = (arr: any[], key: string) => (arr || []).reduce((a, r) => a + Number(r[key] || 0), 0);
+
+
+  const isQuick = (() => {
+    const c = toCalendar(todayISO(), calendar);
+    const first = fromCalendar(c.jy, c.jm, 1, calendar);
+    const firstYear = fromCalendar(c.jy, 1, 1, calendar);
+    if (range.to !== todayISO()) return '';
+    if (range.from === todayISO()) return 'today';
+    if (range.from === addDaysISO(todayISO(), -6)) return 'week';
+    if (range.from === first) return 'month';
+    if (range.from === firstYear) return 'year';
+    return '';
+  })();
+  const applyQuick = (key: string) => {
+    const c = toCalendar(todayISO(), calendar);
+    const map: Record<string, string> = {
+      today: todayISO(),
+      week: addDaysISO(todayISO(), -6),
+      month: fromCalendar(c.jy, c.jm, 1, calendar),
+      year: fromCalendar(c.jy, 1, 1, calendar),
+    };
+    setRange({ from: map[key], to: todayISO() });
+  };
+
+  return (
+    <div className="col" style={{ gap: 14 }}>
+      {/* سرصفحه و پانوشت چاپ — فقط روی کاغذ دیده می‌شوند */}
+      <PrintReportHeader
+        title="راپور تفصیلی"
+        period={d ? `از ${formatDate(d.from, calendar)} تا ${formatDate(d.to, calendar)}` : ''}
+      />
+      <div className="card no-print">
+        <div className="list-head">
+          <div className="pill-tabs">
+            {QUICK.map((q) => (
+              <button key={q.key} className={isQuick === q.key ? 'on' : ''} onClick={() => applyQuick(q.key)}>{q.label}</button>
+            ))}
+          </div>
+          <DatePicker compact value={range.from} onChange={(v) => setRange({ ...range, from: v })} calendar={calendar} width={132} title="از تاریخ" />
+          <span className="text-3">—</span>
+          <DatePicker compact value={range.to} onChange={(v) => setRange({ ...range, to: v })} calendar={calendar} width={132} title="تا تاریخ" />
+          <button className="btn primary" onClick={load}>نمایش</button>
+          <div style={{ flex: 1 }} />
+          <div className="list-actions">
+            <button className="btn" onClick={() => window.print()}><IconPrint size={15} /> چاپ</button>
+            <ExportButton type="sales" label="خروجی" range={range} />
+          </div>
+        </div>
+      </div>
+
+      <div className="pill-tabs" style={{ flexWrap: 'wrap' }}>
+        {TABS.map((t) => <button key={t.key} className={tab === t.key ? 'on' : ''} onClick={() => setTab(t.key)}>{t.label}</button>)}
+      </div>
+
+      {!d ? <Spinner /> : (
+        <div className="col" style={{ gap: 14 }}>
+          {tab === 'material' && (
+            <>
+              <div className="grid c3">
+                <Stat label="مجموع فروش اقلام" value={money(sum(d.byMaterial, 'total'))} />
+                <Stat label="مجموع متراژ" value={`${money(sum(d.byMaterial, 'volume'))} م³`} />
+                <Stat label="مجموع کرایه" value={money(sum(d.byMaterial, 'freight'))} kind="warn" />
+              </div>
+              <div className="grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                <div className="card"><div className="card-h"><h3>فروش به نوع مواد</h3></div><div className="card-b" style={{ height: 300 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={d.byMaterial} layout="vertical" margin={{ right: 20, left: 40 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--text-3)' }} />
+                      <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 11, fill: 'var(--text-2)' }} />
+                      <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12 }} formatter={(v: any) => money(v)} />
+                      <Bar dataKey="total" fill="var(--accent)" radius={[0, 6, 6, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div></div>
+                <div className="card"><div className="card-h"><h3>تفصیل</h3></div><div className="card-b tight">
+                  <Table head={['مواد', 'اسناد', 'متراژ', 'کرایه', 'مجموع']} compact>
+                    {d.byMaterial.map((r: any, i: number) => (
+                      <tr key={i}><td>{r.name || '—'}</td><td className="num">{r.docs}</td><td className="num">{money(r.volume)}</td><td className="num">{money(r.freight)}</td><td className="num" style={{ fontWeight: 700 }}>{money(r.total)}</td></tr>
+                    ))}
+                  </Table>
+                </div></div>
+              </div>
+            </>
+          )}
+          {tab === 'customer' && (
+            <div className="card"><div className="card-h"><h3>فروشات به مشتری</h3><div style={{ flex: 1 }} />
+              {Number(d.byCustomerTotal || 0) > (d.byCustomerTop || []).length
+                ? <span className="small muted">نمایش {d.byCustomerTop.length} مشتریِ بزرگ‌تر از {d.byCustomerTotal} — برای همه، «خروجی» بگیرید</span>
+                : null}
+            </div><div className="card-b tight">
+              <Table head={["مشتری", "اسناد", "متراژ", "مجموع فروش", "از آن قرضه", ""]}>
+                {(d.byCustomerTop || d.byCustomer || []).map((r: any, i: number) => (
+                  <tr key={i}><td>{r.name}</td><td className="num">{r.docs}</td><td className="num">{money(r.volume)}</td>
+                    <td className="num" style={{ fontWeight: 700 }}>{money(r.total)}</td>
+                    <td className="num" style={{ color: 'var(--danger)' }}>{money(r.credit)}</td><td /></tr>
+                ))}
+              </Table>
+            </div></div>
+          )}
+          {tab === 'category' && (
+            <div className="card"><div className="card-h"><h3>مصارف به نوع</h3><div style={{ flex: 1 }} /><span className="badge bad">{money(sum(d.byCategory, 'afn'))} افغانی</span></div>
+              <div className="card-b tight">
+                <Table head={['نوع مصرف', 'اسناد', 'افغانی', 'دالری']}>
+                  {d.byCategory.map((r: any, i: number) => (
+                    <tr key={i}><td>{r.name || '—'}</td><td className="num">{r.docs}</td><td className="num" style={{ fontWeight: 700 }}>{money(r.afn)}</td><td className="num">{r.usd ? `$${money(r.usd)}` : '—'}</td></tr>
+                  ))}
+                </Table>
+              </div></div>
+          )}
+          {tab === 'payer' && (
+            <div className="card"><div className="card-h"><h3>مصارف به پرداخت‌کننده</h3></div><div className="card-b tight">
+              <Table head={['پرداخت‌کننده', 'اسناد', 'مبلغ افغانی']}>
+                {d.byPayer.map((r: any, i: number) => (
+                  <tr key={i}><td>{r.name || '—'}</td><td className="num">{r.docs}</td><td className="num" style={{ fontWeight: 700 }}>{money(r.afn)}</td></tr>
+                ))}
+              </Table>
+            </div></div>
+          )}
+          {tab === 'contractor' && (
+            <div className="card"><div className="card-h"><h3>کرایه پرداختی به باربری‌ها / دمترک‌ها</h3></div><div className="card-b tight">
+              <Table head={['مربوط (شاخه مصرف)', 'اسناد', 'مجموع کرایه']}>
+                {d.byContractor.map((r: any, i: number) => (
+                  <tr key={i}><td>{r.name}</td><td className="num">{r.docs}</td><td className="num" style={{ fontWeight: 700 }}>{money(r.freight)}</td></tr>
+                ))}
+              </Table>
+            </div></div>
+          )}
+          {tab === 'related' && (
+            /* «مربوط» = شاخه‌ی مصرف: کرایه، مصرف و رسید هر شاخه در یک جدول */
+            <div className="card">
+              <div className="card-h">
+                <h3>مربوط (شاخه مصرف) — کرایه، مصرف و رسید هر شاخه</h3>
+                <div style={{ flex: 1 }} />
+                <span className="badge">کرایه: {money(d.relatedTotals?.freight || 0)}</span>
+                <span className="badge bad">مصرف: {money(d.relatedTotals?.expenseAfn || 0)}</span>
+                <span className="badge ok">رسید: {money(d.relatedTotals?.receiptAmount || 0)}</span>
+              </div>
+              <div className="card-b tight">
+                <Table head={['شاخه', 'بل فروش', 'مجموع کرایه', 'اسناد مصرف', 'مصرف افغانی', 'رسیدات', 'مبلغ رسید']}>
+                  {(d.byRelated || []).map((r: any, i: number) => (
+                    <tr key={i}>
+                      <td style={{ fontWeight: 600 }}>{r.name || '—'}</td>
+                      <td className="num">{r.saleDocs || '—'}</td>
+                      <td className="num">{money(r.freight)}</td>
+                      <td className="num">{r.expenseDocs || '—'}</td>
+                      <td className="num" style={{ fontWeight: 700 }}>{money(r.expenseAfn)}</td>
+                      <td className="num">{r.receiptDocs || '—'}</td>
+                      <td className="num">{money(r.receiptAmount)}</td>
+                    </tr>
+                  ))}
+                  <tr style={{ fontWeight: 800 }}>
+                    <td>جمع</td>
+                    <td className="num" />
+                    <td className="num">{money(d.relatedTotals?.freight || 0)}</td>
+                    <td className="num" />
+                    <td className="num">{money(d.relatedTotals?.expenseAfn || 0)}</td>
+                    <td className="num" />
+                    <td className="num">{money(d.relatedTotals?.receiptAmount || 0)}</td>
+                  </tr>
+                </Table>
+              </div>
+            </div>
+          )}
+          {tab === 'debtors' && (
+            <div className="card">
+              <div className="card-h"><h3>باقی مانده بدهی مشتریان</h3><div style={{ flex: 1 }} />
+                {/*
+                  «مجموع» فقط مانده‌های مثبت است (همان قاعده‌ی داشبورد و
+                  صفحه‌ی مشتریان). بستانکارها جدا نشان داده می‌شوند — قبلاً
+                  مانده‌ی منفی از بدهی دیگران کم می‌شد و عدد با بقیه‌ی
+                  صفحه‌ها نمی‌خواند.
+                */}
+                <span className="badge bad">مجموع بدهی: {money(d.debtTotal)}</span>
+                {Number(d.creditTotal || 0) > 0 ? (
+                  <span className="badge ok" style={{ marginInlineStart: 6 }} title="جمع بستانکاری مشتریان (مانده‌ی منفی)">
+                    بستانکار: {money(d.creditTotal)}
+                  </span>
+                ) : null}</div>
+              <div className="card-b tight">
+                <Table head={['کد', 'مشتری', 'تماس', 'باقی مانده']}>
+                  {d.debtors.map((r: any, i: number) => (
+                    <tr key={i}><td className="mono">{r.code}</td><td>{r.name}</td><td className="mono">{r.phone}</td>
+                      <td className="num" style={{ fontWeight: 800, color: r.balance > 0 ? 'var(--danger)' : 'var(--ok)' }}>{money(r.balance)}</td></tr>
+                  ))}
+                </Table>
+              </div>
+            </div>
+          )}
+          {tab === 'salary' && (
+            <div className="card"><div className="card-h"><h3>خلاصه معاشات به ماه</h3></div><div className="card-b tight">
+              <Table head={['ماه', 'تعداد کارمند', 'مجموع پرداخت']}>
+                {(d.salarySummary || []).map((r: any, i: number) => (
+                  <tr key={i}><td>{r.name}</td><td className="num">{r.employees}</td><td className="num" style={{ fontWeight: 700 }}>{money(r.total)}</td></tr>
+                ))}
+              </Table>
+            </div></div>
+          )}
+        </div>
+      )}
+
+      {/* پانوشت چاپ: تاریخ چاپ + خط امضا — فقط روی کاغذ */}
+      <PrintReportFooter />
+    </div>
+  );
+}

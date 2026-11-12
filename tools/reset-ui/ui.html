@@ -1,0 +1,438 @@
+<!doctype html>
+<html dir="rtl" lang="fa">
+<head>
+<meta charset="utf-8">
+<title>صفر کردن سیستم — فردای روشن</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#0f1b24; --surface:#16242e; --surface-2:#1d2f3b; --border:#2a4050;
+    --text:#e8f0f4; --text-2:#a9bcc7; --text-3:#7b909c;
+    --accent:#2dd4bf; --accent-d:#0f766e; --ok:#34d399; --bad:#f87171; --warn:#fbbf24;
+    --radius:14px; --mono:ui-monospace,'Cascadia Code',Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:'Vazirmatn','Segoe UI',Tahoma,sans-serif;font-size:14px;line-height:1.7}
+  .wrap{max-width:880px;margin:0 auto;padding:24px 20px 70px}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+  .logo{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#f87171,#b91c1c);
+    display:grid;place-items:center;font-weight:800;font-size:20px;color:#24090a}
+  h1{font-size:1.15rem;margin:0}
+  .sub{color:var(--text-2);font-size:.8rem;margin:0}
+  .badge{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:.72rem;
+    border:1px solid var(--border);background:var(--surface-2);color:var(--text-2)}
+  .badge.ok{background:rgba(52,211,153,.12);color:var(--ok);border-color:rgba(52,211,153,.3)}
+  .badge.bad{background:rgba(248,113,113,.12);color:var(--bad);border-color:rgba(248,113,113,.3)}
+  .badge.warn{background:rgba(251,191,36,.12);color:var(--warn);border-color:rgba(251,191,36,.3)}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-top:16px;overflow:hidden}
+  .card.danger{border-color:rgba(248,113,113,.35)}
+  .card-h{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--border)}
+  .card-h h2{font-size:.92rem;margin:0}
+  .card-b{padding:16px}
+  .grid{display:grid;gap:14px}
+  .g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  @media(max-width:820px){.g2,.g3{grid-template-columns:1fr}}
+  label{display:block;font-size:.76rem;color:var(--text-2);margin-bottom:5px}
+  input,button,textarea{font-family:inherit;font-size:.86rem}
+  input,textarea{width:100%;background:var(--surface-2);border:1px solid var(--border);color:var(--text);
+    border-radius:10px;padding:9px 11px;outline:none}
+  input:focus,border:focus{border-color:var(--accent)}
+  input[dir=ltr]{font-family:var(--mono);letter-spacing:.4px}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .btn{background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:10px;
+    padding:9px 14px;cursor:pointer;transition:.15s}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent-d));color:#06231f;border:none;font-weight:700}
+  .btn.danger{background:linear-gradient(135deg,#f87171,#b91c1c);color:#24090a;border:none;font-weight:800}
+  .btn.danger:hover{filter:brightness(1.07);color:#24090a}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .muted{color:var(--text-2)} .small{font-size:.78rem} .mono{font-family:var(--mono)}
+  .fill{flex:1}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:.82rem}
+  .kv b{color:var(--text)}
+  .stat{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:11px 13px}
+  .stat .n{font-family:var(--mono);font-size:1.15rem;font-weight:700}
+  .stat .l{font-size:.72rem;color:var(--text-3)}
+  .warnbox{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.35);border-radius:12px;padding:12px 14px}
+  .warnbox ul{margin:8px 0 0;padding-inline-start:18px}
+  .warnbox li{margin-bottom:5px}
+  .okbox{background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.35);border-radius:12px;padding:12px 14px}
+  .chk{display:flex;gap:9px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--border);
+    border-radius:10px;padding:10px 12px}
+  .chk input{width:18px;height:18px;flex:0 0 18px;margin-top:3px}
+  table{width:100%;border-collapse:collapse;margin-top:8px}
+  th,td{padding:7px 9px;text-align:right;font-size:.8rem;border-bottom:1px solid var(--border)}
+  th{color:var(--text-3);font-weight:600;font-size:.74rem}
+  pre.out{background:#0b161d;border:1px solid var(--border);border-radius:10px;padding:12px;
+    font-family:var(--mono);font-size:.74rem;white-space:pre-wrap;overflow:auto;max-height:300px}
+  .toast{position:fixed;inset-inline-start:50%;transform:translateX(50%);bottom:24px;z-index:50;
+    background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:11px 18px;
+    box-shadow:0 12px 40px rgba(0,0,0,.45);max-width:min(560px,92vw);display:none}
+  .toast.show{display:block}
+  .toast.ok{border-color:rgba(52,211,153,.5)} .toast.bad{border-color:rgba(248,113,113,.5)}
+  .hintbox{background:#12211d;border:1px solid #1f4a40;border-radius:10px;padding:10px 12px;color:#cfe8e2;font-size:.85rem;line-height:1.9}
+  .hint{font-size:.74rem;color:var(--text-3);margin-top:5px}
+  .sep{height:1px;background:var(--border);margin:14px 0}
+  .danger-text{color:var(--bad)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">۰</div>
+    <div class="fill">
+      <h1>صفر کردن سیستم — تحویل آک</h1>
+      <p class="sub">ابزار بیرونی (پوشه‌ی tools) · پشتیبان اجباری · تأیید دو مرحله‌ای · کاملاً آفلاین</p>
+    </div>
+    <span id="stateBadge" class="badge">…</span>
+  </header>
+
+  <!-- وضعیت داده -->
+  <div class="card">
+    <div class="card-h"><h2>۱) آنچه در این کمپیوتر هست</h2><div class="fill"></div>
+      <button class="btn sm" onclick="load()">تازه‌سازی</button></div>
+    <div class="card-b">
+      <div id="booting" class="small muted">در حال خواندن وضعیت…</div>
+      <div id="stateBox" style="display:none">
+        <div class="grid g3" id="stats"></div>
+        <div class="sep"></div>
+        <div class="kv" id="paths"></div>
+        <div class="sep"></div>
+        <table><thead><tr><th>جدول</th><th>ردیف</th></tr></thead><tbody id="countRows"></tbody></table>
+        <p class="hint" id="cleanNote"></p>
+      </div>
+    </div>
+  </div>
+
+  <!--
+    شکار باگ دور ۳۴: روی نسخه‌ی نصب‌شده، صفحه باید بگوید داده را از کجا
+    پیدا کرده و اگر پیدا نکرد، همه‌ی مسیرهای گشته‌شده را نشان بدهد. پیام
+    قبلی «داده‌ای نیست» در حالی می‌آمد که ابزار فقط پوشه‌ی مخزن را گشته بود.
+  -->
+  <div class="card" id="whereCard" style="display:none">
+    <div class="card-h"><h2>مسیر داده</h2></div>
+    <div class="card-b">
+      <div id="whereBox"></div>
+    </div>
+  </div>
+
+  <div class="card danger" id="runtimeCard" style="display:none">
+    <div class="card-h"><h2>⚠ نسخه‌ی Node آماده نیست</h2></div>
+    <div class="card-b"><div id="runtimeBox" class="warnbox"></div></div>
+  </div>
+
+  <!-- هشدار -->
+  <div class="card danger">
+    <div class="card-h"><h2>۲) این کار چه می‌کند (و چه نمی‌کند)</h2></div>
+    <div class="card-b">
+      <div class="warnbox">
+        <b class="danger-text">⚠ برگشت‌ناپذیر است.</b>
+        <ul>
+          <li>همه‌ی فروشات، رسیدات، مصارف، معاشات، حضور و غیاب، کارمندان و مشتریان پاک می‌شوند.</li>
+          <li>سطل بازیافت هم پاک می‌شود — «بازگرداندن» بعد از این کار ممکن نیست.</li>
+          <li>لاگ فعالیت، فهرست‌های سفارشی، ماشینری و مشخصات شرکت حذف می‌شوند.</li>
+          <li>پشتیبان‌های قبلی و لایسنس فعال هم پاک می‌شوند (تأیید مشتری قبلی نباید بماند).</li>
+          <li><b>پشتیبان خودکار</b> از همین لحظه گرفته می‌شود و در پوشه‌ی <span class="mono">backups</span> می‌ماند — تنها راه برگشت.</li>
+          <li>بعد از صفر شدن، کاربر مدیر <span class="mono">admin / admin123</span> و «مشتری گذری» دوباره ساخته می‌شوند تا سیستم قابل ورود باشد.</li>
+        </ul>
+      </div>
+      <p class="hint" style="margin-top:12px">
+        اگر برنامه باز است، اول آن را ببندید: دیتابیس قفل است و صفر کردن از بیرون می‌تواند
+        داده را نیمه‌پاک بگذارد. (اگر برنامه باز باشد، ابزار از راه خودش انجام می‌دهد و می‌گوید.)
+      </p>
+    </div>
+  </div>
+
+  <!-- تأیید -->
+  <div class="card danger">
+    <div class="card-h"><h2>۳) تأیید صریح</h2><div class="fill"></div>
+      <span class="small muted">صفر کردن بدون این دو، اجرا نمی‌شود</span></div>
+    <div class="card-b">
+      <!--
+        وقتی دیتابیس آماده نیست (خراب/ناشناخته/قفل)، ابزار از **اول** می‌گوید
+        و دکمه‌ی اجرا را قفل می‌کند. پیش‌تر اپراتور تأیید می‌کرد و بعد وسط کار
+        خطا می‌گرفت و دیتابیس نیمه‌کاره می‌ماند (باگ isWalkIn).
+      -->
+      <div id="preflightBox" class="warnbox" style="display:none;margin-bottom:12px">
+        <b>دیتابیس آماده نیست — صفر کردن انجام نمی‌شود.</b>
+        <div id="preflightList" class="small" style="margin-top:6px;line-height:1.9"></div>
+        <div class="hint" style="margin-top:6px">
+          هیچ داده‌ای تغییر نمی‌کند. اگر دیتابیس خراب است، از «ابزار نجات» استفاده کنید:
+          <span class="mono" dir="ltr">--recovery --repair-db</span>
+        </div>
+      </div>
+
+      <div id="appOpenBox" class="warnbox" style="display:none;margin-bottom:12px">
+        <b>برنامه باز است.</b> صفر کردن از راه سرویس خودِ برنامه انجام می‌شود.
+        نام کاربری و رمز مدیر را وارد کنید (پیش‌فرض <span class="mono">admin / admin123</span>).
+        <div class="grid g2" style="margin-top:10px">
+          <div><label>نام کاربری مدیر</label><input id="username" dir="ltr" value="admin"></div>
+          <div><label>رمز مدیر</label><input id="password" type="password" dir="ltr" placeholder="••••••"></div>
+        </div>
+      </div>
+
+      <div class="hintbox" style="margin-bottom:12px">
+        <b>کلید لازم نیست.</b> برای صفر کردن، تیک زیر را بزنید و عبارت
+        <b class="mono">صفر کردن</b> را تایپ کنید. قبل از هر تغییری یک پشتیبان
+        خودکار گرفته می‌شود.
+      </div>
+
+      <div class="sep"></div>
+      <div class="grid g2">
+        <div><label>نام اپراتور (در گزارش می‌نشیند)</label><input id="operator" placeholder="نام شما"></div>
+        <div><label>دلیل / یادداشت</label><input id="reason" placeholder="مثلاً: تحویل به مشتری — شرکت سنگ بامیان"></div>
+      </div>
+
+      <div class="sep"></div>
+      <div class="chk">
+        <input type="checkbox" id="ack" onchange="syncBtn()">
+        <label for="ack" style="margin:0">
+          می‌دانم این کار <b>برگشت‌ناپذیر</b> است و داده‌ی مشتری فعلی به‌طور کامل پاک می‌شود.
+        </label>
+      </div>
+      <div style="margin-top:12px">
+        <label>برای تأیید، عبارت <b class="mono danger-text">صفر کردن</b> را بنویسید</label>
+        <input id="confirm" placeholder="صفر کردن" oninput="syncBtn()">
+        <p class="hint" id="confirmHint"></p>
+      </div>
+
+      <div class="sep"></div>
+      <div class="row">
+        <button class="btn danger" id="go" onclick="askThenReset()" disabled>صفر کردن کامل سیستم</button>
+        <button class="btn" onclick="load()">لغو / تازه‌سازی</button>
+        <span class="small muted" id="goHint"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- گزارش -->
+  <div class="card" id="resultCard" style="display:none">
+    <div class="card-h"><h2>۴) گزارش عملیات</h2><div class="fill"></div><span class="badge ok" id="resultBadge">…</span></div>
+    <div class="card-b">
+      <div id="resultBox"></div>
+      <pre class="out" id="resultJson" style="margin-top:12px"></pre>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" onclick="copyReport()">کاپی گزارش</button>
+        <button class="btn" onclick="load()">تازه‌سازی وضعیت</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="small muted" style="text-align:center;margin-top:22px">
+    این صفحه فقط روی <span class="mono">127.0.0.1</span> باز است. هیچ داده‌ای از این کمپیوتر بیرون نمی‌رود.
+  </p>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const CSRF = '__CSRF__';
+const $ = (id) => document.getElementById(id);
+let state = {};
+let lastReport = null;
+
+function toast(msg, kind){
+  const t = $('toast'); t.textContent = msg;
+  t.className = 'toast show ' + (kind || '');
+  clearTimeout(t._t); t._t = setTimeout(() => { t.className = 'toast'; }, 5000);
+}
+async function api(p, body){
+  const res = await fetch(p, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: { 'content-type': 'application/json', 'x-reset-csrf': CSRF },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.message || 'خطای نامشخص');
+  return j;
+}
+const fa = (n) => Number(n || 0).toLocaleString('fa-IR');
+const bytes = (n) => {
+  const b = Number(n || 0);
+  if (b > 1024 * 1024 * 1024) return (b / 1073741824).toFixed(1) + ' GB';
+  if (b > 1024 * 1024) return (b / 1048576).toFixed(1) + ' MB';
+  if (b > 1024) return (b / 1024).toFixed(0) + ' KB';
+  return b + ' B';
+};
+
+async function load(){
+  $('booting').style.display = '';
+  try {
+    state = await api('/api/state');
+    $('booting').style.display = 'none';
+    $('stateBox').style.display = '';
+    render();
+  } catch (e){ toast('بارگذاری وضعیت ناموفق: ' + e.message, 'bad'); }
+}
+
+function render(){
+  const st = state;
+  const open = st.appOpen;
+  $('stateBadge').className = 'badge ' + (st.available ? (st.total ? 'warn' : 'ok') : 'bad');
+  $('stateBadge').textContent = !st.available ? 'داده‌ای نیست'
+    : st.total ? `${fa(st.total)} ردیف داده` : 'سیستم آک است';
+
+  $('stats').innerHTML = [
+    { n: fa(st.total), l: 'ردیف داده‌ی کاری' },
+    { n: fa(st.backups), l: 'پشتیبان موجود' },
+    { n: bytes(st.dbSize), l: 'اندازه‌ی دیتابیس' },
+  ].map((s) => `<div class="stat"><div class="n">${s.n}</div><div class="l">${s.l}</div></div>`).join('');
+
+  $('paths').innerHTML = [
+    ['دیتابیس', st.database], ['پوشه‌ی داده', st.dataDir],
+    ['وضعیت برنامه', open ? `باز است (پورت ${st.port})` : 'بسته است (حالت آفلاین)'],
+    ['مهر صفر کردن قبلی', st.mark ? `${new Date(st.mark.at).toLocaleString('fa-IR')} · ${st.mark.operator || ''} · ${fa(st.mark.total)} ردیف` : 'ندارد'],
+  ].map(([k, v]) => `<span class="muted">${k}</span><b class="mono small">${String(v ?? '').replace(/[<>]/g, '')}</b>`).join('');
+
+  const rows = Object.entries(st.counts || {}).sort((a, b) => b[1] - a[1]);
+  $('countRows').innerHTML = rows.length
+    ? rows.map(([k, v]) => `<tr><td>${k}</td><td class="mono">${fa(v)}</td></tr>`).join('')
+    : '<tr><td colspan="2" class="muted">هیچ ردیفی نیست — سیستم از قبل آک است.</td></tr>';
+  $('cleanNote').textContent = st.total
+    ? 'اینها همان چیزی است که با تأیید شما پاک می‌شود.'
+    : 'سیستم آک است؛ صفر کردن فقط فهرست‌های پیش‌فرض و کاربر مدیر را بازسازی می‌کند.';
+
+  /* مسیر داده و مسیرهای گشته‌شده — همیشه دیده شود */
+  const searched = Array.isArray(st.searched) ? st.searched : [];
+  $('whereCard').style.display = searched.length || st.dataSource ? '' : 'none';
+  $('whereBox').innerHTML = [
+    `<div class="small">منبع: <b class="mono">${String(st.dataSource || '—')}</b>`
+      + (st.dataDirExplicit ? ' <span class="muted">(دستی تعیین شده)</span>' : ' <span class="muted">(تشخیص خودکار)</span>')
+      + '</div>',
+    st.note ? `<div class="hint">${String(st.note).replace(/[<>]/g, '')}</div>` : '',
+    searched.length
+      ? `<div class="small muted" style="margin-top:8px">جاهایی که ابزار گشته است:</div>`
+        + searched.map((c) => `<div class="mono small" dir="ltr" style="line-height:1.8">`
+          + `${c.hasDb ? '✔' : '·'} ${String(c.dir).replace(/[<>]/g, '')} <span class="muted">[${String(c.source || '').replace(/[<>]/g, '')}]</span></div>`).join('')
+      : '',
+    !st.available
+      ? '<div class="hint" style="margin-top:8px">داده پیدا نشد. اگر در جای دیگری است، ابزار را با '
+        + '<span class="mono" dir="ltr">--data-dir "&lt;مسیر&gt;"</span> اجرا کنید.</div>'
+      : '',
+  ].join('');
+
+  /* نسخه‌ی Node / دسترسی به node:sqlite */
+  const rt = st.runtime || { ok: true };
+  $('runtimeCard').style.display = rt.ok === false ? '' : 'none';
+  $('runtimeBox').innerHTML = rt.ok === false
+    ? `<b>${String(rt.message || '').replace(/[<>]/g, '')}</b>
+       <div class="hint" style="margin-top:6px">
+         نسخه‌ی Node این پنجره: <span class="mono" dir="ltr">${String(rt.node || '?')}</span>.
+         اگر نسخه‌ی نصب‌شده را دارید، <span class="mono" dir="ltr">node.exe</span> همراه آن هست؛
+         ابزار را با <span class="mono" dir="ltr">start.cmd</span> از همان پوشه باز کنید.
+       </div>`
+    : '';
+
+  $('appOpenBox').style.display = open ? '' : 'none';
+  const pre = st.preflight || { ok: true, problems: [] };
+  $('preflightBox').style.display = pre.ok ? 'none' : '';
+  $('preflightList').innerHTML = (pre.problems || []).map((x) => `• ${String(x).replace(/[<>]/g, '')}`).join('<br>');
+  syncBtn();
+}
+
+function syncBtn(){
+  const ack = $('ack').checked;
+  const typed = $('confirm').value.trim() === 'صفر کردن';
+  const passOk = !state.appOpen || $('password').value.length > 0;
+  const rtOk = !state.runtime || state.runtime.ok !== false;
+  const ready = (!state.preflight || state.preflight.ok !== false) && rtOk;
+  /* کلید لازم نیست — فقط تیک، عبارت تأیید، و (در حالت باز) رمز مدیر */
+  $('go').disabled = !(ack && typed && passOk && ready);
+  $('confirmHint').textContent = typed ? '' : 'با حروف فارسی: صفر کردن';
+}
+
+$('password').addEventListener('input', syncBtn);
+
+/**
+ * دو تأیید، به‌ترتیب: پنجره‌ی هشدار (خواندن دقیق) → پنجره‌ی نهایی «آخرین فرصت».
+ * عمداً `confirm()` ساده نیست: باید فهرست چیزی که پاک می‌شود را دوباره نشان
+ * بدهد، چون این تنها لحظه‌ای است که اپراتور می‌تواند جلوی کار را بگیرد.
+ */
+function askThenReset(){
+  const st = state;
+  const rows = Object.entries(st.counts || {}).sort((a, b) => b[1] - a[1]).slice(0, 6)
+    .map(([k, v]) => `${k}: ${fa(v)}`).join(' · ');
+  const first = st.total
+    ? `این کار ${fa(st.total)} ردیف داده را برای همیشه پاک می‌کند.\n\n${rows}\n\nیک پشتیبان خودکار گرفته می‌شود. ادامه؟`
+    : 'سیستم از قبل خالی است. فقط مدیر و فهرست‌های پیش‌فرض بازسازی می‌شوند. ادامه؟';
+  if (!window.confirm(first)) return;
+  if (!window.confirm('آخرین تأیید: بعد از این هیچ راهی برای بازگرداندن از داخل برنامه نیست (فقط فایل پشتیبان).\n\nصفر کنم؟')) return;
+  run();
+}
+
+async function run(){
+  $('go').disabled = true;
+  $('goHint').textContent = 'در حال اجرا…';
+  try {
+    const body = {
+      confirm: $('confirm').value.trim(),
+      acknowledged: $('ack').checked,
+      operator: $('operator').value.trim(),
+      reason: $('reason').value.trim(),
+      username: $('username').value.trim() || 'admin',
+      password: $('password').value,
+    };
+    const r = await api('/api/reset', body);
+    lastReport = r;
+    showResult(r);
+    /*
+     * پیام نتیجه از خودِ هسته می‌آید: یا «صفر شد»، یا «انجام نشد و دیتابیس
+     * دست‌نخورده/برگردانده شد». پیش‌تر همیشه «ok» سبز نشان داده می‌شد حتی
+     * وقتی عملیات ناموفق بود.
+     */
+    toast(r.message, r.ok === false ? 'bad' : 'ok');
+    if (r.ok === false) {
+      const details = (r.problems || []).map((x) => `• ${String(x)}`).join('\n');
+      toast(details ? `جزئیات:\n${details}` : r.message, 'bad');
+    }
+    /* بعد از صفر کردن، فیلدها پاک می‌شوند تا «دو بار زدن» اتفاق نیفتد */
+    if (r.ok !== false) { $('confirm').value = ''; $('ack').checked = false; }
+    await load();
+  } catch (e){
+    toast(e.message, 'bad');
+    $('resultCard').style.display = '';
+    $('resultBadge').className = 'badge bad';
+    $('resultBadge').textContent = 'ناموفق';
+    $('resultBox').innerHTML = `<div class="warnbox">${String(e.message).replace(/[<>]/g, '')}</div>`;
+    $('resultJson').textContent = '';
+  } finally {
+    $('goHint').textContent = '';
+    syncBtn();
+  }
+}
+
+function showResult(r){
+  $('resultCard').style.display = '';
+  /* نتیجه‌ی ناموفق نباید سبز «انجام شد» نشان داده شود */
+  const bad = r && r.ok === false;
+  $('resultBadge').className = 'badge ' + (bad ? 'bad' : 'ok');
+  $('resultBadge').textContent = bad ? (r.rolledBack ? 'انجام نشد — برگردانده شد' : 'انجام نشد') : 'انجام شد';
+  const rows = Object.entries(r.counts || {}).sort((a, b) => b[1] - a[1]);
+  $('resultBox').innerHTML = `
+    <div class="${bad ? 'warnbox' : 'okbox'}"><b>${String(r.message || '').replace(/[<>]/g, '')}</b></div>
+    <div class="kv" style="margin-top:12px">
+      <span class="muted">زمان</span><b class="mono small">${r.at || ''}</b>
+      <span class="muted">اپراتور</span><b>${(r.operator || '—')}</b>
+      <span class="muted">حالت</span><b>${r.mode === 'api' ? 'از راه برنامه (باز بود)' : 'آفلاین'}</b>
+      <span class="muted">پشتیبان</span><b class="mono small">${r.backupFile || '—'}</b>
+      <span class="muted">پشتیبان‌های پاک‌شده</span><b>${fa(r.removedBackups || 0)}</b>
+      <span class="muted">کاربر مدیر</span><b class="mono">${r.admin ? r.admin.username + ' / ' + r.admin.password : 'بدون تغییر'}</b>
+    </div>
+    ${rows.length ? `<table><thead><tr><th>جدول</th><th>ردیف پاک‌شده</th></tr></thead><tbody>
+      ${rows.map(([k, v]) => `<tr><td>${k}</td><td class="mono">${fa(v)}</td></tr>`).join('')}
+    </tbody></table>` : ''}`;
+  $('resultJson').textContent = JSON.stringify(r, null, 2);
+}
+
+function copyReport(){
+  if (!lastReport) { toast('گزارشی نیست', 'bad'); return; }
+  navigator.clipboard.writeText(JSON.stringify(lastReport, null, 2))
+    .then(() => toast('گزارش کاپی شد', 'ok'))
+    .catch(() => toast('کاپی نشد', 'bad'));
+}
+
+load();
+</script>
+</body>
+</html>

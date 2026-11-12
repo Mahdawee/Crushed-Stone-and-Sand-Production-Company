@@ -1,0 +1,113 @@
+import { IconChevron, IconPrint } from '../components/icons';
+import React, { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { api } from '../lib/api';
+import { useSession } from '../lib/session';
+import { DocHeader, DocFooter } from '../components/DocHeader';
+import { money, formatDate } from '../lib/calendar';
+import '../styles/print.css';
+
+export default function PrintSale() {
+  const { id } = useParams();
+  const nav = useNavigate();
+  const { calendar } = useSession();
+  const [s, setS] = useState<any>(null);
+  /*
+   * بارگذاری سند چاپی با حالت خطا.
+   *
+   * باگ: خطا بی‌صدا بلعیده می‌شد و صفحه برای همیشه «در حال آماده‌سازی…»
+   * می‌ماند — کاربر فکر می‌کرد برنامه هنگ کرده. حالا پیام روشن با دکمه‌ی
+   * بازگشت نشان داده می‌شود.
+   */
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    setLoading(true); setErr('');
+    api.get(`/sales/${id}`)
+      .then((r) => { if (alive) setS(r); })
+      .catch((e: any) => { if (alive) setErr(e?.message || 'سند پیدا نشد.'); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [id]);
+  /*
+   * چاپ خودکار — فقط وقتی سند از **مسیر چاپ** باز شود (`?auto=1`). باز کردن
+   * دوباره‌ی سند (رفرش، یا برگشت از «بازگشت») نباید ناگهان پنجره‌ی چاپ باز
+   * کند؛ کاربر فقط می‌خواست سند را ببیند. باگ کاربر: «کلید چاپ ... ظاهری
+   * نامناسب داشت» — پنجره‌ای که خودش باز می‌شد و راه برگشت نداشت.
+   */
+  const autoPrint = new URLSearchParams(window.location.search).get('auto') === '1';
+  const [printed, setPrinted] = useState(false);
+  useEffect(() => {
+    if (!s || printed || !autoPrint) return;
+    const t = setTimeout(() => { setPrinted(true); window.print(); }, 350);
+    return () => clearTimeout(t);
+  }, [s, printed, autoPrint]);
+  if (err) {
+    return (
+      <div style={{ padding: 30, maxWidth: 520 }}>
+        <h3 style={{ marginBottom: 8 }}>سند باز نشد</h3>
+        <p className="small" style={{ color: 'var(--text-2)', marginBottom: 16 }}>{err}</p>
+        <button className="btn" onClick={() => nav(-1)}>بازگشت</button>
+      </div>
+    );
+  }
+  if (loading || !s) return <div style={{ padding: 30 }}>در حال آماده‌سازی…</div>;
+
+  const rows = [
+    ['شماره بل', s.no],
+    ['تاریخ', formatDate(s.date, calendar, true)],
+    ['نام مشتری', s.customerName],
+    ['نام دریور', s.driverName || '—'],
+    ['پلیت موتر', s.truckPlate || '—'],
+    ['مقصد', s.destination || '—'],
+    ['مربوط (شاخه مصرف)', s.contractorName || 'شخصی شرکت'],
+    ['نوع پرداخت', s.paymentType === 'cash' ? 'نقده' : 'باقی'],
+  ];
+
+  return (
+    <>
+      <div className="doc-toolbar">
+        <button className="btn primary" onClick={() => window.print()}><IconPrint size={15} /> چاپ / ذخیره PDF</button>
+        <button className="btn" onClick={() => nav(-1)}><IconChevron dir="start" size={14} /> بازگشت</button>
+      </div>
+      <div className="doc-page">
+        <DocHeader title="بل فروش" meta={rows.slice(0, 2).map(([label, value]) => ({ label, value }))} />
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 24px', fontSize: '.84rem', marginBottom: 14 }}>
+          {rows.slice(2).map(([label, value]) => (
+            <div key={label}><span style={{ color: '#666' }}>{label}: </span><b>{value}</b></div>
+          ))}
+        </div>
+
+        <table className="doc-table">
+          <thead>
+            <tr>
+              <th>نوع مواد</th><th>متراژ (م³)</th><th>قیمت فی متر</th><th>مبلغ مواد</th>
+              <th>کرایه فی متر</th><th>مجموع کرایه</th><th>مجموع</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{s.materialName || '—'}</td>
+              <td className="num">{money(s.volume)}</td>
+              <td className="num">{money(s.unitPrice)}</td>
+              <td className="num">{money(Number(s.volume) * Number(s.unitPrice))}</td>
+              <td className="num">{money(s.freightPerUnit)}</td>
+              <td className="num">{money(s.freightTotal)}</td>
+              <td className="num"><b>{money(s.total)}</b></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div className="doc-total">
+          <span>مجموع قابل پرداخت:</span>
+          <b>{money(s.total)} افغانی</b>
+        </div>
+
+        {s.note ? <div style={{ marginTop: 12, fontSize: '.82rem' }}>توضیحات: {s.note}</div> : null}
+        <DocFooter extra="این بل توسط سیستم محلی شرکت فردای روشن صادر شده است." />
+      </div>
+    </>
+  );
+}
