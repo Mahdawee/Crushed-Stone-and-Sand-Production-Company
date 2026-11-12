@@ -222,6 +222,36 @@ const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDa
     check('یادداشت حفظ شد', sal.note === 'یادداشت معاش', String(sal.note));
   }
 
+  /* ------------------ کارت حساب بعد از ویرایش/حذف ------------------ */
+  console.log('\n— کارت حساب: ویرایش و حذف، مانده را دقیق به‌روز می‌کند —');
+  {
+    await api('POST', '/customers', { name: 'مشتری کارت حساب', openingBalance: 5000 }, token);
+    const st = ((await api('GET', `/customers?page=1&q=${encodeURIComponent('مشتری کارت حساب')}`, undefined, token)).body?.rows || [])[0] || {};
+    const closing = async () => Number((await api('GET', `/customers/${st.id}/statement`, undefined, token)).body?.closing);
+    const listBal = async () => Number((((await api('GET', `/customers?page=1&q=${encodeURIComponent('مشتری کارت حساب')}`, undefined, token)).body?.rows || [])[0] || {}).balance);
+
+    const sl = await api('POST', '/sales', { date: '2026-11-01', customerId: st.id, volume: 10, unitPrice: 1000, paymentType: 'credit' }, token);
+    const rc = await api('POST', '/receipts', { date: '2026-11-02', customerId: st.id, amount: 4000, sourceName: 'باقی داری' }, token);
+    check('بل و رسید ثبت شد', sl.status < 300 && rc.status < 300);
+    const slRow = ((await api('GET', '/sales?page=1', undefined, token)).body?.rows || []).find((r) => r.no === sl.body.no) || {};
+    const rcRow = ((await api('GET', '/receipts?page=1', undefined, token)).body?.rows || []).find((r) => r.no === rc.body.no) || {};
+
+    check('مانده = باقی اولیه + بل − رسید', await closing() === 11000, String(await closing()));
+    await api('PUT', `/sales/${slRow.id}`, { volume: 5 }, token);
+    check('کاهش متراژ بل، مانده را کم می‌کند', await closing() === 6000, String(await closing()));
+    await api('PUT', `/sales/${slRow.id}`, { paymentType: 'cash' }, token);
+    check('بل نقده شد، از بدهی خارج می‌شود', await closing() === 1000, String(await closing()));
+    await api('PUT', `/receipts/${rcRow.id}`, { sourceName: 'امانت' }, token);
+    check('رسید «امانت» از بدهی کم نمی‌کند', await closing() === 5000, String(await closing()));
+    await api('DELETE', `/sales/${slRow.id}`, undefined, token);
+    check('حذف بل، بدهی را برمی‌گرداند به باقی اولیه', await closing() === 5000, String(await closing()));
+    check('مانده در فهرست مشتریان با کارت حساب یکی است', await listBal() === 5000, `${await listBal()} ≠ 5000`);
+    const dashDebtors = ((await api('GET', '/reports/dashboard', undefined, token)).body?.debtors || []);
+    const inDash = dashDebtors.find((c) => Number(c.id) === Number(st.id));
+    check('داشبورد همان مانده را نشان می‌دهد', Boolean(inDash) && Number(inDash.balance) === 5000,
+      JSON.stringify(inDash || {}));
+  }
+
   /* نام خالی هنوز رد می‌شود (محافظ قبلی نشکسته باشد) */
   const bad = await api('PUT', '/company', { name: '   ' }, token);
   check('نام شرکتِ خالی هنوز ۴۰۰ می‌گیرد', bad.status === 400, String(bad.status));

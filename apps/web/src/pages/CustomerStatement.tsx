@@ -35,9 +35,29 @@ export default function CustomerStatement() {
     const raf = requestAnimationFrame(() => window.print());
     return () => cancelAnimationFrame(raf);
   }, [printAll]);
-  useEffect(() => { api.get(`/customers/${id}/statement`).then(setD).catch(() => setD(false)); }, [id]);
+  /*
+   * ── باگ (شکار باگ دور ۳۴): هر خطا «مشتری پیدا نشد» می‌شد ────────────────
+   * این‌جا هر خطایی (قطعی شبکه، ۴۰۱ پس از انقضای نشست، ۵۰۰) به «مشتری پیدا
+   * نشد» تبدیل می‌شد؛ کاربر فکر می‌کرد حساب مشتری پاک شده، در حالی که مشکل
+   * جای دیگری بود. حالا پیام واقعی سرور نشان داده می‌شود و «پیدا نشد» فقط
+   * برای ۴۰۴ است.
+   */
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    setErr('');
+    api.get(`/customers/${id}/statement`).then(setD).catch((e: any) => {
+      if (Number(e?.status) === 404) setD(false);
+      else { setD(false); setErr(String(e?.message || 'حساب مشتری خوانده نشد.')); }
+    });
+  }, [id]);
   if (d === null) return <Spinner />;
-  if (d === false) return <Empty icon={<IconAlert size={16} />} title="مشتری پیدا نشد" action={<Link className="btn" to="/customers">بازگشت</Link>} />;
+  if (d === false) {
+    return (
+      <Empty icon={<IconAlert size={16} />}
+        title={err || 'مشتری پیدا نشد'}
+        action={<Link className="btn" to="/customers">بازگشت</Link>} />
+    );
+  }
 
   const c = d.customer;
 
