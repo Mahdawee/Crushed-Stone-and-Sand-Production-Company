@@ -47,6 +47,7 @@ const NAV: NavGroup[] = [
     items: [
       { to: '/sales', label: 'فروشات', icon: IconTruck },
       { to: '/customers', label: 'مشتریان', icon: IconContact },
+      { to: '/debts', label: 'بدهی و یادآوری', icon: IconCoins },
       { to: '/receipts', label: 'رسیدات', icon: IconReceipt },
       { to: '/expenses', label: 'مصارف', icon: IconWallet },
       { to: '/salaries', label: 'معاشات', icon: IconCoins },
@@ -83,6 +84,7 @@ const PAGE_TITLES: Record<string, { t: string; s: string }> = {
   '/attendance': { t: 'حضور و غیاب', s: 'ورق ماهانه و روزانه' },
   '/sales': { t: 'فروشات', s: 'بل فروش، متراژ، کرایه و پرداخت' },
   '/customers': { t: 'مشتریان', s: 'باقی مانده بدهی و کارت حساب' },
+  '/debts': { t: 'بدهی و یادآوری', s: 'عمر بدهی، پیگیری و متن پیام' },
   '/receipts': { t: 'رسیدات', s: 'دریافت پول از مشتریان' },
   '/expenses': { t: 'مصارف', s: 'افغانی و دالری — نقده / باقی' },
   '/salaries': { t: 'معاشات', s: 'ورق ماهانه معاش' },

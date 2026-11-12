@@ -46,6 +46,7 @@ const EmployeeProfile = lazy(() => import('./pages/EmployeeProfile'));
 const AttendancePage = lazy(() => import('./pages/Attendance'));
 const SalesPage = lazy(() => import('./pages/Sales'));
 const CustomersPage = lazy(() => import('./pages/Customers'));
+const DebtsPage = lazy(() => import('./pages/Debts'));
 const CustomerStatement = lazy(() => import('./pages/CustomerStatement'));
 const ReceiptsPage = lazy(() => import('./pages/Receipts'));
 const ExpensesPage = lazy(() => import('./pages/Expenses'));
@@ -212,6 +213,7 @@ function Shell() {
         <Route path="/sales" element={<SalesPage />} />
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/customers/:id" element={<CustomerStatement />} />
+        <Route path="/debts" element={<DebtsPage />} />
         <Route path="/receipts" element={<ReceiptsPage />} />
         <Route path="/expenses" element={<ExpensesPage />} />
         <Route path="/salaries" element={<SalariesPage />} />
