@@ -120,6 +120,8 @@ export type ResetResult = {
   note?: string;
   /** در صورت خطا وسط کار: آیا دیتابیس از پشتیبان برگردانده شد؟ */
   rolledBack?: boolean;
+  /** اگر برگشت خودکار شکست خورد، علت — برای پیام کاربر و عیب‌یابی */
+  rollbackError?: string;
 };
 
 /** آیا این نصب قبلاً صفر شده است؟ (برای نمایش در ابزار) */
@@ -212,19 +214,65 @@ function backupNow(): string {
  * دوباره می‌نویسد — یعنی بازگردانی بی‌اثر می‌شود (همان تله‌ای که در ابزار
  * آفلاین هم ثبت شده).
  */
-async function restoreBackup(backupFile: string): Promise<boolean> {
-  try {
-    if (!backupFile || !fs.existsSync(backupFile)) return false;
-    const target = databaseFile();
-    await resetDb();
-    fs.copyFileSync(backupFile, target);
-    /* WAL پشتیبان اگر هست همراه می‌آید؛ وگرنه WAL فعلی پاک می‌شود */
-    const walBak = backupFile + '-wal';
-    if (fs.existsSync(walBak)) fs.copyFileSync(walBak, target + '-wal');
-    else fs.rmSync(target + '-wal', { force: true });
-    fs.rmSync(target + '-shm', { force: true });
-    return true;
-  } catch { return false; }
+/*
+ * ── باگ دور ۴۳: برگشت خودکار روی ویندوز کار نمی‌کرد ─────────────────────
+ *
+ * روی runner گیت‌هاب (`windows-latest`) این تست قرمز شد:
+ *
+ *   rolledBack: false · backupExists: true · backupSize: 196608
+ *
+ * یعنی فایل پشتیبان سالم و کامل بود، ولی «بازگرداندن» شکست خورد. ریشه
+ * تفاوت ویندوز با لینوکس است: روی ویندوز، تا وقتی دسته‌فایلی که در حال
+ * خواندن/نوشتن است بسته نشده، کاپی روی آن با `EBUSY`/`EPERM` رد می‌شود.
+ * `await old.$disconnect()` برمی‌گردد **قبل** از این‌که سیستم‌عامل دسته را
+ * واقعاً آزاد کند. روی لینوکس این مشکل وجود ندارد (فایل باز را می‌شود
+ * جای‌نویسی کرد)، و برای همین هیچ‌وقت این‌جا دیده نشد.
+ *
+ * این مهم‌ترین مسیر کد است: اگر «صفر کردن» نیمه‌کاره بماند و برگشت هم
+ * کار نکند، داده‌ی مشتری از دست می‌رود. پس:
+ *   ۱) چند بار با فاصله تلاش می‌شود (ویندوز دسته را غیرهمگام آزاد می‌کند)
+ *   ۲) خطای واقعی نگه داشته و برگردانده می‌شود، نه بلعیده
+ */
+export async function restoreBackup(backupFile: string): Promise<boolean> {
+  const r = await restoreBackupDetailed(backupFile);
+  return r.ok;
+}
+
+/** مثل `restoreBackup` ولی علت شکست را هم می‌دهد (برای پیام کاربر). */
+export async function restoreBackupDetailed(
+  backupFile: string,
+  opts: { tries?: number; waitMs?: number } = {},
+): Promise<{ ok: boolean; error?: string }> {
+  if (!backupFile || !fs.existsSync(backupFile)) {
+    return { ok: false, error: 'فایل پشتیبان پیدا نشد' };
+  }
+  const target = databaseFile();
+  const tries = Math.max(1, Number(opts.tries) || 12);
+  const waitMs = Math.max(0, Number(opts.waitMs) || 250);
+
+  /* اتصال را ببند و کمی صبر کن تا سیستم‌عامل دسته را آزاد کند */
+  try { await resetDb(); } catch { /* پایین‌تر تلاش می‌کنیم */ }
+
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+  let lastErr = '';
+
+  for (let i = 0; i < tries; i++) {
+    try {
+      fs.copyFileSync(backupFile, target);
+      /* WAL پشتیبان اگر هست همراه می‌آید؛ وگرنه WAL فعلی پاک می‌شود */
+      const walBak = backupFile + '-wal';
+      if (fs.existsSync(walBak)) fs.copyFileSync(walBak, target + '-wal');
+      else fs.rmSync(target + '-wal', { force: true });
+      fs.rmSync(target + '-shm', { force: true });
+      return { ok: true };
+    } catch (e: any) {
+      lastErr = `${e?.code || ''} ${e?.message || e}`.trim();
+      const transient = ['EBUSY', 'EPERM', 'EAGAIN', 'EACCES'].includes(String(e?.code || ''));
+      if (!transient) break;           /* خطای دیگر: تلاش دوباره بی‌فایده است */
+      await sleep(waitMs);             /* دسته هنوز باز است — صبر و تلاش دوباره */
+    }
+  }
+  return { ok: false, error: lastErr };
 }
 
 /** پاک‌کردن فایل‌های پشتیبان قبلی — ردّ مشتری قبلی */
@@ -404,10 +452,12 @@ export async function resetSystem(opts: ResetOptions): Promise<ResetResult> {
     }
   }
   } catch (e: any) {
-    const rolled = await restoreBackup(backupFile);
+    const rb = await restoreBackupDetailed(backupFile);
+    const rolled = rb.ok;
     return {
       ok: false,
       rolledBack: rolled,
+      rollbackError: rb.ok ? '' : rb.error,
       backupFile: backupFile ? path.basename(backupFile) : '',
       message: `صفر کردن نیمه‌کاره ماند: ${e?.message || e}\n` +
         (rolled
