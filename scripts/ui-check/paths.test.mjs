@@ -151,8 +151,27 @@ const packagedRoots = rootsFrom(packagedModules, 6);
 check('جست‌وجو شامل node_modules همسایه‌ی کد است (__dirname/../node_modules)',
   packagedRoots.includes(path.join(root, 'src-tauri', 'api', 'node_modules')),
   packagedRoots.slice(0, 3).join(' , '));
-check('باینری در ساختار بسته پیدا می‌شود (بازتولید اصل باگ)',
-  packagedRoots.some((r) => fs.existsSync(path.join(r, '@libsql', 'win32-x64-msvc', 'index.node'))));
+/*
+ * ── اصلاح (دور ۳۷): این بررسی به «محصول ساخت» وابسته بود ────────────────
+ * `src-tauri/api/node_modules` را `build-desktop-api.mjs` می‌سازد؛ در کلون
+ * تازه وجود ندارد. تست قبلاً در ماشین من (که بسته ساخته شده بود) سبز و در
+ * کلون تازه قرمز بود — یعنی «افتادن به وضعیت محلی»، نه سنجش کد. حالا:
+ *   • همیشه: مسیر جست‌وجو شامل `<bundle>/api/node_modules` باشد (اصل باگ)
+ *   • اگر بسته ساخته شده: باینری واقعاً پیدا شود
+ */
+check('مسیر جست‌وجو <bundle>/api/node_modules را دارد (اصل باگ)',
+  packagedRoots.includes(path.join(root, 'src-tauri', 'api', 'node_modules')),
+  packagedRoots.slice(0, 3).join(' , '));
+{
+  const builtApi = fs.existsSync(path.join(root, 'src-tauri', 'api', 'app.js'));
+  const winBinPath = path.join(root, 'src-tauri', 'api', 'node_modules', '@libsql', 'win32-x64-msvc', 'index.node');
+  if (builtApi) {
+    check('باینری در ساختار بسته پیدا می‌شود (بازتولید اصل باگ)',
+      packagedRoots.some((r) => fs.existsSync(path.join(r, '@libsql', 'win32-x64-msvc', 'index.node'))), winBinPath);
+  } else {
+    check('بسته‌ی API هنوز ساخته نشده — بررسی باینری بسته رد شد (desktop:build می‌سازدش)', true);
+  }
+}
 check('جست‌وجو شامل ریشه‌ی repo است', roots.includes(path.join(root, 'node_modules')));
 check('جست‌وجو شامل کنار node.exe است',
   roots.includes(path.join(path.dirname(process.execPath), 'node_modules')));

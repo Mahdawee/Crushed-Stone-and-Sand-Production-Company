@@ -94,8 +94,19 @@ try {
   ok(`تست مهاجرت سبز است ${last ? `— ${last.trim()}` : ''}`);
 } catch (e) {
   const out = String(e.stdout || '') + String(e.stderr || '');
-  const fails = out.split('\n').filter((l) => l.includes('✘')).slice(0, 5);
-  bad('تست مهاجرت یا بسته نشده یا ناکام دارد', fails.join(' | ') || 'npm run test:upgrade را ببینید');
+  /*
+   * ── اصلاح (دور ۳۷): پیام گمراه‌کننده ─────────────────────────────────
+   * در کلون تازه `apps/api/dist` وجود ندارد و تست مهاجرت با پیام روشن
+   * «بسته‌ی API ساخته نشده» می‌ایستد. این‌جا قبلاً همان حالت با «تست مهاجرت
+   * یا بسته نشده یا ناکام دارد» گزارش می‌شد — سه احتمال در یک جمله و هیچ
+   * راه‌حلی. حالا حالت «ساخته نشده» از ناکامی واقعی جدا می‌شود.
+   */
+  if (/بسته‌ی API ساخته نشده/.test(out) || !fs.existsSync(path.join(root, 'apps/api/dist'))) {
+    bad('تست مهاجرت اجرا نشد: بسته‌ی API ساخته نشده', 'اول npm run build -w @farday/api (یا npm run build)');
+  } else {
+    const fails = out.split('\n').filter((l) => l.includes('✘')).slice(0, 5);
+    bad('تست مهاجرت ناکام دارد', fails.join(' | ') || 'npm run test:upgrade را ببینید');
+  }
 }
 
 /* ------------------------------------------------------------- ۴) پشتیبان/بازیابی */
@@ -141,10 +152,23 @@ console.log('\n— ۵) ابزارهای بیرونی در بسته —');
    */
   const isToolPattern = (r) => String(r).startsWith('tools/');
   const stagedNow = fs.existsSync(path.join(root, 'src-tauri', 'tools'));
-  const empty = res.filter((r) => !isToolPattern(r) && glob(String(r)).length === 0);
-  if (empty.length === 0) ok('همه‌ی الگوهای bundle.resources (جز tools) فایل واقعی پیدا می‌کنند');
+  /*
+   * `api/` هم مثل `tools/` یک **محصول ساخت** است: `npm run desktop:build`
+   * آن را با `build-desktop-api.mjs` می‌سازد (کد، prisma و node.exe). در یک
+   * کلون تازه این پوشه وجود ندارد و نباید «ساخت را می‌شکند» گفت — همان‌طور
+   * که Tauri هم قبل از حل الگوها آن را می‌سازد.
+   */
+  const isBuiltPattern = (r) => isToolPattern(r) || String(r).startsWith('api/');
+  const apiBuilt = fs.existsSync(path.join(root, 'src-tauri', 'api', 'app.js'));
+  const empty = res.filter((r) => !isBuiltPattern(r) && glob(String(r)).length === 0);
+  if (empty.length === 0) ok('همه‌ی الگوهای bundle.resources (جز محصول‌های ساخت) فایل واقعی پیدا می‌کنند');
   else bad(`این الگوها هیچ فایلی پیدا نمی‌کنند و ساخت را می‌شکنند: ${empty.join(', ')}`,
     'مسیر را نسبت به پوشه‌ی src-tauri بنویسید');
+  if (apiBuilt) ok('بسته‌ی API ساخته شده و الگوی api/**/* فایل دارد');
+  else warn('بسته‌ی API هنوز ساخته نشده (desktop:build می‌سازدش) — الگوی api/**/* الان خالی است، این طبیعی است');
+  if (!isToolPattern('x') && res.some(isToolPattern) && !stagedNow) {
+    warn('ابزارها هنوز به src-tauri/tools کاپی نشده‌اند (desktop:build انجام می‌دهد)');
+  }
 
   /* الگوی tools باید با آنچه build-desktop کاپی می‌کند هم‌خوان باشد */
   const bdSrc = read('scripts/build-desktop.mjs');
@@ -184,8 +208,12 @@ console.log('\n— ۵) ابزارهای بیرونی در بسته —');
   if (licenseHits.length === 0) ok('ابزار لایسنس (keygen/صدور/باطل) در بسته نیست');
   else bad(`ابزار لایسنس در بسته می‌رود: ${licenseHits.slice(0, 3).join(', ')}`,
     'فقط ../tools/reset-ui/**/* را بگذارید؛ ابزار لایسنس مالِ فروشنده است و روی هر بیلد بدون مُهر به مشتری قدرت صدور می‌دهد');
-  if (matched('api/app.js')) ok('سرویس API در منابع هست');
-  else bad('api در منابع نصب‌کننده نیست', 'bundle.resources را کامل کنید');
+  if (!res.some((r) => String(r).startsWith('api/'))) {
+    bad('api در منابع نصب‌کننده نیست', 'bundle.resources را کامل کنید');
+  } else if (apiBuilt) {
+    if (matched('api/app.js')) ok('سرویس API در منابع هست');
+    else bad('api در منابع هست ولی app.js پیدا نشد', 'build-desktop-api.mjs را بررسی کنید');
+  } else ok('الگوی api در منابع هست (محصول ساخت، پیش از بیلد خالی است)');
   if (matched('public-key/farday-public.b64')) ok('کلید عمومی در منابع هست');
   else bad('public-key در منابع نصب‌کننده نیست', 'bundle.resources را کامل کنید');
 

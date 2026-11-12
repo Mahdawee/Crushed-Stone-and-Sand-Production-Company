@@ -197,7 +197,16 @@ console.log('\n— ابزارهای بیرونی در نصب‌کننده (با�
    * اینجا همان دو چیز بررسی می‌شود: (۱) الگو واقعاً فایل پیدا کند،
    * (۲) چیزی که کاپی می‌شود فقط reset-ui باشد — نه ابزار لایسنس.
    */
-  ok('الگوی API فایل واقعی پیدا می‌کند', matched('api/app.js'), res.join(','));
+  /*
+   * `src-tauri/api` یک **محصول ساخت** است (`desktop:build` می‌سازدش)، پس در
+   * کلون تازه وجود ندارد. بررسیِ «فایل پیدا می‌کند» باید فقط وقتی اجرا شود
+   * که ساخته شده باشد؛ وگرنه تست در ماشین من سبز و در کلون تازه قرمز بود
+   * (دور ۳۷). الگوی درست بودن هم بررسی می‌شود.
+   */
+  ok('الگوی api در فهرست منابع هست', res.some((r) => String(r).startsWith('api/')), res.join(','));
+  const apiBuilt = fs.existsSync(path.join(root, 'src-tauri', 'api', 'app.js'));
+  if (apiBuilt) ok('بسته‌ی API ساخته شده و الگویش فایل پیدا می‌کند', matched('api/app.js'), res.join(','));
+  else ok('بسته‌ی API هنوز ساخته نشده — بررسی فایل رد شد (desktop:build می‌سازدش)', true);
   ok('الگوی کلید عمومی فایل واقعی پیدا می‌کند', matched('public-key/farday-public.b64'), res.join(','));
 
   /* منبع الگو باید خود `src-tauri/tools` باشد، نه مسیر بیرون از آن */
@@ -296,9 +305,23 @@ console.log('\n— مُهر کلید عمومی در بیلد انتشاری (ب
   ok('build-desktop در بیلد انتشاری FD_RELEASE=1 می‌دهد', /FD_RELEASE: '1'/.test(bd));
   ok('بیلد --debug انتشاری حساب نمی‌شود', /wantDebug \? \{ \.\.\.env \}/.test(bd));
 
-  ok('هر دو فایل کلید مُهر در مخزن هست',
-    fs.existsSync(path.join(root, 'src-tauri/seal/public-key.txt'))
-    && fs.existsSync(path.join(root, 'src-tauri/seal/reset-key.txt')));
+  /*
+   * ── اصلاح (دور ۳۷): این بررسی «کاذب» بود ──────────────────────────────
+   * `src-tauri/seal/reset-key.txt` در `.gitignore` است (کلید صفر کردن مثل
+   * کلید خصوصی لایسنس نباید در گیت باشد). پس بررسی «فایل روی دیسک هست» در
+   * ماشین من سبز می‌شد و در یک کلون تازه **قرمز**. تست باید چیزی را بسنجد
+   * که در همه‌جا درست باشد: کلید عمومی (که در گیت است) و «نبودنِ» کلید
+   * خصوصی/کلید صفر کردن در گیت (نه روی دیسک).
+   */
+  ok('کلید عمومی مُهر در گیت هست (لازم برای بیلد)',
+    fs.existsSync(path.join(root, 'src-tauri/seal/public-key.txt')));
+  ok('.gitignore کلید صفر کردن را از گیت دور نگه می‌دارد', (() => {
+    const gi = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
+    return /^reset-key\.txt$/m.test(gi) || /src-tauri\/seal\/reset-key\.txt/m.test(gi);
+  })());
+  /* اگر کلید صفر کردن روی دیسک هست، build.rs باید مُهرش کند؛ نبودنش هم مجاز است */
+  ok('نبودِ کلید صفر کردن، ساخت را نمی‌شکند (build.rs فقط هشدار می‌دهد)',
+    /cargo:warning=.*صفر کردن/.test(buildRs));
 }
 
 console.log(`\n${fail === 0 ? '✅' : '⛔'} ${pass} موفق، ${fail} ناکام\n`);
