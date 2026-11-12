@@ -1,0 +1,85 @@
+# ─────────────────────────────────────────────────────────────────────────
+#  آزمون خودکار — پیشنهاد A2 (دور ۴۰)
+#
+#  چرا ویندوز: سه باگ اخیر **فقط روی ویندوز** ظاهر شدند و هیچ‌کدام روی
+#  لینوکسِ توسعه دیده نشدند:
+#    • `start.cmd` با پایان‌خط LF (cmd.exe می‌شکند)
+#    • الگوی `bundle.resources` که هیچ فایلی پیدا نمی‌کرد (ساخت می‌شکند)
+#    • کامنت بلوکی با دنباله‌ی «ستاره + اسلش» (SyntaxError)
+#  هر سه با یک اجرای `npm test` روی windows-latest قبل از رسیدن به کاربر
+#  گرفته می‌شدند.
+# ─────────────────────────────────────────────────────────────────────────
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # ── ۱) تست کد روی لینوکس (سریع‌ترین بازخورد) ──────────────────────────
+  test-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: نصب وابستگی‌ها
+        run: npm ci || npm install
+      - name: بررسی نحوی (ارزان و کشنده‌ترین)
+        run: npm run test:syntax
+      - name: ساخت بسته‌ی API (پیش‌نیاز تست‌ها)
+        run: npm run build -w @farday/api
+      - name: کل تست‌ها
+        run: npm test
+
+  # ── ۲) تست روی ویندوز: رفتار cmd.exe و مسیرهای ویندوزی ────────────────
+  test-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: پایان‌خط فایل‌های cmd باید CRLF باشد (باگ دور ۳۶)
+        run: |
+          fail=0
+          for f in tools/*/start.cmd; do
+            if ! grep -q $'\r' "$f"; then
+              echo "::error file=$f::پایان‌خط CRLF ندارد — cmd.exe آن را درست نمی‌خواند"
+              fail=1
+            fi
+          done
+          exit $fail
+      - name: نصب وابستگی‌ها
+        run: npm ci || npm install
+      - name: بررسی نحوی
+        run: npm run test:syntax
+      - name: ساخت بسته‌ی API
+        run: npm run build -w @farday/api
+      - name: کل تست‌ها روی ویندوز
+        run: npm test
+      - name: اجراکننده‌های ابزار باید واقعاً بالا بیایند
+        run: npm run test:tool-runners
+
+  # ── ۳) آمادگی انتشار (فقط روی PR) ─────────────────────────────────────
+  release-readiness:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci || npm install
+      - run: npm run build -w @farday/api
+      - name: بررسی آمادگی انتشار
+        run: npm run release:check

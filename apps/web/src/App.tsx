@@ -4,7 +4,6 @@ import { SessionProvider, useSession } from './lib/session';
 import { ToastProvider, Spinner } from './components/ui';
 import Layout from './components/Layout';
 import LoginPage from './pages/Login';
-import Dashboard from './pages/Dashboard';
 import StartupLicense, { BOOT_LICENSE_KEY } from './pages/StartupLicense';
 
 /**
@@ -31,9 +30,16 @@ const RETURN_KEY = 'farday.license.returnTo';
  * یک باندل بود؛ پنجره باید همه را دانلود/تجزیه می‌کرد تا صفحه‌ی ورود باز شود.
  * روی لپ‌تاپ قدیمی این یعنی چند ثانیه پنجره‌ی خالی.
  *
- * حالا هر صفحه فقط وقتی باز شود بارگذاری می‌شود (`lazy` + `Suspense`). داشبورد
- * و ورود در باندل اصلی می‌مانند تا اولین صفحه فوری بیاید.
+ * حالا هر صفحه فقط وقتی باز شود بارگذاری می‌شود (`lazy` + `Suspense`).
+ *
+ * ── اصلاح دور ۴۰ ────────────────────────────────────────────────────────
+ * داشبورد **eager** مانده بود و چون `recharts` را import می‌کند، همان
+ * ۴۱۳KB نمودار در باندل اصلی می‌نشست و روی **هر** باز شدن برنامه دانلود و
+ * تجزیه می‌شد — دقیقاً همان چیزی که این تفکیک می‌خواست جلویش را بگیرد.
+ * حالا داشبورد هم `lazy` است. صفحه‌ی ورود و لایسنس عمداً eager می‌مانند،
+ * چون اولین چیزی هستند که کاربر باید ببیند (و هیچ‌کدام recharts ندارند).
  */
+const Dashboard = lazy(() => import('./pages/Dashboard'));
 const CompanyPage = lazy(() => import('./pages/Company'));
 const EmployeesPage = lazy(() => import('./pages/Employees'));
 const EmployeeProfile = lazy(() => import('./pages/EmployeeProfile'));
@@ -194,7 +200,7 @@ function Shell() {
       <Route path="/print/sale/:id" element={<PrintSale />} />
       <Route path="/print/salary/:id" element={<PrintSalary />} />
       <Route element={<Guard><Layout /></Guard>}>
-        <Route index element={<Dashboard />} />
+        <Route index element={<Suspense fallback={<Spinner />}><Dashboard /></Suspense>} />
         <Route path="/company" element={<CompanyPage />} />
         <Route path="/employees" element={<EmployeesPage />} />
         <Route path="/employees/:id" element={<EmployeeProfile />} />

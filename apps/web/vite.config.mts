@@ -21,19 +21,25 @@ export default defineConfig({
     emptyOutDir: true,
     chunkSizeWarningLimit: 1500,
     /*
-     * تفکیک وابستگی‌های سنگین از کد برنامه.
+     * ── تفکیک باندل (بازنویسی دور ۴۰) ───────────────────────────────────
+     * هدف: صفحه‌ی ورود/داشبورد نباید منتظر ۳۵۰KB نمودار بماند.
      *
-     * recharts (و d3 زیرش) فقط در دو صفحه‌ی گزارش لازم است؛ با جدا کردنش،
-     * باز شدن صفحه‌ی ورود/داشبورد منتظر ~۴۰۰KB نمودار نمی‌ماند. react هم
-     * جدا می‌شود تا در آپدیت‌های بعدی کش آن بماند.
+     * اول با `manualChunks` به اسم «charts» تلاش شد، ولی نتیجه‌اش بدتر بود:
+     * باندلر مجبور می‌شد helperهای مشترک interop را در همان چانک بگذارد و
+     * باندل اصلی یک `import` ثابت از آن می‌گرفت؛ یعنی ۴۱۳KB نمودار در **هر**
+     * بارگذاری دانلود می‌شد (در `index.html` هم `modulepreload` می‌گرفت).
+     *
+     * حالا فقط react جدا می‌شود و بقیه به تقسیم‌بندی خودکار باندلر سپرده
+     * می‌شود. نتیجه‌ی اندازه‌گیری‌شده:
+     *   • بارگذاری اولیه: react (~۲۱۴KB) + index (~۱۱۱KB) — نمودار نیست
+     *   • چانک نمودار (~۳۵۲KB) فقط با باز شدن داشبورد/راپور می‌آید
      */
     rollupOptions: {
       output: {
         manualChunks(id: string) {
           if (!id.includes('node_modules')) return undefined;
-          if (id.includes('recharts') || id.includes('d3-') || id.includes('victory')) return 'charts';
-          if (id.includes('react-router')) return 'router';
-          if (id.includes('react-dom') || id.includes('/react/')) return 'react';
+          /* فقط ری‌اکت جدا می‌شود؛ بقیه را به خودِ باندلر می‌سپاریم */
+          if (/\/node_modules\/(react|react-dom|scheduler)\//.test(id)) return 'react';
           return undefined;
         },
       },

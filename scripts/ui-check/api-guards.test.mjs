@@ -145,7 +145,17 @@ ok('نرخ اضافه‌کاری در محاسبه معاش واقعاً اعم�
 const appTsx = fs.readFileSync(path.join(root, 'apps/web/src/App.tsx'), 'utf8');
 ok('صفحه‌ها lazy بارگذاری می‌شوند (باندل اولیه سبک)',
   /lazy\(\(\) => import/.test(appTsx) && /Suspense/.test(appTsx));
-ok('recharts در چانک جداگانه است', /'charts'/.test(fs.readFileSync(path.join(root, 'apps/web/vite.config.mts'), 'utf8')));
+/*
+ * ── بازنویسی (دور ۴۰) ────────────────────────────────────────────────────
+ * این بررسی قبلاً می‌گفت «اسم 'charts' در vite.config هست» و همین را دلیل
+ * جدا بودن نمودار می‌گرفت. ولی چانکِ به‌اسم‌charts عملاً helperهای **مشترک** را
+ * هم برد و باندل اصلی یک import ثابت از آن گرفت — یعنی ۴۱۳KB نمودار در هر
+ * بارگذاری دانلود می‌شد. اسم چانک معیار درستی نیست؛ **مسیر بحرانی** معیار
+ * است و آن در `scripts/ui-check/bundle-weight.test.mjs` روی باندل ساخته‌شده
+ * سنجیده می‌شود. این‌جا فقط سورس بررسی می‌شود: داشبورد نباید eager باشد.
+ */
+ok('داشبورد lazy بارگذاری می‌شود (recharts در باندل اولیه نباشد)',
+  /const Dashboard = lazy\(/.test(fs.readFileSync(path.join(root, 'apps/web/src/App.tsx'), 'utf8')));
 
 console.log('\n— محافظ حذف کارمند (پاک‌شدن خاموش سابقه‌ی حضور) —');
 const emp = fs.readFileSync(path.join(modDir, 'employees.controller.ts'), 'utf8');
