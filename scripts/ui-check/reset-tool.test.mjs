@@ -278,7 +278,30 @@ for (const f of ['tools/license/start.cmd', 'tools/license/start.sh', 'tools/res
     check(`  ${path.basename(f)} پایان‌خط CRLF دارد`, buf.includes(Buffer.from('\r\n')));
     check(`  ${path.basename(f)} کوتیشن تودرتو/تأخیر حدسی ندارد`, !/timeout \/t/.test(body));
   } else {
-    check(`  ${path.basename(f)} اجراپذیر و bash است`, /^#!.*bash/.test(body) && (fs.statSync(full).mode & 0o111) !== 0);
+    /*
+     * ── باگ دور ۴۳: بیت اجرا روی ویندوز وجود ندارد ──────────────────────
+     * این بررسی روی `windows-latest` قرمز بود: فایل‌سیستم ویندوز بیت
+     * `+x` پازیکس ندارد، پس `mode & 0o111` همیشه صفر است — حتی وقتی
+     * گیت خودش `100755` ذخیره کرده و فایل روی لینوکس اجراپذیر است.
+     *
+     * آنچه واقعاً اهمیت دارد این است که **در مخزن** اجراپذیر ذخیره شده
+     * باشد؛ در checkout ویندوز این ویژگی اصلاً معنا ندارد (و `start.sh`
+     * هم آن‌جا استفاده نمی‌شود). پس روی ویندوز همان بررسی گیت کافی است.
+     */
+    check(`  ${path.basename(f)} شبانگ bash دارد`, /^#!.*bash/.test(body));
+    const gitMode = (() => {
+      try {
+        return execFileSync('git', ['ls-files', '-s', f], { cwd: root, encoding: 'utf8' }).trim().split(' ')[0] || '';
+      } catch { return ''; }
+    })();
+    if (process.platform === 'win32') {
+      check(`  ${path.basename(f)} در مخزن اجراپذیر ذخیره شده (ویندوز بیت +x ندارد)`,
+        gitMode === '' || gitMode === '100755', gitMode || 'git نیست');
+    } else {
+      check(`  ${path.basename(f)} در مخزن اجراپذیر ذخیره شده و روی دیسک هم اجراپذیر است`,
+        gitMode === '100755' && (fs.statSync(full).mode & 0o111) !== 0,
+        `git=${gitMode} mode=${(fs.statSync(full).mode & 0o777).toString(8)}`);
+    }
     check(`  ${path.basename(f)} سرور را exec می‌کند`, /exec .*server\.mjs/.test(body));
     /* باگ: مرورگر در شل هم باز می‌شد → دو بار / صفحه‌ی خطا */
     check(`  ${path.basename(f)} خودش مرورگر باز نمی‌کند (کار سرور است)`,
