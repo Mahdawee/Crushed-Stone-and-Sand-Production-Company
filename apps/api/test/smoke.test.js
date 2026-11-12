@@ -212,6 +212,26 @@ async function main() {
     });
     check('تاریخ شمسی با اسلش پذیرفته می‌شود', saleShamsi.status === 201 || saleShamsi.body.ok === true, JSON.stringify(saleShamsi.body));
 
+    /*
+     * ── باگ (شکار باگ دور ۳۴): سالِ شمسی با خط تیره / میلادی با اسلش ────────
+     * `2026/11/10` در حالت شمسی «سال ۲۰۲۶ هجری» خوانده می‌شد و در دیتابیس
+     * `2648-01-30` می‌نشست (۶۲۱ سال جلو، بی‌هیچ خطایی)، و `1405-08-19`
+     * میلادی خوانده می‌شد (سال ۱۴۰۵ میلادی). هر دو سند را از فهرست ماه و
+     * راپورها بیرون می‌انداختند. حالا سال تعیین‌کننده است، نه جداکننده.
+     */
+    const saleSlash = await api('POST', '/sales', {
+      date: '2026/11/10', customerId: customerId, volume: 1, unitPrice: 1000, paymentType: 'cash',
+    });
+    check('تاریخ میلادی با اسلش هم همان ۲۰۲۶-۱۱-۱۰ ذخیره می‌شود', /^S-1405-/.test(String(saleSlash.body.no)), String(saleSlash.body.no));
+    const saleDash = await api('POST', '/sales', {
+      date: '1405-08-19', customerId: customerId, volume: 1, unitPrice: 1000, paymentType: 'cash',
+    });
+    check('تاریخ شمسی با خط تیره هم همان ۲۰۲۶-۱۱-۱۰ ذخیره می‌شود', /^S-1405-/.test(String(saleDash.body.no)), String(saleDash.body.no));
+    const slashList = await api('GET', '/sales?from=2026-11-10&to=2026-11-10');
+    check('هر سه شکل تاریخ در بازه‌ی همان روز دیده می‌شوند', slashList.body.total >= 3, `total=${slashList.body.total}`);
+    const dashList = await api('GET', '/sales?from=1405-08-19&to=1405-08-19');
+    check('بازه با تاریخ شمسیِ خط‌تیره هم همان روز را می‌دهد', dashList.body.total >= 3, `total=${dashList.body.total}`);
+
     const isoList = await api('GET', '/sales?from=2026-11-10&to=2026-11-10');
     check('فیلتر بازه با تاریخ ISO نتیجه می‌دهد', isoList.body.total >= 1, `total=${isoList.body.total}`);
     check('فیلتر بازه یک روز را برمی‌گرداند', isoList.body.rows.every((r) => r.date === '2026-11-10'));

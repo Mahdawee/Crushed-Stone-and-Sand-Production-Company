@@ -207,6 +207,19 @@ export function parseUserDate(input: string, mode: CalendarMode): string {
 
   // already Gregorian ISO (what the UI sends)
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    /*
+     * ── باگ (شکار باگ دور ۳۴) ────────────────────────────────────────────
+     * «YYYY-MM-DD» همیشه میلادی خوانده می‌شد. کسی که تاریخ شمسی را با
+     * خط تیره تایپ کند (`۱۴۰۵-۰۸-۱۹` — همان چیزی که کیبورد و کپی/پیست
+     * می‌سازد) سندی با تاریخ **سال ۱۴۰۵ میلادی** ثبت می‌کرد: نه خطا، نه
+     * هشدار؛ سند از فهرست ماه و راپورها بیرون می‌افتاد.
+     * UI همیشه ISO میلادی می‌فرستد (۲۰۲۶…)، پس سالِ ۱۰۰۰–۱۷۰۰ در این
+     * قالب قطعاً شمسی است و شمسی خوانده می‌شود.
+     */
+    const y0 = Number(raw.slice(0, 4));
+    if (y0 >= 1000 && y0 <= 1700 && jalaali.isValidJalaaliDate(y0, Number(raw.slice(5, 7)), Number(raw.slice(8, 10)))) {
+      return fromCalendar(y0, Number(raw.slice(5, 7)), Number(raw.slice(8, 10)), 'jalali');
+    }
     if (!isValidISO(raw)) throw new Error('تاریخ میلادی درست نیست.');
     return raw;
   }
@@ -215,13 +228,34 @@ export function parseUserDate(input: string, mode: CalendarMode): string {
   if (!m) throw new Error('تاریخ درست نیست. نمونه درست: ۱۴۰۵/۰۸/۱۹');
   const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
 
-  if (mode === 'jalali') {
+  /*
+   * ── باگ (شکار باگ دور ۳۴): سالِ میلادی با تقویم شمسی، ۶۲۱ سال جابه‌جا ────
+   *
+   * `2026/11/10` (یا `۱۴۰۵-۰۸-۱۹` با خط تیره) در حالت شمسی به‌عنوان «سال
+   * ۲۰۲۶ هجری شمسی» خوانده می‌شد و در دیتابیس `2648-01-30` می‌نشست. نه
+   * خطایی، نه هشداری: بل در فهرست همان ماه دیده نمی‌شد و در راپور ماهانه
+   * جایی نمی‌افتاد. همین طور `۱۴۰۵-۰۸-۱۹` در حالت میلادی → `1405-08-19`
+   * (سال ۱۴۰۵ میلادی).
+   *
+   * حالا سال از روی **محدوده** تشخیص داده می‌شود، نه فقط جداکننده:
+   *   • ۱۰۰۰ تا ۱۷۰۰ ← سال شمسی (شمسی امروز ۱۴۰۴ است و تا ۱۷۰۰ نمی‌رسد)
+   *   • ۱۷۰۰ تا ۲۲۰۰ ← سال میلادی
+   * فقط اگر سال در هیچ‌کدام نبود، تقویم انتخاب‌شده تصمیم می‌گیرد (رفتار قبلی).
+   */
+  const looksJalali = y >= 1000 && y <= 1700;
+  const looksGregorian = y >= 1700 && y <= 2200;
+  const readJalali = () => {
     if (!jalaali.isValidJalaaliDate(y, mo, d)) throw new Error('تاریخ شمسی درست نیست.');
     return fromCalendar(y, mo, d, 'jalali');
-  }
-  const candidate = iso(y, mo, d);
-  if (!isValidISO(candidate)) throw new Error('تاریخ میلادی درست نیست.');
-  return candidate;
+  };
+  const readGregorian = () => {
+    const candidate = iso(y, mo, d);
+    if (!isValidISO(candidate)) throw new Error('تاریخ میلادی درست نیست.');
+    return candidate;
+  };
+  if (looksJalali && !looksGregorian) return readJalali();
+  if (looksGregorian) return readGregorian();
+  return mode === 'jalali' ? readJalali() : readGregorian();
 }
 
 /** Gregorian ISO → the "YYYY-MM-DD" / "YYYY/MM/DD" shape of the active calendar. */
