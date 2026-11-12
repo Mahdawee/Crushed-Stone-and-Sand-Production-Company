@@ -365,8 +365,18 @@ export default function SettingsPage() {
                 <dt>پایان اعتبار</dt>
                 <dd>
                   {license.endLabel || '—'}
+                  {/*
+                    ── باگ (شکار باگ دور ۳۴): «۰ روز مانده» یعنی امروز آخرین روز ──
+                    `daysLeft` شماره‌ی روزها را می‌دهد؛ صفر یعنی لایسنس **تا پایان
+                    امروز** معتبر است، نه اینکه منقضی شده. نوشتن «۰ روز مانده»
+                    کاربر را وادار می‌کرد فکر کند وقت تمام شده.
+                  */}
                   {typeof license.daysLeft === 'number' ? (
-                    <span className="small muted"> ({license.daysLeft} روز مانده)</span>
+                    <span className="small muted">
+                      {' '}({license.daysLeft > 0
+                        ? `${license.daysLeft} روز مانده`
+                        : license.daysLeft === 0 ? 'امروز آخرین روز' : 'منقضی شده'})
+                    </span>
                   ) : null}
                 </dd>
               </dl>

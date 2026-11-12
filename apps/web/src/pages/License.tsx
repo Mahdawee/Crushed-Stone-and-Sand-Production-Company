@@ -172,7 +172,11 @@ export default function LicensePage({ onBack, canContinue, onHelp }: {
               <InlineStat label="پایان" value={st.endLabel || (st.end ? st.end : 'بدون انقضا')} />
               <InlineStat
                 label="روزهای باقی‌مانده"
-                value={daysLeft === null || daysLeft === undefined ? '—' : String(daysLeft)}
+                /* ۰ = امروز آخرین روز، نه «منقضی» (شکار باگ دور ۳۴) */
+                value={daysLeft === null || daysLeft === undefined ? '—'
+                  : Number(daysLeft) === 0 ? 'امروز آخرین روز'
+                  : Number(daysLeft) < 0 ? 'منقضی شده'
+                  : String(daysLeft)}
                 tone={typeof daysLeft === 'number' && daysLeft <= 7 ? 'warn' : undefined}
               />
             </div>
