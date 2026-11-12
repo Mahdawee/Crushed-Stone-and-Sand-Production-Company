@@ -13,6 +13,18 @@ export default function Dashboard() {
   const { calendar } = useSession();
   const [d, setD] = useState<any>(null);
   const [err, setErr] = useState('');
+  /*
+   * ── نخستین اجرا (پیشنهاد D2، دور ۴۰) ────────────────────────────────
+   * کاربر تازه‌نصب هیچ راهنمایی نداشت: داشبورد پر از صفر بود و معلوم نبود
+   * اول چه کاری باید بکند. این کارت فقط وقتی می‌آید که **واقعاً** چیزی در
+   * سیستم نیست، و یک بار برای همیشه بسته می‌شود.
+   *
+   * شرط «خالی بودن» عمداً سخت‌گیرانه است: اگر حتی یک بل یا یک مشتریِ
+   * واقعی وجود داشته باشد، این کارت نمی‌آید — وگرنه روی سیستم در حال کار
+   * مشتری، راهنمای تازه‌نصب جلوی چشم می‌ماند و بی‌اعتباری می‌سازد.
+   */
+  const WELCOME_KEY = 'farday.welcome.dismissed';
+  const [welcomeOff, setWelcomeOff] = useState(() => localStorage.getItem(WELCOME_KEY) === '1');
 
   useEffect(() => {
     api.get('/reports/dashboard').then(setD).catch((e) => setErr(e.message));
@@ -22,8 +34,75 @@ export default function Dashboard() {
   if (!d) return <Spinner />;
 
   const t = d.today;
+  /*
+   * «خالی» یعنی هیچ سند و هیچ مشتریِ واقعی. مشتری گذری (`walkIn`) عمداً
+   * شمرده نمی‌شود چون سرور آن را خودکار می‌سازد و همیشه وجود دارد.
+   */
+  const counts = d.counts || {};
+  const isEmpty =
+    Number(counts.employees || 0) === 0 &&
+    Number(counts.customers || 0) <= 1 &&
+    !(d.recentSales && d.recentSales.length);
+  const showWelcome = isEmpty && !welcomeOff;
+
+  /* بستن دائمی — یک بار، برای همیشه (روی همین دستگاه) */
+  const dismissWelcome = () => {
+    try { localStorage.setItem(WELCOME_KEY, '1'); } catch { /* حالت خصوصی */ }
+    setWelcomeOff(true);
+  };
+
   return (
     <div className="col" style={{ gap: 16 }}>
+      {showWelcome ? (
+        <div className="card no-print welcome-card">
+          <div className="card-h">
+            <IconCheck size={16} />
+            <h3>خوش آمدید — سه قدم تا شروع</h3>
+            <div style={{ flex: 1 }} />
+            <button type="button" className="btn sm ghost" onClick={dismissWelcome}>بستن</button>
+          </div>
+          <div className="card-b">
+            <p className="small muted" style={{ lineHeight: 2, marginBottom: 12 }}>
+              سیستم نصب شد و آماده است. برای اینکه راپورها و حساب مشتری‌ها درست کار کنند،
+              این سه کار را به ترتیب انجام دهید:
+            </p>
+            <div className="welcome-steps">
+              <div className="welcome-step">
+                <span className="welcome-num">۱</span>
+                <div>
+                  <b>مشخصات شرکت</b>
+                  <div className="small muted">نام، آدرس و مدیر مالی — این‌ها روی سر بل و راپور چاپ می‌شوند.</div>
+                  <Link className="btn sm" to="/company" style={{ marginTop: 6 }}>تنظیم شرکت</Link>
+                </div>
+              </div>
+              <div className="welcome-step">
+                <span className="welcome-num">۲</span>
+                <div>
+                  <b>مواد و مشتری‌ها</b>
+                  <div className="small muted">فهرست مواد (کرش، جغل، ریگ…) و مشتری‌ها را وارد کنید.</div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                    <Link className="btn sm" to="/lookups">فهرست مواد</Link>
+                    <Link className="btn sm" to="/customers">مشتری‌ها</Link>
+                  </div>
+                </div>
+              </div>
+              <div className="welcome-step">
+                <span className="welcome-num">۳</span>
+                <div>
+                  <b>اولین بل فروش</b>
+                  <div className="small muted">بعد از این، داشبورد خودش پر می‌شود.</div>
+                  <Link className="btn primary sm" to="/sales?new=1" style={{ marginTop: 6 }}>ثبت بل</Link>
+                </div>
+              </div>
+            </div>
+            <p className="small muted" style={{ marginTop: 12, lineHeight: 2 }}>
+              وضعیت سلامت سیستم را هر وقت خواستید در <Link to="/settings">تنظیمات ← درباره و بررسی سلامت</Link> ببینید.
+              {' '}راهنمای کامل نصب و پشتیبان‌گیری در فایل HELP داخل پوشه‌ی برنامه است.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
       <div className="card no-print">
         <div className="list-head">
           <IconCash size={17} />

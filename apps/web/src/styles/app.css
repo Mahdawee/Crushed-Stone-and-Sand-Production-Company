@@ -1411,3 +1411,14 @@ html[data-theme='dark'] .lic-strip.tone-info { color: #8ff0e2; }
   color: var(--text-3); font-size: .72rem;
 }
 .topbar-search { margin-inline-end: 4px; }
+
+/* --------------------------- نخستین اجرا (D2) ------------------------ */
+.welcome-steps { display: grid; gap: 12px; }
+.welcome-step { display: flex; gap: 12px; align-items: flex-start; }
+.welcome-num {
+  flex: 0 0 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center; font-weight: 700; font-size: .9rem;
+  background: var(--info-soft); color: var(--info);
+}
+.welcome-step b { font-size: .92rem; }
+.welcome-step .small { line-height: 1.9; }

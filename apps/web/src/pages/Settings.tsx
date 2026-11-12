@@ -35,11 +35,34 @@ export default function SettingsPage() {
   const [pw, setPw] = useState({ currentPassword: '', newPassword: '' });
 
   useEffect(() => { setS(settings); }, [settings]);
-  useEffect(() => {
-    api.get('/system/health').then(setHealth).catch(() => {});
-    api.get('/system/info').then(setInfo).catch(() => {});
-    api.get('/system/upgrade/status').then(setUpg).catch(() => {});
+
+  /*
+   * ── بررسی سلامت (پیشنهاد D2، دور ۴۰) ─────────────────────────────────
+   * یک تابع مستقل، چون دکمه‌ی «بررسی دوباره» هم لازم است: اگر کاربر فضای
+   * دیسک را آزاد کرد، باید بتواند بدون بستن برنامه نتیجه را ببیند.
+   *
+   * `checking` وضعیت دکمه است — بدون آن، کاربر فکر می‌کند کلیکش کار نکرده.
+   */
+  const [checking, setChecking] = useState(false);
+  const loadInfo = React.useCallback(async () => {
+    setChecking(true);
+    try {
+      const [h, i, u] = await Promise.all([
+        api.get('/system/health').catch(() => null),
+        api.get('/system/info').catch(() => null),
+        api.get('/system/upgrade/status').catch(() => null),
+      ]);
+      /* فقط نتیجه‌ی موفق جای قبلی را می‌گیرد؛ یک خطای لحظه‌ای نباید
+         اطلاعات سالم روی صفحه را پاک کند */
+      if (h) setHealth(h);
+      if (i) setInfo(i);
+      if (u) setUpg(u);
+    } finally {
+      setChecking(false);
+    }
   }, []);
+
+  useEffect(() => { void loadInfo(); }, [loadInfo]);
 
   const save = async () => {
     setBusy(true);
@@ -388,6 +411,15 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/*
+        ── «درباره و بررسی سلامت» (پیشنهاد D2، دور ۴۰) ─────────────────────
+        کاربری که تازه نصب کرده، هیچ راهی نداشت بفهمد «همه‌چیز درست است یا نه»
+        بدون اینکه تنظیمات را باز کند و بداند کدام ردیف مهم است. این کارت
+        همه‌ی بررسی‌ها را به یک جمله‌ی روشن تبدیل می‌کند: سالم است یا نه، و اگر
+        نه، چه کاری کند.
+      */}
+      <AboutCard info={info} onRefresh={loadInfo} />
+
       <div className="card">
         <div className="card-h"><h3>کارکرد کاملاً محلی</h3></div>
         <div className="card-b">
@@ -396,6 +428,119 @@ export default function SettingsPage() {
             و هیچ CDN یا سرویس بیرونی استفاده نمی‌شود. برای انتقال معلومات به کمپیوتر دیگر از بخش «پشتیبان‌گیری» استفاده کنید.
           </p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * کارت «درباره و بررسی سلامت» — پیشنهاد D2، دور ۴۰.
+ *
+ * ── چرا این کارت ─────────────────────────────────────────────────────────
+ * برنامه‌ی نصب‌شده ابزار `doctor` ندارد (آن ابزار پیش‌نیازهای **ساخت** را
+ * می‌سنجد: Rust، MSVC — روی کمپیوتر مشتری وجود ندارند و نباید هم باشند).
+ * چیزی که مشتری لازم دارد این است: «آیا برنامه سالم است؟ اگر نه، چه کنم؟»
+ *
+ * ── تصمیم‌ها ─────────────────────────────────────────────────────────────
+ * • هیچ‌وقت «سالم» نمی‌گوید مگر همه‌ی بررسی‌ها واقعاً آمده باشند. نبودِ
+ *   پاسخ = «نامعلوم»، نه «سالم» — همان اشتباهی که در `verify-bundle` هم
+ *   عمداً مرتکب نمی‌شویم.
+ * • مشکل‌ها **اول** می‌آیند. کاربر دنبال مشکل می‌گردد، نه دنبال تأیید.
+ * • هر مشکل یک جمله‌ی «چه کار کنم» دارد، نه یک پیام فنی.
+ */
+function AboutCard({ info, onRefresh }: { info: any; onRefresh: () => Promise<void> | void }) {
+  const [busy, setBusy] = React.useState(false);
+  const rt = info?.runtime;
+
+  const checks: { label: string; ok: boolean | null; detail: string; fix?: string }[] = [
+    {
+      label: 'فایل دیتابیس',
+      ok: info ? Boolean(info.dbFile) : null,
+      detail: info?.dbFile || 'در حال خواندن…',
+    },
+    {
+      label: 'موتور دیتابیس (SQLite)',
+      ok: rt ? rt.sqlite === 'ok' : null,
+      detail: rt ? (rt.sqlite === 'ok' ? 'درست' : String(rt.sqlite)) : 'در حال خواندن…',
+      fix: 'برنامه را دوباره باز کنید؛ اگر تکرار شد، فایل نصبی را دوباره نصب کنید.',
+    },
+    {
+      label: 'اجازه‌ی نوشتن در پوشه‌ی داده',
+      ok: rt ? Boolean(rt.writableDataDir) : null,
+      detail: rt ? (rt.writableDataDir ? 'دارد' : 'ندارد') : 'در حال خواندن…',
+      fix: 'آنتی‌ویروس یا دسترسی پوشه را بررسی کنید، یا برنامه را به‌عنوان مدیر یک بار باز کنید.',
+    },
+    {
+      label: 'نسخه‌ی برنامه و ساختار داده',
+      ok: info ? true : null,
+      detail: info ? `${info.version || '—'} · ساختار ${info.schemaVersion ?? '—'}` : 'در حال خواندن…',
+    },
+  ];
+
+  const unknown = checks.filter((c) => c.ok === null).length;
+  const bad = checks.filter((c) => c.ok === false);
+  const allOk = unknown === 0 && bad.length === 0;
+
+  const tone = bad.length > 0 ? 'bad' : allOk ? 'ok' : 'warn';
+  const headline =
+    bad.length > 0
+      ? `${bad.length} مورد نیاز به بررسی دارد`
+      : unknown > 0
+        ? 'در حال بررسی…'
+        : 'همه‌چیز سالم است';
+
+  const recheck = async () => {
+    setBusy(true);
+    try { await onRefresh(); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="card">
+      <div className="card-h">
+        <h3>درباره و بررسی سلامت</h3>
+        <div style={{ flex: 1 }} />
+        <span className={`badge ${tone}`}>{headline}</span>
+        <button type="button" className="btn sm" onClick={recheck} disabled={busy}>
+          {busy ? 'در حال بررسی…' : 'بررسی دوباره'}
+        </button>
+      </div>
+      <div className="card-b">
+        <dl className="kv" style={{ marginBottom: 12 }}>
+          <dt>نسخه‌ی برنامه</dt><dd className="mono small" dir="ltr">{info?.version || '—'}</dd>
+          <dt>ساختار داده</dt><dd className="mono small" dir="ltr">{info?.schemaVersion ?? '—'}</dd>
+          <dt>پوشه‌ی داده</dt><dd className="mono small" dir="ltr" style={{ wordBreak: 'break-all' }}>{info?.dataDir || '—'}</dd>
+          <dt>حجم دیتابیس</dt><dd>{info?.dbSize ? `${(Number(info.dbSize) / 1024).toFixed(0)} KB` : '—'}</dd>
+        </dl>
+
+        <Table head={['بررسی', 'نتیجه', 'توضیح']}>
+          {checks.map((c) => (
+            <tr key={c.label}>
+              <td>{c.label}</td>
+              <td>
+                <span className={`badge ${c.ok === null ? 'warn' : c.ok ? 'ok' : 'bad'}`}>
+                  {c.ok === null ? 'نامعلوم' : c.ok ? 'درست' : 'مشکل'}
+                </span>
+              </td>
+              <td className="small">
+                <div className="mono" dir="auto" style={{ wordBreak: 'break-all' }}>{c.detail}</div>
+                {/* «چه کار کنم» فقط برای موردی که واقعاً مشکل دارد */}
+                {c.ok === false && c.fix ? <div className="muted" style={{ marginTop: 4 }}>{c.fix}</div> : null}
+              </td>
+            </tr>
+          ))}
+        </Table>
+
+        {/*
+          «نامعلوم» عمداً از «درست» جدا است. اگر پاسخ سرور نیامده باشد،
+          نوشتن «سالم» یعنی به کاربر دروغ گفتن — و همان چیزی است که باعث
+          می‌شود کاربر بعداً بگوید «برنامه گفت سالم بود ولی کار نمی‌کرد».
+        */}
+        {unknown > 0 ? (
+          <p className="small muted" style={{ marginTop: 10, lineHeight: 2 }}>
+            {unknown} مورد هنوز پاسخ نداده است. اگر بعد از چند ثانیه هم «نامعلوم» ماند،
+            برنامه را یک بار ببندید و دوباره باز کنید.
+          </p>
+        ) : null}
       </div>
     </div>
   );
