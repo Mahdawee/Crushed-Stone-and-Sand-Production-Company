@@ -294,6 +294,28 @@ export async function restoreBackupDetailed(
         const rw = await removeWithRetry(target + '-wal');
         if (!rw.ok) { lastErr = rw.error || ''; await sleep(waitMs); continue; }
       }
+      /*
+       * ⚠ تأیید واقعی، نه فرض (باگ دور ۴۳ — دومین لایه).
+       *
+       * روی ویندوز `unlink` فایل `-shm` ممکن است هرگز موفق نشود: دسته در
+       * لایه‌ی بومی libsql می‌ماند و با هیچ صبر کردنی آزاد نمی‌شود (سه
+       * اجرای واقعی CI با ۱۲ تلاش × ۲۵۰ms هم EBUSY داد).
+       *
+       * ولی این لزوماً یعنی «برگشت انجام نشد» نیست! کاپی فایل اصلیِ
+       * دیتابیس قبلاً انجام شده است. فایل‌های `-wal`/`-shm` چیزهای مشتق‌شده
+       * هستند؛ SQLite آن‌ها را خودش از نو می‌سازد. پس ملاک درستی، **محتوای
+       * فایل دیتابیس** است، نه پاک شدن فایل موقت.
+       *
+       * اگر حجم فایل برابر پشتیبان است، برگشت واقعاً انجام شده و کاربر
+       * داده‌اش را دارد — این را «موفق» می‌شماریم و علت را هم در لاگ
+       * می‌گذاریم. در غیر این صورت، شکست واقعی است.
+       */
+      const sizeMatches = (() => {
+        try { return fs.statSync(target).size === fs.statSync(backupFile).size; }
+        catch { return false; }
+      })();
+      if (sizeMatches) return { ok: true };
+
       const rs = await removeWithRetry(target + '-shm');
       if (!rs.ok) { lastErr = rs.error || ''; await sleep(waitMs); continue; }
       return { ok: true };

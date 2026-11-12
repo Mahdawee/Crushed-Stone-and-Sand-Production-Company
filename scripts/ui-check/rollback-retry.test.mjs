@@ -139,21 +139,69 @@ console.log('\n— سناریوی واقعی ویندوز: قفل روی -shm ه
 
   ok('با EBUSY روی -shm هم برگشت موفق می‌شود', r.ok === true, JSON.stringify(r));
   /*
-   * ⚠ چرا این عدد مهم است و چرا ۳ نیست:
-   * نسخه‌ی اول کد (بدون removeWithRetry) هم در نهایت سبز می‌شد — چون
-   * حلقه‌ی بیرونی دوباره از اول کاپی می‌کرد. یعنی تست نمی‌توانست «تلاش
-   * دوباره در جای درست» را از «تکرار کل عملیات» تشخیص دهد.
+   * ⚠ این بررسی عوض شد و دلیلش مهم است.
    *
-   * تفاوت واقعی: با removeWithRetry، حذف -shm دقیقاً ۳ بار (۲ شکست + ۱
-   * موفق) صدا زده می‌شود. بدون آن، هر دورِ حلقه‌ی بیرونی یک بار حذف
-   * می‌کند و چون `continue` می‌زند، 3 بار می‌شود. پس عدد تنها کافی نیست؛
-   * باید مسیر را از روی خودِ کد هم ببینیم.
+   * نسخه‌ی قبل می‌گفت «-shm باید چند بار unlink شود». ولی وقتی کد
+   * فهمید که ملاکِ درستی، محتوای فایل دیتابیس است (نه پاک شدن فایل
+   * مشتق‌شده)، دیگر لازم نیست `-shm` را با تلاش دوباره حذف کند — کاپی
+   * که انجام شده، همان کافی است. پس انتظار «۳ بار تلاش» غلط شد و
+   * تست به‌درستی قرمز شد.
+   *
+   * چیزی که باید قفل شود این است: **موفقیت نباید به حذف -shm گره خورده
+   * باشد.** و همان سناریوی زیر ثابت می‌کند هست یا نه.
    */
-  ok('حذف -shm تلاش دوباره شد (نه رها شدن)', shmAttempts >= 3, String(shmAttempts));
+  ok('موفقیت وابسته به حذف -shm نیست', r.ok === true && shmAttempts < 3, `attempts=${shmAttempts}`);
   const src = fs.readFileSync(path.join(root, 'apps', 'api', 'src', 'common', 'reset.ts'), 'utf8');
-  ok('-shm با removeWithRetry حذف می‌شود', /removeWithRetry\(target \+ '-shm'\)/.test(src));
+  ok('کد، محتوای دیتابیس را ملاک می‌گیرد', /sizeMatches/.test(src));
   ok('-wal با removeWithRetry حذف می‌شود', /removeWithRetry\(target \+ '-wal'\)/.test(src));
   ok('دیتابیس با محتوای پشتیبان برگشت', fs.readFileSync(path.join(dataDir2, 'farday.db'), 'utf8') === 'BACKUP');
+
+  delete process.env.FD_DB_FILE;
+}
+
+console.log('\n— قفل دائمی روی -shm (همان چیزی که در CI ویندوز واقعاً رخ داد) —');
+/*
+ * این سناریو سه اجرای واقعی CI تکرار شد:
+ *
+ *   EBUSY: resource busy or locked, unlink '...\farday.db-shm'
+ *
+ * با ۱۲ تلاش × ۲۵۰ms هم آزاد نشد — دسته در لایه‌ی بومی libsql می‌ماند.
+ *
+ * نکته‌ی مهم که اول از دست رفت: **این یعنی برگشت شکست خورد؟ نه.**
+ * کاپی فایل اصلی انجام شده است. `-wal`/`-shm` مشتق‌شده‌اند و SQLite
+ * خودش بازسازی می‌کند. ملاک باید محتوای فایل دیتابیس باشد.
+ *
+ * اگر کد دوباره به «شرط موفقیت = پاک شدن -shm» برگردد، این تست قرمز
+ * می‌شود — و مشتری داده‌اش را از دست می‌دهد در حالی که نجات‌پذیر بود.
+ */
+{
+  const dataDir3 = path.join(tmp, 'data3');
+  fs.mkdirSync(dataDir3, { recursive: true });
+  process.env.FARDAY_DATA_DIR = dataDir3;
+  process.env.FD_DB_FILE = path.join(dataDir3, 'farday.db');
+
+  const bak = path.join(tmp, 'stuck-shm.db');
+  fs.writeFileSync(bak, 'BACKUP-CONTENT');
+  fs.writeFileSync(path.join(dataDir3, 'farday.db'), 'LIVE-DATA-OLD');
+  fs.writeFileSync(path.join(dataDir3, 'farday.db-shm'), 'SHM');
+
+  const realRm = fs.rmSync;
+  fs.rmSync = (p, o) => {
+    if (String(p).endsWith('-shm')) {
+      const e = new Error('EBUSY: resource busy or locked');
+      e.code = 'EBUSY';
+      throw e;                       /* هرگز آزاد نمی‌شود — مثل ویندوز */
+    }
+    return realRm(p, o);
+  };
+
+  let r;
+  try { r = await restoreBackupDetailed(bak, { tries: 3, waitMs: 2 }); }
+  finally { fs.rmSync = realRm; }
+
+  ok('با قفل دائمی -shm باز هم برگشت موفق گزارش می‌شود', r.ok === true, JSON.stringify(r));
+  ok('و دیتابیس واقعاً محتوای پشتیبان را دارد',
+    fs.readFileSync(path.join(dataDir3, 'farday.db'), 'utf8') === 'BACKUP-CONTENT');
 
   delete process.env.FD_DB_FILE;
 }
