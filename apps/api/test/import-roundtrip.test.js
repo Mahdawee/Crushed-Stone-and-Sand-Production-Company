@@ -113,6 +113,21 @@ setTimeout(() => { console.error('\n⛔ زمان تمام شد.'); kill(); finis
     JSON.stringify(back && { phone: back.phone, b: back.openingBalance }));
   check('برای کدِ اشغال‌شده هشدار صریح داده شد', (real.body.warnings || []).some((w) => w.includes('کد')), JSON.stringify(real.body.warnings));
 
+  /*
+   * ── باگ (شکار باگ دور ۳۴): ستونِ نبوده، مقدار ستون دیگر را می‌گرفت ────────
+   * فایل با سرستون ولی بدون «پلیت موتر»: ستون پلیت از ایندکس ۳ خوانده
+   * می‌شد، یعنی **باقی اولیه** داخل پلیت می‌نشست و بدهی صفر می‌شد.
+   */
+  console.log('\n— فایل با سرستون ولی ستون کم —');
+  const partial = [
+    'نام مشتری/شرکت,شماره تماس,باقی اولیه,شخص رابط',
+    'شرکت گاما,0700000,900,کریم',
+  ].join('\n');
+  const pg = await api('POST', '/import/customers', { csv: partial, dryRun: true }, token);
+  const pgRow = (pg.body.preview || [])[0] || {};
+  check('پیش‌نمایش: باقی اولیه در ستون درست خوانده شد', pgRow.openingBalance === 900, String(pgRow.openingBalance));
+  check('پیش‌نمایش: پلیت موتر خالی است (نه ۹۰۰)', String(pgRow.truckPlate || '') === '', String(pgRow.truckPlate));
+
   console.log('\n— فایل نامرتب: ستون جابه‌جا، tab، عدد فارسی —');
   const shuffled = [
     'توضیحات\tباقی اولیه\tنام مشتری/شرکت\tشماره تماس',
