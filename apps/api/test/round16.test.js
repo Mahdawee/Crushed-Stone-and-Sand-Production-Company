@@ -196,7 +196,12 @@ function makeLicense({ privateKey, payload }) {
 
   /* --- خروجی: همان چیزی که ۴۰۴ می‌داد --- */
   const typesRes = await api('GET', '/export/types', undefined, token);
-  check('GET /api/export/types کار می‌کند', typesRes.status === 200, String(typesRes.status));
+  check('GET /api/export/types کار می‌کند', typesRes.status === 200, `${typesRes.status} ${JSON.stringify(typesRes.body).slice(0, 800)}`);
+  if (typesRes.status !== 200) {
+    child.kill();
+    console.log('\n⛔ ادامهٔ آزمون ممکن نیست؛ پاسخ فعال‌سازی: ' + JSON.stringify(act.body).slice(0, 800));
+    return finish();
+  }
   check('هفت نوع خروجی هست', (typesRes.body?.items || []).length >= 7, String((typesRes.body?.items || []).length));
 
   const csvOut = await api('GET', '/export?type=customers&format=csv', undefined, token, true);
