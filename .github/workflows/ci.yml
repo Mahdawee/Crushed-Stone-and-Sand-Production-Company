@@ -22,7 +22,10 @@ jobs:
   test-linux:
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 — باگ دور ۴۳: کلون کم‌عمق، تست تاریخچه را قرمز می‌کرد
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -77,7 +80,10 @@ jobs:
       run:
         shell: bash
     steps:
+      # fetch-depth: 0 — باگ دور ۴۳: کلون کم‌عمق، تست تاریخچه را قرمز می‌کرد
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -132,7 +138,10 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 — باگ دور ۴۳: کلون کم‌عمق، تست تاریخچه را قرمز می‌کرد
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

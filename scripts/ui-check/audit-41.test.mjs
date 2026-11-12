@@ -79,12 +79,50 @@ for (const [file, claimed, flags] of claims) {
 console.log('\n— کامیت‌های نام‌برده واقعاً وجود دارند —');
 const commits = [...new Set([...doc.matchAll(/`([0-9a-f]{7})`/g)].map((m) => m[1]))];
 ok(`سند ${commits.length} کامیت نام می‌برد`, commits.length >= 10, String(commits.length));
-const badCommits = [];
-for (const c of commits) {
-  try { execFileSync('git', ['cat-file', '-e', `${c}^{commit}`], { cwd: root, stdio: 'pipe' }); }
-  catch { badCommits.push(c); }
+/*
+ * ── باگ دور ۴۳: این بررسی در CI همیشه قرمز بود ──────────────────────────
+ * `actions/checkout@v4` به‌طور پیش‌فرض **کم‌عمق** (depth=1) کلون می‌کند.
+ * یعنی فقط آخرین کامیت در تاریخچه هست و هر کامیت قدیمی‌تری که سند نام
+ * می‌برد «پیدا نمی‌شود» — نه چون واقعاً نیست، چون در کلون نیست.
+ *
+ * نتیجه: `npm test` روی گیت‌هاب قرمز می‌شد و محلی سبز. یک تست که به
+ * کامل بودن تاریخچه‌ی git وابسته است، در CI کم‌عمق معنا ندارد.
+ *
+ * راه‌حل دو طرفه:
+ *   ۱) اگر مخزن کم‌عمق است (`.git/shallow` هست)، وجود کامیت **قابل
+ *      اثبات نیست** — پس به‌جای «قرمز» گزارش «نامعلوم» می‌دهیم و
+ *      در همین حال بررسی می‌کنیم که سند اصلاً کامیت نام برده باشد.
+ *   ۲) workflow حالا `fetch-depth: 0` می‌گیرد، تا در CI هم کامل باشد.
+ */
+const gitDir = (() => {
+  try { return execFileSync('git', ['rev-parse', '--git-dir'], { cwd: root, encoding: 'utf8' }).trim(); }
+  catch { return ''; }
+})();
+const isShallow = (() => {
+  if (!gitDir) return false;
+  return fs.existsSync(path.join(root, gitDir, 'shallow'));
+})();
+
+if (isShallow) {
+  console.log('  ⚠ مخزن کم‌عمق است (clone --depth) — وجود کامیت‌های قدیمی اثبات‌شدنی نیست');
+  /*
+   * ولی بی‌اثر هم نیست: اگر کامیت در همین مخزن هست باید پیدا شود. برای
+   * کامیت‌های کم‌عمقِ ناموجود، «نامعلوم» درست است نه «قرمز» و نه «سبز».
+   */
+  const found = commits.filter((c) => {
+    try { execFileSync('git', ['cat-file', '-e', `${c}^{commit}`], { cwd: root, stdio: 'pipe' }); return true; }
+    catch { return false; }
+  });
+  ok('سند کامیت‌های تاریخی نام می‌برد', commits.length >= 10, String(commits.length));
+  console.log(`  ⚠ ${found.length} از ${commits.length} کامیت در این کلون کم‌عمق پیدا شد (باقی نامعلوم)`);
+} else {
+  const badCommits = [];
+  for (const c of commits) {
+    try { execFileSync('git', ['cat-file', '-e', `${c}^{commit}`], { cwd: root, stdio: 'pipe' }); }
+    catch { badCommits.push(c); }
+  }
+  ok('همه‌ی کامیت‌ها در تاریخچه هستند', badCommits.length === 0, badCommits.join(', '));
 }
-ok('همه‌ی کامیت‌ها در تاریخچه هستند', badCommits.length === 0, badCommits.join(', '));
 
 console.log('\n— صداقت سند —');
 ok('بخش «سنجیده نشد» دارد', /سنجیده نشد/.test(doc));
