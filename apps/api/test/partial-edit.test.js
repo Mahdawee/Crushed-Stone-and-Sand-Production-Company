@@ -252,6 +252,43 @@ const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDa
       JSON.stringify(inDash || {}));
   }
 
+  /* ------------------ حضور و غیاب → ورق معاش ------------------ */
+  console.log('\n— حضور: «غایب» کردن روز، اضافه‌کاری همان روز را پول نمی‌دهد —');
+  {
+    await api('POST', '/employees', { name: 'کارمند اضافه‌کاری', baseSalary: 26000, hireDate: '2025-01-01' }, token);
+    const emp = ((await api('GET', '/employees', undefined, token)).body?.rows || []).find((e) => e.name === 'کارمند اضافه‌کاری') || {};
+    const day = '2026-11-05';
+    await api('POST', '/attendance/bulk', {
+      items: [{ employeeId: emp.id, date: day, status: 'present', checkIn: '08:00', checkOut: '17:00', overtime: 5 }],
+    }, token);
+    const sheetOf = async () => ((await api('GET', '/salaries/sheet?month=1405/08', undefined, token)).body?.rows || [])
+      .find((r) => r.employeeId === emp.id) || {};
+    const before = await sheetOf();
+    check('روز حاضر با ۵ ساعت اضافه‌کاری، مبلغ اضافه‌کاری دارد', Number(before.overtimeAmount) > 0, String(before.overtimeAmount));
+    /*
+     * «ثبت گروهی» وضعیت را عوض می‌کند ولی ساعت ورود/خروج/اضافه‌کاری را
+     * پاک نمی‌کند؛ پس باید مبلغ اضافه‌کاری هم صفر شود.
+     */
+    await api('POST', '/attendance/mark-day', { date: day, employeeIds: [emp.id], status: 'absent' }, token);
+    const after = await sheetOf();
+    check('روز غایب، مبلغ اضافه‌کاری ندارد (قبلاً پول می‌گرفت)', Number(after.overtimeAmount) === 0, String(after.overtimeAmount));
+    check('و روز غایب در شمارش جریمه هست', Number(after.deductionDays) >= 1, String(after.deductionDays));
+  }
+
+  console.log('\n— معاش: استخدام وسط ماه، معاش کامل نمی‌گیرد —');
+  {
+    await api('POST', '/employees', { name: 'استخدام وسط ماه', baseSalary: 26000, hireDate: '2026-11-11' }, token);
+    await api('POST', '/employees', { name: 'استخدام کامل ماه', baseSalary: 26000, hireDate: '2025-01-01' }, token);
+    await api('POST', '/employees', { name: 'استخدام بعد از ماه', baseSalary: 26000, hireDate: '2027-03-01' }, token);
+    const rows = (await api('GET', '/salaries/sheet?month=1405/08', undefined, token)).body?.rows || [];
+    const mid = rows.find((r) => r.name === 'استخدام وسط ماه') || {};
+    const full = rows.find((r) => r.name === 'استخدام کامل ماه') || {};
+    const later = rows.find((r) => r.name === 'استخدام بعد از ماه');
+    check('کارمند تمام‌ماه معاش کامل دارد', Number(full.baseSalary) === 26000, String(full.baseSalary));
+    check('کارمند وسط ماه معاش متناسب دارد', Number(mid.baseSalary) > 0 && Number(mid.baseSalary) < 26000, String(mid.baseSalary));
+    check('کارمند بعد از ماه در ورق نیست', !later);
+  }
+
   /* نام خالی هنوز رد می‌شود (محافظ قبلی نشکسته باشد) */
   const bad = await api('PUT', '/company', { name: '   ' }, token);
   check('نام شرکتِ خالی هنوز ۴۰۰ می‌گیرد', bad.status === 400, String(bad.status));

@@ -12,6 +12,24 @@ import {
   startOfMonth, startOfYear, endOfMonth, todayISO as today,
 } from '../common/calendar';
 
+/**
+ * معاش متناسب با روزهای واقعی ماه (برای استخدام وسط ماه).
+ *
+ * اگر تاریخ استخدام داخل ماه نباشد یا خالی باشد، همان مبلغ کامل.
+ */
+function prorateBase(base: number, hireDate: string, bucket: { start: string; end: string }): number {
+  const n = Number(base) || 0;
+  const hire = String(hireDate || '').slice(0, 10);
+  if (!hire || hire <= bucket.start) return n;
+  if (hire > bucket.end) return 0;
+  const day = (iso: string) => Date.parse(iso + 'T00:00:00Z');
+  const totalDays = Math.round((day(bucket.end) - day(bucket.start)) / 86400000) + 1;
+  const workedDays = Math.round((day(bucket.end) - day(hire)) / 86400000) + 1;
+  if (!(totalDays > 0) || !(workedDays > 0)) return n;
+  if (workedDays >= totalDays) return n;
+  return Math.round(n * (workedDays / totalDays) * 100) / 100;
+}
+
 @UseGuards(AuthGuard)
 @Controller('salaries')
 export class SalariesController {
@@ -47,11 +65,24 @@ export class SalariesController {
     );
     const byEmp: Record<number, any> = {};
     for (const e of existing) byEmp[e.employeeId] = e;
-    // overtime hours from the attendance sheet of the same month
+    /*
+     * ساعت اضافه‌کاری از ورق حضور همان ماه.
+     *
+     * ── باگ (شکار باگ دور ۳۴) ──────────────────────────────────────────────
+     * ستون «اضافه کاری» در ورق حضور **برای هر وضعیتی** نوشته می‌شود (گروهی
+     * «غایب» زدن، ساعت ورود/خروج و اضافه‌کاری را پاک نمی‌کند). این کوئری هم
+     * بی‌قید همه‌ی ردیف‌ها را جمع می‌زد؛ سندی که اول «حاضر با ۵ ساعت
+     * اضافه‌کاری» بود و بعد «غایب» شد، ۵ ساعت اضافه‌کاری می‌گرفت — یعنی
+     * کارمند غایب، مبلغ اضافه‌کاری پول می‌گرفت.
+     * حالا فقط وضعیت‌های «حاضر»/«رخصت» (روزهایی که واقعاً آمده) شمرده می‌شوند.
+     */
+    const OT_STATUSES = ['present', 'leave'];
     const ot: any[] = await db().$queryRawUnsafe(
       `SELECT "employeeId", COALESCE(SUM("overtime"),0) as hours FROM "Attendance"
-        WHERE "date">=? AND "date"<=? AND COALESCE("deletedAt",'')='' GROUP BY "employeeId"`,
-      bucket.start, bucket.end,
+        WHERE "date">=? AND "date"<=? AND COALESCE("deletedAt",'')=''
+          AND "status" IN (${OT_STATUSES.map(() => '?').join(',')})
+        GROUP BY "employeeId"`,
+      bucket.start, bucket.end, ...OT_STATUSES,
     );
     const absences: any[] = await db().$queryRawUnsafe(
       `SELECT "employeeId", COUNT(*) as c FROM "Attendance"
@@ -80,7 +111,20 @@ export class SalariesController {
     const WORK_DAYS = 26; // روزهای کاری مبنا برای نرخ ساعت (قابل تغییر در آینده)
     const rows = employees.map((e) => {
       const ex = byEmp[e.id];
-      const base = Number(ex?.baseSalary ?? e.baseSalary) || 0;
+      /*
+       * ── باگ (شکار باگ دور ۳۴): استخدام وسط ماه، معاش کامل می‌گرفت ─────────
+       * کارمندی که ۲۵ ماه استخدام می‌شد، در ورق همان ماه معاش **کامل** داشت
+       * (فقط فیلترشده بود که اصلاً نیاید). حالا اگر تاریخ استخدام داخل ماه
+       * باشد، معاش متناسب روزهای حضور در ماه کم می‌شود.
+       */
+      const fullBase = Number(ex?.baseSalary ?? e.baseSalary) || 0;
+      const prorated = prorateBase(fullBase, e.hireDate, bucket);
+      /*
+       * اگر سند این ماه **نسبت به استخدام** مبلغ بیشتری داشته باشد (سندی که
+       * قبل از این اصلاح با معاش کامل ذخیره شده)، همان متناسب نشان داده
+       * می‌شود؛ وگرنه ویرایش کوچکی در ورق، معاش کامل را دوباره برمی‌گرداند.
+       */
+      const base = ex ? Math.min(Number(ex.baseSalary) || 0, prorated) : prorated;
       const otHours = otMap[e.id] || 0;
       const hourly = base / (WORK_DAYS * hours);
       const otAmount = ex?.overtimeAmount ?? Math.round(otHours * hourly * otRate * 100) / 100;
