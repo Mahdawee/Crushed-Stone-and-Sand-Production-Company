@@ -30,7 +30,7 @@
     ],
     "resources": [
       "api/**/*",
-      "tools/**/*",
+      "tools/reset-ui/**/*",
       "public-key/**/*"
     ],
     "windows": {

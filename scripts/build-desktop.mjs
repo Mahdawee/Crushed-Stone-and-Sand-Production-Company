@@ -363,17 +363,25 @@ function runStreamed(cmd, cmdArgs, opts) {
 async function runTauriBuild(env) {
   const cliJs = path.join(root, 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
   const tauriArgs = ['build'];
+  /*
+   * `FD_RELEASE=1` یعنی «این بیلد به مشتری می‌رود». `src-tauri/build.rs` با
+   * همین متغیر، ساختِ بدون مُهر (یعنی بدون کلید عمومی داخل باینری) را متوقف
+   * می‌کند — وگرنه کلید عمومی فقط یک فایل متنی کنار برنامه می‌شد و با
+   * عوض کردنش هر کسی می‌توانست لایسنس خودش را بسازد. بیلد `--debug` هم
+   * انتشاری نیست.
+   */
+  const buildEnv = wantDebug ? { ...env } : { ...env, FD_RELEASE: '1' };
   if (wantDebug) tauriArgs.push('--debug');
   if (wantOffline) tauriArgs.push('--', '--offline');
 
   if (isFile(cliJs)) {
     /* مستقیم با node — نه npx، نه shell؛ هیچ امکان دانلود/شکنندگی نقل‌قول */
     console.log(`  ${C.dim(`اجرا: node node_modules/@tauri-apps/cli/tauri.js ${tauriArgs.join(' ')}`)}`);
-    return runStreamed(process.execPath, [cliJs, ...tauriArgs], { cwd: root, env });
+    return runStreamed(process.execPath, [cliJs, ...tauriArgs], { cwd: root, env: buildEnv });
   }
   /* نسخه‌ی قدیمی نصب: همان npx با --no-install */
   console.log(`  ${C.warn('⚠ نصب محلی Tauri CLI پیدا نشد — با npx --no-install تلاش می‌شود')}`);
-  return runStreamed('npx', ['--no-install', 'tauri', ...tauriArgs], { cwd: root, env, shell: isWin });
+  return runStreamed('npx', ['--no-install', 'tauri', ...tauriArgs], { cwd: root, env: buildEnv, shell: isWin });
 }
 
 /* ------------------------------------------------------------------ */

@@ -110,11 +110,12 @@ else bad('docs/UPGRADE.md نیست', 'قاعده‌های مهاجرت را مس
 
 /* ------------------------------------------------- ۵) همراهی ابزارهای بیرونی */
 /*
- * ── باگ (شکار باگ دور ۳۴) ────────────────────────────────────────────────
- * نصب‌کننده هیچ‌وقت `tools/` را همراه نمی‌برد: روی کمپیوتر مشتری نه ابزار
- * «صفر کردن» بود و نه ابزار لایسنس — در حالی که هر دو دقیقاً همان‌جا لازم
- * می‌شوند (تحویل سیستم به مشتری بعدی / صدور لایسنس). این بررسی جلوی تکرارش
- * را می‌گیرد؛ بدون آن، «آماده برای انتشار» می‌گفتیم و بسته ناقص می‌رفت.
+ * ── باگ (شکار باگ دور ۳۵) ────────────────────────────────────────────────
+ * دور ۳۴ الگوی «tools/همه‌چیز» را در بسته گذاشت تا ابزار «صفر کردن» روی کمپیوتر
+ * مشتری باشد؛ ولی همین الگو ابزار **لایسنس** را هم با خودش برد: keygen، صدور
+ * و باطل‌کردن. روی بیلدی که مُهر نخورده (`build.rs` فقط هشدار می‌دهد) همین
+ * ابزار به مشتری اجازه می‌داد با کلید عمومیِ جای‌گزین‌شده لایسنس جعلی بسازد.
+ * ابزار لایسنس مالِ فروشنده است، نه مشتری. حالا برعکسش بررسی می‌شود.
  */
 console.log('\n— ۵) ابزارهای بیرونی در بسته —');
 {
@@ -122,19 +123,42 @@ console.log('\n— ۵) ابزارهای بیرونی در بسته —');
   try { conf = JSON.parse(read('src-tauri/tauri.conf.json') || '{}'); } catch { /* پایین گزارش می‌شود */ }
   const res = conf?.bundle?.resources || [];
   const has = (prefix) => res.some((r) => String(r).startsWith(prefix));
-  if (has('tools/')) ok('پوشه‌ی tools در منابع نصب‌کننده هست');
-  else bad('tools در bundle.resources نیست — ابزار صفر کردن/لایسنس روی نصب مشتری وجود ندارد',
-    'در src-tauri/tauri.conf.json مقدار "tools/**/*" را به bundle.resources اضافه کنید');
+  if (has('tools/reset-ui/')) ok('ابزار «صفر کردن» در منابع نصب‌کننده هست (روی نصب مشتری لازم است)');
+  else bad('tools/reset-ui در bundle.resources نیست — ابزار صفر کردن روی نصب مشتری وجود ندارد',
+    'در src-tauri/tauri.conf.json مقدار "tools/reset-ui/**/*" را به bundle.resources اضافه کنید');
+  /* هر الگویی که کل tools را بردارد، ابزار لایسنس را هم می‌برد */
+  const licenseRes = res.filter((r) => String(r).startsWith('tools/license/') || /^tools\/(\*|\*\*\/\*)$/.test(String(r)));
+  if (licenseRes.length === 0) ok('ابزار لایسنس (keygen/صدور/باطل) در بسته نیست');
+  else bad(`ابزار لایسنس در بسته می‌رود: ${licenseRes.join(', ')}`,
+    'فقط tools/reset-ui/**/* را بگذارید؛ ابزار لایسنس مالِ فروشنده است و روی هر بیلد بدون مُهر به مشتری قدرت صدور می‌دهد');
   if (has('api/') && has('public-key/')) ok('سرویس API و کلید عمومی هم در منابع هستند');
   else bad('api یا public-key در منابع نصب‌کننده نیست', 'bundle.resources را کامل کنید');
 
   for (const f of ['tools/reset-ui/server.mjs', 'tools/reset-ui/reset-core.mjs', 'tools/reset-ui/ui.html',
-    'tools/reset-ui/start.cmd', 'tools/license/server.mjs', 'tools/license/start.cmd']) {
+    'tools/reset-ui/start.cmd', 'tools/reset-ui/start.sh', 'tools/license/server.mjs']) {
     if (fs.existsSync(path.join(root, f))) ok(`فایل ${f} موجود است`);
-    else bad(`${f} پیدا نشد`, 'ابزار بیرونی ناقص است؛ بسته‌ی نصب نمی‌تواند صفر کردن/لایسنس را اجرا کند');
+    else bad(`${f} پیدا نشد`, 'ابزار بیرونی ناقص است');
+  }
+  if (fs.existsSync(path.join(root, 'tools/license/server.mjs')) && licenseRes.length === 0)
+    ok('ابزار لایسنس برای فروشنده در مخزن می‌ماند، ولی به بسته نمی‌رود');
+  /* کلید خصوصی و دفترچه‌ی صدور هرگز نباید در بسته‌ی مشتری باشد */
+  /*
+   * کلید امضا روی دیسک فروشنده هست (و باید باشد)؛ پس «نبودِ فایل» معیار
+   * درستی نیست. معیار این است که هیچ الگوی resources آن را نگیرد — وگرنه
+   * کلید امضا داخل .msi مشتری می‌رود و هر کسی می‌تواند لایسنس صادر کند.
+   */
+  const covers = (file) => res.some((r) => {
+    const pat = String(r).replace(/^\.\//, '');
+    const dir = pat.replace(/\/\*\*\/\*$|\/\*\*$|\/\*$/, '');
+    return file === dir || file.startsWith(`${dir}/`);
+  });
+  for (const f of ['license-keys/private.key', 'license-keys/issued.json', 'src-tauri/api/private.key',
+    'src-tauri/api/issued.json', 'src-tauri/public-key/private.key']) {
+    if (!covers(f)) ok(`${f} زیر هیچ الگوی بسته نیست (کلید امضا فقط پیش فروشنده)`);
+    else bad(`${f} الگوی resources آن را می‌گیرد — کلید امضا نباید به مشتری برسد`, 'الگوی بسته را محدود کنید');
   }
   /* اجراکننده‌ها نباید به «ریشه‌ی مخزن» تکیه کنند — در نصب وجود ندارد */
-  for (const f of ['tools/reset-ui/start.sh', 'tools/license/start.sh']) {
+  for (const f of ['tools/reset-ui/start.sh']) {
     const body = read(f);
     if (!/^cd "\$root"$/m.test(body)) ok(`${f} مستقل از ریشه‌ی مخزن کار می‌کند`);
     else bad(`${f} به ریشه‌ی مخزن cd می‌کند — روی نسخه‌ی نصب‌شده شکست می‌خورد`, 'cd "$here" بگذارید');

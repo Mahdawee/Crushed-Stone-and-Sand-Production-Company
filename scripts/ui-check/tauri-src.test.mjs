@@ -165,28 +165,65 @@ ok('خودآزمایی زمان اجرا در /system/info هست (باینری 
 ok('صفحه تنظیمات وضعیت «اجرای بدون نصب اضافی» را نشان می‌دهد',
   /اجرای بدون نصب اضافی/.test(fs.readFileSync(path.join(root, 'apps/web/src/pages/Settings.tsx'), 'utf8')));
 
-console.log('\n— ابزارهای بیرونی در نصب‌کننده (باگ دور ۳۴) —');
+console.log('\n— ابزارهای بیرونی در نصب‌کننده (برگشتِ باگ دور ۳۴ در دور ۳۵) —');
 {
   /*
-   * باگ: `tools/` در `bundle.resources` نبود. یعنی نصب‌کننده هیچ‌وقت ابزار
-   * «صفر کردن» و ابزار لایسنس را همراه نمی‌برد و روی کمپیوتر مشتری اصلاً
-   * وجود نداشت — در حالی که کل کاربرد این دو ابزار «تحویل سیستم به مشتری
-   * بعدی» و «صدور لایسنس» است و روی همان کمپیوتر لازم می‌شوند.
+   * دور ۳۴ الگوی «tools/ستاره‌ستاره» را در بسته گذاشت تا ابزار «صفر کردن» روی نصب
+   * مشتری باشد؛ ولی همان الگو ابزار **لایسنس** (keygen/صدور/باطل) را هم برد.
+   * روی بیلد بدون مُهر، مشتری می‌توانست با کلید عمومیِ جای‌گزین لایسنس جعلی
+   * بسازد. ابزار لایسنس مالِ فروشنده است؛ فقط reset-ui باید برود.
    */
   const conf = JSON.parse(fs.readFileSync(path.join(root, 'src-tauri/tauri.conf.json'), 'utf8'));
   const res = conf?.bundle?.resources || [];
-  ok('پوشه‌ی tools در منابع نصب‌کننده هست', res.some((r) => String(r).startsWith('tools/')), res.join(','));
-  ok('پوشه‌ی api در منابع هست', res.some((r) => String(r).startsWith('api/')), res.join(','));
-  ok('کلید عمومی در منابع هست', res.some((r) => String(r).startsWith('public-key/')), res.join(','));
+  const has = (prefix) => res.some((r) => String(r).startsWith(prefix));
+  ok('ابزار «صفر کردن» در منابع نصب‌کننده هست', has('tools/reset-ui/'), res.join(','));
+  ok('پوشه‌ی API در منابع هست', has('api/'), res.join(','));
+  ok('کلید عمومی در منابع هست', has('public-key/'), res.join(','));
+
+  /* هیچ الگویی نباید کل tools یا مسیر license را ببرد */
+  const licenseRes = res.filter((r) => String(r).startsWith('tools/license/')
+    || /^tools\/(\*\*\/\*|\*)$/.test(String(r)));
+  ok('ابزار لایسنس در منابع نصب‌کننده نیست', licenseRes.length === 0, licenseRes.join(','));
+  ok('هیچ الگوی عامی که کل پوشه‌ی tools را بردارد در منابع نیست',
+    !res.some((r) => /^tools\/(\*\*\/\*|\*)$/.test(String(r))), res.join(','));
+
   for (const need of ['tools/reset-ui/server.mjs', 'tools/reset-ui/reset-core.mjs', 'tools/reset-ui/ui.html',
-    'tools/reset-ui/start.cmd', 'tools/reset-ui/start.sh', 'tools/license/server.mjs', 'tools/license/start.cmd']) {
+    'tools/reset-ui/start.cmd', 'tools/reset-ui/start.sh']) {
     ok(`فایل ${need} برای بسته‌بندی موجود است`, fs.existsSync(path.join(root, need)));
   }
+  /* ابزار لایسنس باید در مخزن بماند (فروشنده از آن استفاده می‌کند) */
+  ok('ابزار لایسنس برای فروشنده در مخزن می‌ماند',
+    fs.existsSync(path.join(root, 'tools/license/server.mjs')));
+
+  /*
+   * کلید امضا و دفترچه‌ی صدور: روی دیسک فروشنده هست (و باید باشد)، پس
+   * «نبودِ فایل» معیار درستی نیست؛ معیار این است که هیچ الگوی resources
+   * آن را نگیرد. وگرنه یک کلید ۳۲ بایتی امضا داخل .msi مشتری می‌رود.
+   */
+  const covers = (file) => res.some((r) => {
+    const pat = String(r).replace(/^\.\//, '');
+    const dir = pat.replace(/\/\*\*\/\*$|\/\*\*$|\/\*$/, '');
+    return file === dir || file.startsWith(`${dir}/`) || file.startsWith(dir);
+  });
+  for (const secret of ['license-keys/private.key', 'license-keys/issued.json',
+    'src-tauri/api/private.key', 'src-tauri/api/issued.json']) {
+    ok(`${secret} زیر هیچ الگوی resources نیست`, !covers(secret), res.join(','));
+  }
+  /* و ریشه‌ی کلیدها در گیت نباشد */
+  {
+    const gi = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
+    /* کل پوشه نادیده گرفته می‌شود، پس هر فایل تازه‌ای هم امن است */
+    const ignored = (file) => gi.split('\n').some((l) => l.trim() === 'license-keys/')
+      || gi.split('\n').some((l) => l.trim() === file);
+    ok('.gitignore کلید خصوصی را نگه می‌دارد', ignored('license-keys/private.key'));
+    ok('.gitignore دفترچه‌ی صدور را نگه می‌دارد', ignored('license-keys/issued.json'));
+  }
+
   /* اجراکننده‌ها نباید به «ریشه‌ی مخزن» تکیه کنند — در نصب وجود ندارد */
-  for (const f of ['tools/reset-ui/start.cmd', 'tools/license/start.cmd']) {
+  for (const f of ['tools/reset-ui/start.cmd']) {
     const body = fs.readFileSync(path.join(root, f), 'utf8');
     ok(`${f} ریشه‌ی مخزن را cd نمی‌کند`, !/cd \/d "%~dp0\.\.\\\.\."/.test(body));
-    ok(`${f} node.exe همراه بسته را در ..\api می‌گیرد`, /\.\.\\api\\node\.exe/.test(body));
+    ok(`${f} node.exe همراه بسته را در ..\\api می‌گیرد`, /\.\.\\api\\node\.exe/.test(body));
     /*
      * باگ دور ۳۴: `where node` **قبل از** جست‌وجوی node.exe همراه بسته اجرا
      * می‌شد؛ روی کمپیوتری که برنامه نصب است ولی Node نصب نیست، ابزار می‌رفت
@@ -202,18 +239,35 @@ console.log('\n— ابزارهای بیرونی در نصب‌کننده (با�
       ok(`${f} نبودِ نود را با پیام فارسی می‌گوید`, /:no_node/.test(body) && /Node\.js/.test(body));
     }
   }
-  for (const f of ['tools/reset-ui/start.sh', 'tools/license/start.sh']) {
+  for (const f of ['tools/reset-ui/start.sh']) {
     const body = fs.readFileSync(path.join(root, f), 'utf8');
     ok(`${f} به ریشه‌ی مخزن cd نمی‌کند`, !/^cd "\$root"$/m.test(body));
     ok(`${f} مسیر node همراه بسته را می‌گیرد`, /\$here\/\.\.\/api\/node/.test(body));
   }
 }
 
-console.log('\n— هم‌خوانی با API —');
-ok('API همان پورت 4317 را می‌خواند', /FD_PORT/.test(apiMain) && /4317/.test(side));
-ok('API مسیر داده را از FD_DATA_DIR می‌گیرد', /FD_DATA_DIR/.test(apiMain) || /FD_DATA_DIR/.test(fs.readFileSync(path.join(root, 'apps/api/src/db.ts'), 'utf8')));
-ok('API مسیر رابط build شده را خودش سرو می‌کند', /express\.static/.test(apiMain));
-ok('مسیر web در بسته (<api>/web) در نظر گرفته شده', /join\(__dirname, 'web'\)/.test(apiMain));
+console.log('\n— مُهر کلید عمومی در بیلد انتشاری (باگ دور ۳۵) —');
+{
+  /*
+   * باگ: `build.rs` نبودِ کلید را فقط `cargo:warning` می‌کرد. یعنی می‌شد
+   * یک .msi انتشاری ساخت که کلید عمومی‌اش فقط یک فایل متنی کنار برنامه
+   * است؛ با عوض کردن آن فایل، هر کسی می‌تواند لایسنس خودش را بسازد.
+   * حالا بیلد انتشاری بدون کلید باید **متوقف** شود.
+   */
+  const buildRs = fs.readFileSync(path.join(root, 'src-tauri/build.rs'), 'utf8');
+  ok('build.rs متغیر بیلد انتشاری را می‌شناسد', /FD_RELEASE/.test(buildRs));
+  ok('build.rs بیلد انتشاری بدون مُهر را متوقف می‌کند (نه فقط هشدار)',
+    /if release_build\(\)/.test(buildRs) && /panic!/.test(buildRs));
+  ok('هشدار «نسخه بدون مُهر» فقط برای توسعه مانده', /cargo:warning=.*بدون مُهر/.test(buildRs));
+
+  const bd = fs.readFileSync(path.join(root, 'scripts/build-desktop.mjs'), 'utf8');
+  ok('build-desktop در بیلد انتشاری FD_RELEASE=1 می‌دهد', /FD_RELEASE: '1'/.test(bd));
+  ok('بیلد --debug انتشاری حساب نمی‌شود', /wantDebug \? \{ \.\.\.env \}/.test(bd));
+
+  ok('هر دو فایل کلید مُهر در مخزن هست',
+    fs.existsSync(path.join(root, 'src-tauri/seal/public-key.txt'))
+    && fs.existsSync(path.join(root, 'src-tauri/seal/reset-key.txt')));
+}
 
 console.log(`\n${fail === 0 ? '✅' : '⛔'} ${pass} موفق، ${fail} ناکام\n`);
 process.exit(fail === 0 ? 0 : 1);

@@ -9,9 +9,13 @@
 //!   `SEALED_PUBLIC_KEY`: بایت‌های کلید که با یک کلید ثابت XOR شده‌اند
 //!   `SEAL_FINGERPRINT`: SHA-256 کلید خام (برای تشخیص تغییر)
 //!
-//! ساخت بدون این فایل هم ممکن است (توسعه) — آن‌وقت هر دو ثابت خالی‌اند و
-//! برنامه از مسیر فایل استفاده می‌کند. یک `cargo:rerun-if-changed` هم هست تا
-//! با عوض شدن کلید، بیلد دوباره اجرا شود.
+//! ساخت بدون این فایل برای **توسعه** ممکن است — آن‌وقت هر دو ثابت خالی‌اند و
+//! برنامه از مسیر فایل استفاده می‌کند. ولی بیلد «انتشاری» بدون مُهر نباید
+//! ممکن باشد: روی چنین بیلدی، عوض کردن یک فایل متنی کنار برنامه کافی است تا
+//! هر کسی برای خودش لایسنس بسازد. پس اگر متغیر محیطی `FD_RELEASE=1` باشد و
+//! کلید نباشد، بیلد **با خطا می‌ایستد** (`FARDAY_NOSEAL` هم همان کار را
+//! می‌کند، برای وقتی که زنجیره‌ی ساخت متغیر محیطی را رد نمی‌کند). یک
+//! `cargo:rerun-if-changed` هم هست تا با عوض شدن کلید، بیلد دوباره اجرا شود.
 
 use std::env;
 use std::fs;
@@ -82,6 +86,13 @@ fn sha256_hex(data: &[u8]) -> String {
     h.iter().map(|x| format!("{x:08x}")).collect()
 }
 
+/// آیا این یک بیلد انتشاری است؟ (نباید بدون مُهر ساخته شود)
+fn release_build() -> bool {
+    let truthy = |v: &str| matches!(v.trim(), "1" | "true" | "yes" | "on");
+    std::env::var("FD_RELEASE").map(|v| truthy(&v)).unwrap_or(false)
+        || std::env::var("FARDAY_NOSEAL").map(|v| truthy(&v)).unwrap_or(false)
+}
+
 fn main() {
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".into()));
     let key_file = manifest.join("seal").join("public-key.txt");
@@ -118,7 +129,20 @@ fn main() {
     let raw = fs::read_to_string(&key_file).unwrap_or_default();
     let key = raw.trim().as_bytes();
     let (sealed, fingerprint) = if key.is_empty() {
-        println!("cargo:warning=کلید عمومی لایسنس (src-tauri/seal/public-key.txt) نیست — نسخه بدون مُهر ساخته می‌شود (فقط برای توسعه)");
+        if release_build() {
+            /*
+             * بیلد انتشاری بدون مُهر = کلید عمومی فقط یک فایل متنی کنار برنامه
+             * است؛ با عوض کردنش هر کسی می‌تواند لایسنس خودش را بسازد. این
+             * حالت باید ساخت را متوقف کند، نه اینکه فقط هشدار بدهد.
+             */
+            panic!(
+                "بیلد انتشاری بدون مُهر ممکن نیست: {} خالی یا نبود. \
+                 کلید عمومی را از ابزار لایسنس بگیرید و در آن فایل بگذارید \
+                 (یا برای بیلد توسعه FD_RELEASE را تنظیم نکنید).",
+                key_file.display()
+            );
+        }
+        println!("cargo:warning=کلید عمومی لایسنس (src-tauri/seal/public-key.txt) نیست — نسخه بدون مُهر ساخته می‌شود (فقط برای توسعه؛ بیلد انتشاری با آن متوقف می‌شود)");
         (Vec::new(), String::new())
     } else {
         let mut out = Vec::with_capacity(key.len());
