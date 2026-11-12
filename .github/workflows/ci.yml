@@ -48,16 +48,14 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+      # ── باگ دور ۴۳: این مرحله از دور ۴۰ تا امروز **هیچ‌وقت سبز نشد** ──
+      # دلیلش خودِ چک بود، نه فایل‌ها: `grep -q $'\r'` به رفتار grep و به
+      # تبدیل نقل‌قول در bash ویندوز وابسته است. جای این‌که یک ابزار را
+      # حدس بزنیم، با Node می‌خوانیم — Node روی هر دو سیستم یکسان است و
+      # اگر چیزی خراب بود، دقیقاً می‌گوید کدام خط.
       - name: پایان‌خط فایل‌های cmd باید CRLF باشد (باگ دور ۳۶)
-        run: |
-          fail=0
-          for f in tools/*/start.cmd; do
-            if ! grep -q $'\r' "$f"; then
-              echo "::error file=$f::پایان‌خط CRLF ندارد — cmd.exe آن را درست نمی‌خواند"
-              fail=1
-            fi
-          done
-          exit $fail
+        shell: bash
+        run: node scripts/check-cmd-crlf.mjs
       - name: نصب وابستگی‌ها
         run: npm ci || npm install
       - name: بررسی نحوی

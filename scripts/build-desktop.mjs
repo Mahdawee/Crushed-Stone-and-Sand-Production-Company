@@ -117,14 +117,32 @@ function inPath(exe) {
  *
  * فقط فایل‌های لازم کاپی می‌شوند؛ `tools/license` عمداً کاپی **نمی‌شود**
  * (ابزار فروشنده است — دور ۳۵).
+ *
+ * ── باگ دور ۴۳: «ابزار «صفر کردن» بعد از نصب باز نمی‌شود» ────────────────────────
+ * `BUNDLED_TOOLS` فقط `reset-ui` را کاپی می‌کرد، ولی `reset-ui/server.mjs`
+ * این را دارد:
+ *
+ *     import { listenWithFallback, openBrowser } from '../shared/tool-server.mjs';
+ *
+ * بعد از نصب، `tools/shared/` وجود نداشت. نتیجه: پنجره‌ی cmd باز می‌شد،
+ * Node خطای `ERR_MODULE_NOT_FOUND` می‌داد و **پنجره فوراً بسته می‌شد** —
+ * دقیقاً همان چیزی که کاربر دید. روی کمپیوتر توسعه دیده نمی‌شد، چون
+ * `tools/shared/` همان‌جا کنارش هست.
+ *
+ * درس: هر پوشه‌ای که ابزارِ بسته‌شده با `../` صدایش می‌زند باید در همین
+ * فهرست باشد. تست `bundle-deps.test.mjs` این را قفل می‌کند.
  */
 const BUNDLED_TOOLS = ['reset-ui'];
+
+/* ماژول‌های مشترکی که ابزارهای بسته‌شده import می‌کنند.
+ * (پوشه‌ی `tools/shared/` — نه فایل‌هایش، تا افزودن ماژول جدید خودکار بیاید) */
+const BUNDLED_SHARED = ['shared'];
 function stageTools() {
   const src = path.join(root, 'tools');
   const dst = path.join(root, 'src-tauri', 'tools');
   fs.rmSync(dst, { recursive: true, force: true });
   const copied = [];
-  for (const tool of BUNDLED_TOOLS) {
+  for (const tool of [...BUNDLED_TOOLS, ...BUNDLED_SHARED]) {
     const from = path.join(src, tool);
     if (!fs.existsSync(from)) {
       console.log(`  ${C.warn(`⚠ پوشه‌ی tools/${tool} پیدا نشد — از بسته‌بندی رد می‌شود`)}`);
@@ -136,6 +154,40 @@ function stageTools() {
   }
   if (copied.length) {
     console.log(`  ${C.ok(`✔ ابزارهای بیرونی برای بسته آماده شدند: ${copied.join(', ')}`)}`);
+  }
+
+  /*
+   * ── چک وابستگی‌ها (باگ دور ۴۳) ─────────────────────────────────────────
+   * کاپی کردن کافی نیست؛ باید مطمئن شوم هر `import './…'` و `'../…'` در
+   * ابزارهای بسته‌شده، **بعد از کاپی** هم پیدا می‌شود. باگ واقعی همین بود:
+   * `../shared/tool-server.mjs` در بسته نبود و ابزار بعد از نصب فوراً
+   * می‌بست. اگر این چک آن موقع بود، ساخت همان‌جا متوقف می‌شد، نه روی
+   * کمپیوتر مشتری.
+   */
+  const missingDeps = [];
+  const scanToolDeps = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { scanToolDeps(full); continue; }
+      if (!/\.(mjs|js|cjs)$/i.test(entry.name)) continue;
+      const text = fs.readFileSync(full, 'utf8');
+      const re = /(?:import|export)[^'"]*?from\s*['"](\.[^'"]+)['"]|import\s*\(\s*['"](\.[^'"]+)['"]\s*\)/g;
+      let m;
+      while ((m = re.exec(text))) {
+        const spec = m[1] || m[2];
+        const target = path.resolve(path.dirname(full), spec);
+        if (!fs.existsSync(target)) {
+          missingDeps.push(`${path.relative(dst, full)} → ${spec}`);
+        }
+      }
+    }
+  };
+  if (fs.existsSync(dst)) scanToolDeps(dst);
+  if (missingDeps.length) {
+    console.log(`  ${C.bad('⛔ ابزارهای بسته به فایلی وابسته‌اند که داخل بسته نیست:')}`);
+    for (const d of missingDeps) console.log(`     ${d}`);
+    console.log(`     ${C.dim('ابزار بعد از نصب فوراً می‌بندد (ERR_MODULE_NOT_FOUND). فهرست را در BUNDLED_TOOLS/BUNDLED_SHARED کامل کنید.')}`);
+    return false;
   }
   /* چک آخر: هر الگوی منابع باید واقعاً فایل پیدا کند، وگرنه build.rs/Tauri می‌شکند */
   try {
@@ -623,15 +675,74 @@ if (code !== 0) {
   process.exit(code);
 }
 
+/*
+ * ── باگ دور ۴۳: «بیلد آخرین اصلاحات را در خود ندارد» ───────────────────
+ * شرط قبلی فقط **وجود** فایل را می‌سنجید:
+ *
+ *     const needPack = !fs.existsSync(apiEntry) || (isWin && !nodeInBundle);
+ *
+ * یعنی اگر یک بار ساخته شده بود، دفعه‌ی بعد این مرحله **رد می‌شد** — حتی
+ * وقتی کد API یا رابط کاربری تازه عوض شده بود. نتیجه: نصب‌کننده‌ی تازه
+ * همان `app.js` قدیمی و همان `web/` قدیمی را داشت. مشتری نسخه‌ی قبلی را
+ * می‌گرفت و ما فکر می‌کردیم اصلاحات را فرستاده‌ایم.
+ *
+ * حالا **تازگی** مقایسه می‌شود: اگر هر فایل تازه‌تر از بسته‌ی موجود باشد،
+ * دوباره بسته‌بندی می‌شود.
+ */
 const apiEntry = path.join(root, 'src-tauri', 'api', 'app.js');
 const nodeInBundle = path.join(root, 'src-tauri', 'api', 'node.exe');
-const needPack = !fs.existsSync(apiEntry) || (isWin && !fs.existsSync(nodeInBundle));
+
+/** mtime با میلی‌ثوانه؛ NaN اگر فایل نباشد */
+const mtimeOf = (p) => { try { return fs.statSync(p).mtimeMs; } catch { return NaN; } };
+
+/**
+ * جدیدترین mtime در یک درخت — منبع اصلی `apps/api/dist` و `apps/web/dist`.
+ * فقط فایل‌های اجرایی/ساخته‌شده معنی دارند، نه `node_modules`.
+ */
+function newestMtime(dir, skip = ['node_modules', '.git']) {
+  let newest = NaN;
+  const walk = (d) => {
+    let entries;
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (skip.includes(e.name)) continue;
+      const full = path.join(d, e.name);
+      if (e.isDirectory()) { walk(full); continue; }
+      const t = mtimeOf(full);
+      if (!Number.isNaN(t) && !(t <= newest)) newest = t;
+    }
+  };
+  walk(dir);
+  return newest;
+}
+
+/* منابعی که داخل بسته می‌روند */
+const apiDistDir = path.join(root, 'apps', 'api', 'dist');
+const webDistDir = path.join(root, 'apps', 'web', 'dist');
+const bundledWebIndex = path.join(root, 'src-tauri', 'api', 'web', 'index.html');
+
+const haveBundle = fs.existsSync(apiEntry) && (!isWin || fs.existsSync(nodeInBundle));
+const staleness = [];
+if (haveBundle) {
+  const packedAt = mtimeOf(apiEntry);
+  const apiAt = newestMtime(apiDistDir);
+  const webAt = newestMtime(webDistDir);
+  if (!Number.isNaN(apiAt) && apiAt > packedAt) staleness.push('apps/api/dist تازه‌تر است');
+  if (!Number.isNaN(webAt) && webAt > mtimeOf(bundledWebIndex)) staleness.push('apps/web/dist تازه‌تر است');
+  /* node.exe گم‌شده روی ویندوز هم یعنی بسته‌بندی لازم است */
+  if (isWin && !fs.existsSync(nodeInBundle)) staleness.push('node.exe در بسته نیست');
+}
+const needPack = !haveBundle || staleness.length > 0;
 
 if (skipApiPack) {
   console.log(`\n${C.dim('▶ ۲/۳ بسته‌بندی API — با --skip-api رد شد')}`);
 } else if (!needPack) {
-  console.log(`\n${C.dim('▶ ۲/۳ بسته API از قبل آماده است (شامل node.exe) — رد شد')}`);
+  console.log(`\n${C.dim('▶ ۲/۳ بسته API از قبل به‌روز است (شامل node.exe) — رد شد')}`);
 } else {
+  if (staleness.length) {
+    console.log(`\n${C.warn('▶ ۲/۳ بسته‌ی API کهنه است — دوباره ساخته می‌شود:')}`);
+    for (const why of staleness) console.log(`     ${C.dim(why)}`);
+  }
   console.log(`\n${C.bold('▶ ۲/۳ بسته‌بندی API' + (isWin ? ' + node.exe' : ''))}`);
   const packArgs = ['scripts/build-desktop-api.mjs'];
   if (isWin) packArgs.push('--require-node');
