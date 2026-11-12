@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useDebounced } from '../lib/useDebounced';
@@ -9,7 +9,7 @@ import {
   ListHead, SearchBox, FilterButton, FilterPanel, FilterChip, InlineStat,
   ExportButton,
 } from '../components/ui';
-import { IconPlus } from '../components/icons';
+import { IconPlus, IconPrint } from '../components/icons';
 import { DatePicker } from '../components/DatePicker';
 import { money, todayISO, formatDate } from '../lib/calendar';
 import { pageAfterRemove } from '../lib/paging';
@@ -183,6 +183,10 @@ export default function ExpensesPage() {
                   <td className="hide-md">{r.payerName || '—'}</td>
                   <td><span className={`badge ${r.paymentType === 'cash' ? 'ok' : 'warn'}`}>{r.paymentType === 'cash' ? 'نقده' : 'باقی'}</span></td>
                   <td><div className="actions hover-actions">
+                    {/* چاپ سند مصرف (C4) — برای ضمیمه کردن به دفتر و بیل خرید */}
+                    <Link className="btn sm" to={`/print/expense/${r.id}?auto=1`} title="چاپ سند مصرف">
+                      <IconPrint size={13} /> چاپ
+                    </Link>
                     <button className="btn sm" onClick={() => openEdit(r)}>ویرایش</button>
                     {isManager ? <button className="btn sm danger" onClick={() => remove(r)}>حذف</button> : null}
                   </div></td>

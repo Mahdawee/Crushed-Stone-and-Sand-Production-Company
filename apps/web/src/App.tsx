@@ -63,6 +63,7 @@ const ActivityPage = lazy(() => import('./pages/Activity'));
 const RecyclePage = lazy(() => import('./pages/Recycle'));
 const HelpPage = lazy(() => import('./pages/Help'));
 const PrintSale = lazy(() => import('./pages/PrintSale'));
+const PrintDoc = lazy(() => import('./pages/PrintDoc'));
 const PrintSalary = lazy(() => import('./pages/PrintSalary'));
 const LicensePage = lazy(() => import('./pages/License'));
 
@@ -198,6 +199,9 @@ function Shell() {
       <Route path="/login" element={<LoginPage />} />
       {/* مسیر /license بالاتر گرفته شد — دوباره تعریف نمی‌شود */}
       <Route path="/print/sale/:id" element={<PrintSale />} />
+      {/* چاپ رسید و مصرف (C4) — یک مسیر برای دو نوع سند */}
+      <Route path="/print/receipt/:id" element={<PrintDoc kind="receipt" />} />
+      <Route path="/print/expense/:id" element={<PrintDoc kind="expense" />} />
       <Route path="/print/salary/:id" element={<PrintSalary />} />
       <Route element={<Guard><Layout /></Guard>}>
         <Route index element={<Suspense fallback={<Spinner />}><Dashboard /></Suspense>} />

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useDebounced } from '../lib/useDebounced';
@@ -9,7 +9,7 @@ import {
   ListHead, SearchBox, FilterButton, FilterPanel, FilterChip, InlineStat,
   ExportButton,
 } from '../components/ui';
-import { IconPlus } from '../components/icons';
+import { IconPlus, IconPrint } from '../components/icons';
 import { DatePicker } from '../components/DatePicker';
 import { money, todayISO, formatDate } from '../lib/calendar';
 import { pageAfterRemove } from '../lib/paging';
@@ -210,6 +210,10 @@ export default function ReceiptsPage() {
                   <td className="hide-sm">{r.receivedBy || '—'}</td>
                   <td className="small muted-cell hide-md">{r.note}</td>
                   <td><div className="actions hover-actions">
+                    {/* چاپ رسید (C4) — مشتری رسید کاغذی می‌خواهد */}
+                    <Link className="btn sm" to={`/print/receipt/${r.id}?auto=1`} title="چاپ رسید">
+                      <IconPrint size={13} /> چاپ
+                    </Link>
                     <button className="btn sm" onClick={() => { setForm({ ...r }); setDateISO(r.date); }}>ویرایش</button>
                     {isManager ? <button className="btn sm danger" onClick={() => remove(r)}>حذف</button> : null}
                   </div></td>
