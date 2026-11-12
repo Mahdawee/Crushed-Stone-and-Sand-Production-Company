@@ -26,6 +26,7 @@ import http from 'node:http';
 import path from 'node:path';
 import * as nodeModule from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { listenWithFallback, openBrowser } from '../shared/tool-server.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
@@ -66,8 +67,22 @@ const sealSource = firstExisting([
   path.join(here, '..', 'public-key', 'farday-public.b64'),
 ]);
 
-const PORT = Number(process.env.FD_LICENSE_UI_PORT || 4321);
+/*
+ * ── پورت (شکار باگ دور ۳۶) ──────────────────────────────────────────────
+ * اگر پورت پیش‌فرض اشغال بود، پورت بعدی آزاد امتحان می‌شود و مرورگر بعد از
+ * آماده شدن سرور باز می‌شود — قبلاً `EADDRINUSE` یعنی «ابزار باز نمی‌شود».
+ */
+const argPort = (() => {
+  const a = process.argv.slice(2);
+  const i = a.findIndex((x) => x === '--port');
+  if (i > -1 && a[i + 1]) return Number(a[i + 1]);
+  const m = a.map((x) => /^--port=(\d+)$/.exec(x)).find(Boolean);
+  return m ? Number(m[1]) : 0;
+})();
+const PORT = Number(argPort || process.env.FD_LICENSE_UI_PORT || 4321);
 const HOST = '127.0.0.1';
+/* نشانه‌ی ابزار — برای تشخیص «همین ابزار از قبل باز است» */
+const TOOL_ID = 'license';
 
 /* ---------- crypto helpers (هم‌خوان با license.ts) ---------- */
 const b64u = (b) => Buffer.from(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -413,6 +428,12 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname;
 
   try {
+    /* شناسه‌ی ابزار — برای تشخیص «همین ابزار از قبل باز است» */
+    if (req.method === 'GET' && p === '/__tool') {
+      json(res, 200, { tool: TOOL_ID, port: PORT, pid: process.pid });
+      return;
+    }
+
     /* صفحه */
     if (req.method === 'GET' && (p === '/' || p === '/index.html')) {
       const html = fs.readFileSync(path.join(here, 'ui.html'), 'utf8').replace('__CSRF__', CSRF);
@@ -743,28 +764,21 @@ const server = http.createServer(async (req, res) => {
 });
 
 /*
- * ── باگ (شکار باگ دور ۳۰) ────────────────────────────────────────────────
- * اگر پورت اشغال بود (ابزار از قبل باز است، یا برنامه‌ی دیگری آن را گرفته)،
- * Node یک استک‌تریس انگلیسی `EADDRINUSE` می‌ریخت و پنجره‌ی کنسول بسته
- * می‌شد — کاربر هیچ نمی‌فهمید چه شد. حالا پیام فارسی با راه‌حل.
+ * ── بالا آمدن سرور (بازنویسی دور ۳۶) ────────────────────────────────────
+ * پورت اشغال → پورت بعدی آزاد؛ مرورگر بعد از `listening` باز می‌شود.
  */
-server.on('error', (e) => {
-  if (e && e.code === 'EADDRINUSE') {
-    console.error(`\n⛔ پورت ${PORT} در حال استفاده است.`);
-    console.error('   یعنی ابزار از قبل باز است (یکی از پنجره‌های قبلی) یا برنامه‌ی دیگری این پورت را گرفته.');
-    console.error(`   • اگر ابزار باز است، همان صفحه‌ی مرورگر را استفاده کنید: http://${HOST}:${PORT}`);
-    console.error('   • یا با یک پورت دیگر اجرا کنید:  FD_LICENSE_UI_PORT=' + (PORT + 1));
-    console.error('   برای بستن نسخه‌ی قبلی، پنجره‌ی کنسول آن را ببندید.\n');
+listenWithFallback({
+  server, host: HOST, port: PORT, toolId: TOOL_ID,
+  onListening: (port) => {
+    const keys = keysState();
+    console.log(`\n🗝  ابزار لایسنس فردای روشن → http://${HOST}:${port}\n`);
+    console.log(`   کلید خصوصی: ${keys.hasPrivate ? 'موجود' : '⚠ ساخته نشده'}`);
+    if (keys.hasPrivate) console.log(`   اثر انگشت کلید عمومی: ${keys.fingerprint}`);
+    console.log('   برای بستن: Ctrl+C\n');
+    openBrowser(`http://${HOST}:${port}/`);
+  },
+  onFatal: (e) => {
+    console.error(`\n⛔ سرور ابزار بالا نیامد: ${e?.message || e}\n`);
     process.exit(1);
-  }
-  console.error('\n⛔ سرور ابزار بالا نیامد:', e?.message || e, '\n');
-  process.exit(1);
-});
-
-server.listen(PORT, HOST, () => {
-  const keys = keysState();
-  console.log(`\n🗝  ابزار لایسنس فردای روشن → http://${HOST}:${PORT}\n`);
-  console.log(`   کلید خصوصی: ${keys.hasPrivate ? 'موجود' : '⚠ ساخته نشده'}`);
-  if (keys.hasPrivate) console.log(`   اثر انگشت کلید عمومی: ${keys.fingerprint}`);
-  console.log('   برای بستن: Ctrl+C\n');
+  },
 });

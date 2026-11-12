@@ -122,24 +122,79 @@ console.log('\n— ۵) ابزارهای بیرونی در بسته —');
   let conf = null;
   try { conf = JSON.parse(read('src-tauri/tauri.conf.json') || '{}'); } catch { /* پایین گزارش می‌شود */ }
   const res = conf?.bundle?.resources || [];
-  const has = (prefix) => res.some((r) => String(r).startsWith(prefix));
-  if (has('tools/reset-ui/')) ok('ابزار «صفر کردن» در منابع نصب‌کننده هست (روی نصب مشتری لازم است)');
-  else bad('tools/reset-ui در bundle.resources نیست — ابزار صفر کردن روی نصب مشتری وجود ندارد',
-    'در src-tauri/tauri.conf.json مقدار "tools/reset-ui/**/*" را به bundle.resources اضافه کنید');
-  /* هر الگویی که کل tools را بردارد، ابزار لایسنس را هم می‌برد */
-  const licenseRes = res.filter((r) => String(r).startsWith('tools/license/') || /^tools\/(\*|\*\*\/\*)$/.test(String(r)));
-  if (licenseRes.length === 0) ok('ابزار لایسنس (keygen/صدور/باطل) در بسته نیست');
-  else bad(`ابزار لایسنس در بسته می‌رود: ${licenseRes.join(', ')}`,
-    'فقط tools/reset-ui/**/* را بگذارید؛ ابزار لایسنس مالِ فروشنده است و روی هر بیلد بدون مُهر به مشتری قدرت صدور می‌دهد');
-  if (has('api/') && has('public-key/')) ok('سرویس API و کلید عمومی هم در منابع هستند');
-  else bad('api یا public-key در منابع نصب‌کننده نیست', 'bundle.resources را کامل کنید');
+  /*
+   * الگوها **نسبت به پوشه‌ی src-tauri/** حل می‌شوند، نه ریشه‌ی مخزن. پس
+   * الگوی tools/reset-ui هیچ فایلی پیدا نمی‌کند و Tauri ساخت را با
+   * «glob pattern … path not found or didn't match any files» می‌شکند
+   * (دقیقاً همان چیزی که ساخت واقعی کاربر را در دور ۳۶ شکست). بررسی
+   * «پیشوند رشته» این را نمی‌دید؛ باید مثل خود Tauri الگو حل شود.
+   */
+  const confDir = path.join(root, 'src-tauri');
+  const glob = (pattern) => {
+    try { return fs.globSync(pattern, { cwd: confDir }); } catch { return []; }
+  };
+  const hits = res.flatMap((r) => glob(String(r))).map((x) => String(x).replace(/\\/g, '/'));
+  /*
+   * الگوهای `tools/` پیش از ساخت وجود ندارند: `desktop:build` اول ابزارها را
+   * به `src-tauri/tools/` کاپی می‌کند. پس این‌جا نباید «فایل پیدا نشد» گفت —
+   * باید بررسی کرد که مرحله‌ی کاپی، همان چیزی را بسازد که الگو انتظار دارد.
+   */
+  const isToolPattern = (r) => String(r).startsWith('tools/');
+  const stagedNow = fs.existsSync(path.join(root, 'src-tauri', 'tools'));
+  const empty = res.filter((r) => !isToolPattern(r) && glob(String(r)).length === 0);
+  if (empty.length === 0) ok('همه‌ی الگوهای bundle.resources (جز tools) فایل واقعی پیدا می‌کنند');
+  else bad(`این الگوها هیچ فایلی پیدا نمی‌کنند و ساخت را می‌شکنند: ${empty.join(', ')}`,
+    'مسیر را نسبت به پوشه‌ی src-tauri بنویسید');
+
+  /* الگوی tools باید با آنچه build-desktop کاپی می‌کند هم‌خوان باشد */
+  const bdSrc = read('scripts/build-desktop.mjs');
+  const bundled = /const BUNDLED_TOOLS = \[([^\]]*)\]/.exec(bdSrc || '');
+  const toolNames = bundled ? bundled[1].split(',').map((x) => x.trim().replace(/['"]/g, '')).filter(Boolean) : [];
+  const toolPats = res.filter(isToolPattern);
+  if (toolPats.length === 0) {
+    bad('هیچ الگوی tools در bundle.resources نیست — ابزار صفر کردن روی نصب مشتری وجود ندارد',
+      'در src-tauri/tauri.conf.json مقدار "tools/**/*" را به bundle.resources اضافه کنید');
+  } else if (toolNames.length === 0) {
+    bad('build-desktop هیچ ابزاری برای بسته کاپی نمی‌کند', 'BUNDLED_TOOLS را در scripts/build-desktop.mjs ببینید');
+  } else {
+    /* هر ابزارِ کاپی‌شده باید زیر یک الگو بیفتد و بالعکس */
+    const covered = toolNames.every((t) => toolPats.some((pat) => {
+      const d = String(pat).replace(/^tools\//, '').replace(/\/.*$/, '');
+      return d === t || d === '**';
+    }));
+    if (covered) ok(`الگوهای tools با ابزارهای کاپی‌شده هم‌خوان‌اند (${toolNames.join(', ')})`);
+    else bad(`ابزارهای کاپی‌شده زیر الگوی منابع نیستند: ${toolNames.join(', ')}`, 'الگوی tools/**/* را بگذارید');
+    if (stagedNow) {
+      const staged = fs.readdirSync(path.join(root, 'src-tauri', 'tools'));
+      if (staged.join(',') === toolNames.join(',')) ok('پوشه‌ی مرحله‌بندی‌شده دقیقاً همان ابزارهای مورد انتظار است');
+      else bad(`پوشه‌ی مرحله‌بندی چیز دیگری دارد: ${staged.join(', ')}`, 'src-tauri/tools را پاک کنید و دوباره بسازید');
+    }
+  }
+
+  const matched = (frag) => hits.some((h) => h.includes(frag));
+  /* پس از ساخت، پوشه‌ی مرحله‌بندی موجود است؛ پیش از ساخت، منبع را می‌سنجیم */
+  const resetReady = stagedNow
+    ? matched('tools/reset-ui/server.mjs')
+    : fs.existsSync(path.join(root, 'tools', 'reset-ui', 'server.mjs')) && toolNames.includes('reset-ui');
+  if (resetReady) ok('ابزار «صفر کردن» در منابع نصب‌کننده هست (روی نصب مشتری لازم است)');
+  else bad('tools/reset-ui در منابع نصب‌کننده نیست — ابزار صفر کردن روی نصب مشتری وجود ندارد',
+    'در src-tauri/tauri.conf.json مقدار "tools/**/*" را به bundle.resources اضافه کنید');
+  /* هیچ الگویی نباید ابزار لایسنس را ببرد */
+  const licenseHits = hits.filter((h) => h.includes('tools/license/'));
+  if (licenseHits.length === 0) ok('ابزار لایسنس (keygen/صدور/باطل) در بسته نیست');
+  else bad(`ابزار لایسنس در بسته می‌رود: ${licenseHits.slice(0, 3).join(', ')}`,
+    'فقط ../tools/reset-ui/**/* را بگذارید؛ ابزار لایسنس مالِ فروشنده است و روی هر بیلد بدون مُهر به مشتری قدرت صدور می‌دهد');
+  if (matched('api/app.js')) ok('سرویس API در منابع هست');
+  else bad('api در منابع نصب‌کننده نیست', 'bundle.resources را کامل کنید');
+  if (matched('public-key/farday-public.b64')) ok('کلید عمومی در منابع هست');
+  else bad('public-key در منابع نصب‌کننده نیست', 'bundle.resources را کامل کنید');
 
   for (const f of ['tools/reset-ui/server.mjs', 'tools/reset-ui/reset-core.mjs', 'tools/reset-ui/ui.html',
     'tools/reset-ui/start.cmd', 'tools/reset-ui/start.sh', 'tools/license/server.mjs']) {
     if (fs.existsSync(path.join(root, f))) ok(`فایل ${f} موجود است`);
     else bad(`${f} پیدا نشد`, 'ابزار بیرونی ناقص است');
   }
-  if (fs.existsSync(path.join(root, 'tools/license/server.mjs')) && licenseRes.length === 0)
+  if (fs.existsSync(path.join(root, 'tools/license/server.mjs')) && licenseHits.length === 0)
     ok('ابزار لایسنس برای فروشنده در مخزن می‌ماند، ولی به بسته نمی‌رود');
   /* کلید خصوصی و دفترچه‌ی صدور هرگز نباید در بسته‌ی مشتری باشد */
   /*

@@ -165,7 +165,7 @@ ok('خودآزمایی زمان اجرا در /system/info هست (باینری 
 ok('صفحه تنظیمات وضعیت «اجرای بدون نصب اضافی» را نشان می‌دهد',
   /اجرای بدون نصب اضافی/.test(fs.readFileSync(path.join(root, 'apps/web/src/pages/Settings.tsx'), 'utf8')));
 
-console.log('\n— ابزارهای بیرونی در نصب‌کننده (برگشتِ باگ دور ۳۴ در دور ۳۵) —');
+console.log('\n— ابزارهای بیرونی در نصب‌کننده (باگ دور ۳۴/۳۵، الگوی مسیر در دور ۳۶) —');
 {
   /*
    * دور ۳۴ الگوی «tools/ستاره‌ستاره» را در بسته گذاشت تا ابزار «صفر کردن» روی نصب
@@ -175,17 +175,49 @@ console.log('\n— ابزارهای بیرونی در نصب‌کننده (بر�
    */
   const conf = JSON.parse(fs.readFileSync(path.join(root, 'src-tauri/tauri.conf.json'), 'utf8'));
   const res = conf?.bundle?.resources || [];
-  const has = (prefix) => res.some((r) => String(r).startsWith(prefix));
-  ok('ابزار «صفر کردن» در منابع نصب‌کننده هست', has('tools/reset-ui/'), res.join(','));
-  ok('پوشه‌ی API در منابع هست', has('api/'), res.join(','));
-  ok('کلید عمومی در منابع هست', has('public-key/'), res.join(','));
+  /*
+   * ── باگ (دور ۳۶): بررسی «پیشوند رشته» کافی نبود ─────────────────────
+   * الگوها **نسبت به پوشه‌ی `src-tauri/`** حل می‌شوند (نه ریشه‌ی مخزن).
+   * پس الگوی tools/reset-ui (ستاره‌ستاره) هیچ فایلی پیدا نمی‌کند و Tauri با
+   * «glob pattern … path not found or didn't match any files» ساخت را
+   * می‌شکند — ولی تست فقط رشته را می‌دید و سبز می‌ماند.
+   * حالا الگوها واقعاً حل می‌شوند (`fs.globSync`) و وجود فایل بررسی می‌شود.
+   */
+  const confDir = path.join(root, 'src-tauri');
+  const glob = (pattern) => {
+    try { return fs.globSync(pattern, { cwd: confDir }); } catch { return []; }
+  };
+  const matched = (frag) => res.some((r) => glob(String(r))
+    .some((hit) => String(hit).replace(/\\/g, '/').includes(frag)));
+  /*
+   * ── باگ (دور ۳۶): ساخت واقعی کاربر با این پیام شکست ────────────────
+   *   «glob pattern … path not found or didn't match any files»
+   * چون الگوها نسبت به `src-tauri/` حل می‌شوند. راه‌حل: `desktop:build` قبل
+   * از ساخت، `tools/reset-ui` را به `src-tauri/tools/reset-ui` کاپی می‌کند.
+   * اینجا همان دو چیز بررسی می‌شود: (۱) الگو واقعاً فایل پیدا کند،
+   * (۲) چیزی که کاپی می‌شود فقط reset-ui باشد — نه ابزار لایسنس.
+   */
+  ok('الگوی API فایل واقعی پیدا می‌کند', matched('api/app.js'), res.join(','));
+  ok('الگوی کلید عمومی فایل واقعی پیدا می‌کند', matched('public-key/farday-public.b64'), res.join(','));
 
-  /* هیچ الگویی نباید کل tools یا مسیر license را ببرد */
-  const licenseRes = res.filter((r) => String(r).startsWith('tools/license/')
-    || /^tools\/(\*\*\/\*|\*)$/.test(String(r)));
-  ok('ابزار لایسنس در منابع نصب‌کننده نیست', licenseRes.length === 0, licenseRes.join(','));
-  ok('هیچ الگوی عامی که کل پوشه‌ی tools را بردارد در منابع نیست',
-    !res.some((r) => /^tools\/(\*\*\/\*|\*)$/.test(String(r))), res.join(','));
+  /* منبع الگو باید خود `src-tauri/tools` باشد، نه مسیر بیرون از آن */
+  const toolPatterns = res.filter((r) => String(r).includes('tools/'));
+  ok('الگوی ابزارها داخل src-tauri است (نه ../tools که نسخه‌های Tauri رد می‌کنند)',
+    toolPatterns.length > 0 && toolPatterns.every((r) => !String(r).startsWith('..')),
+    toolPatterns.join(','));
+
+  const bd = fs.readFileSync(path.join(root, 'scripts/build-desktop.mjs'), 'utf8');
+  ok('build-desktop ابزارها را داخل src-tauri کاپی می‌کند', /function stageTools\(\)/.test(bd));
+  const bundled = /const BUNDLED_TOOLS = \[([^\]]*)\]/.exec(bd);
+  const toolNames = bundled ? bundled[1].split(',').map((x) => x.trim().replace(/['"]/g, '')).filter(Boolean) : [];
+  ok('فقط ابزار «صفر کردن» کاپی می‌شود', toolNames.length === 1 && toolNames[0] === 'reset-ui', toolNames.join(','));
+  ok('ابزار لایسنس در فهرست کاپی نیست', !toolNames.includes('license'), toolNames.join(','));
+  ok('build-desktop پیش از ساخت، الگوهای خالی را می‌گیرد',
+    /همه‌ی الگوهای bundle\.resources فایل پیدا می‌کنند/.test(bd) && /stageTools\(\)/.test(bd));
+
+  /* و اگر پوشه‌ی مرحله‌بندی ساخته شده باشد، نباید ابزار لایسنس داشته باشد */
+  const stagedLicense = path.join(root, 'src-tauri', 'tools', 'license');
+  ok('پوشه‌ی مرحله‌بندی (اگر هست) ابزار لایسنس ندارد', !fs.existsSync(stagedLicense));
 
   for (const need of ['tools/reset-ui/server.mjs', 'tools/reset-ui/reset-core.mjs', 'tools/reset-ui/ui.html',
     'tools/reset-ui/start.cmd', 'tools/reset-ui/start.sh']) {
@@ -202,8 +234,8 @@ console.log('\n— ابزارهای بیرونی در نصب‌کننده (بر�
    */
   const covers = (file) => res.some((r) => {
     const pat = String(r).replace(/^\.\//, '');
-    const dir = pat.replace(/\/\*\*\/\*$|\/\*\*$|\/\*$/, '');
-    return file === dir || file.startsWith(`${dir}/`) || file.startsWith(dir);
+    const dir = path.posix.normalize(pat.replace(/\/\*\*\/\*$|\/\*\*$|\/\*$/, ''));
+    return file === dir || file.startsWith(`${dir}/`);
   });
   for (const secret of ['license-keys/private.key', 'license-keys/issued.json',
     'src-tauri/api/private.key', 'src-tauri/api/issued.json']) {

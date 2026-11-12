@@ -255,15 +255,41 @@ check('تاریخچه‌ی صفر کردن نوشته شد', fs.existsSync(path.
 /* ================================================================ */
 console.log('\n— اجراکننده‌ها و خط فرمان —');
 
+/*
+ * ── اجراکننده‌ها (بازنویسی دور ۳۶) ──────────────────────────────────────
+ * باگ گزارش‌شده: «اجراکننده‌ها ابزار را باز نمی‌کنند». دو ریشه پیدا شد:
+ *   ۱) `start.cmd`ها با پایان‌خط LF در مخزن بودند. cmd.exe با LF ممکن است
+ *      `goto`/`:label` و بلاک‌های پرانتزی را نشکند نخواند → پنجره باز و
+ *      فوراً بسته می‌شود. راه‌حل: `.gitattributes` با `*.cmd eol=crlf`.
+ *   ۲) باز کردن مرورگر با تأخیر ثابت ۲ ثانیه‌ای در cmd بود. حالا سرور خودش
+ *      بعد از `listening` مرورگر را باز می‌کند (`openBrowser`).
+ * پس دیگر `start ""` در cmd لازم نیست؛ چیزی که لازم است: CRLF + صدا زدن
+ * server.mjs + پیدا کردن Node.
+ */
 for (const f of ['tools/license/start.cmd', 'tools/license/start.sh', 'tools/reset-ui/start.cmd', 'tools/reset-ui/start.sh']) {
   const full = path.join(root, f);
-  const body = fs.existsSync(full) ? fs.readFileSync(full, 'utf8') : '';
+  const buf = fs.existsSync(full) ? fs.readFileSync(full) : Buffer.alloc(0);
+  const body = buf.toString('utf8');
   check(`اجراکننده هست: ${f}`, body.length > 100);
   if (f.endsWith('.cmd')) {
-    check(`  ${path.basename(f)} بررسی نصب Node و باز کردن مرورگر`, /where node/.test(body) && /start ""/.test(body));
+    check(`  ${path.basename(f)} بررسی نصب Node`, /where node/.test(body) && /NODE_EXE/.test(body));
+    check(`  ${path.basename(f)} سرور را صدا می‌زند`, /server\.mjs/.test(body));
+    /* باگ واقعی: فایل LF در مخزن → cmd.exe خراب می‌خواند */
+    check(`  ${path.basename(f)} پایان‌خط CRLF دارد`, buf.includes(Buffer.from('\r\n')));
+    check(`  ${path.basename(f)} کوتیشن تودرتو/تأخیر حدسی ندارد`, !/timeout \/t/.test(body));
   } else {
     check(`  ${path.basename(f)} اجراپذیر و bash است`, /^#!.*bash/.test(body) && (fs.statSync(full).mode & 0o111) !== 0);
+    check(`  ${path.basename(f)} سرور را exec می‌کند`, /exec .*server\.mjs/.test(body));
+    /* باگ: مرورگر در شل هم باز می‌شد → دو بار / صفحه‌ی خطا */
+    check(`  ${path.basename(f)} خودش مرورگر باز نمی‌کند (کار سرور است)`,
+      !/xdg-open|sensible-browser|open "/.test(body));
   }
+}
+{
+  const ga = path.join(root, '.gitattributes');
+  check('.gitattributes وجود دارد', fs.existsSync(ga));
+  const gaBody = fs.existsSync(ga) ? fs.readFileSync(ga, 'utf8') : '';
+  check('.gitattributes برای *.cmd پایان‌خط CRLF را تضمین می‌کند', /\*\.cmd\s+text\s+eol=crlf/.test(gaBody));
 }
 {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));

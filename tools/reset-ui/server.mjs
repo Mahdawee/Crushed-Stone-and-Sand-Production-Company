@@ -40,6 +40,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inventory, preflight as preflightCore, resetOffline as resetCore, runtimeInfo } from './reset-core.mjs';
 import { resolveDataDir } from './data-dir.mjs';
+import { listenWithFallback, openBrowser } from '../shared/tool-server.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
@@ -57,8 +58,22 @@ const dbFile = resolved.dbFile;
 const backupDir = path.join(dataDir, 'backups');
 const markFile = path.join(dataDir, 'system-reset.json');
 
-const PORT = Number(process.env.FD_RESET_UI_PORT || 4322);
+/*
+ * ── پورت (شکار باگ دور ۳۶) ──────────────────────────────────────────────
+ * اگر پورت پیش‌فرض اشغال باشد، پورت بعدی آزاد انتخاب می‌شود (پایین‌تر در
+ * `listenWithFallback`). `--port N` هم پذیرفته می‌شود.
+ */
+const argPort = (() => {
+  const a = process.argv.slice(2);
+  const i = a.findIndex((x) => x === '--port');
+  if (i > -1 && a[i + 1]) return Number(a[i + 1]);
+  const m = a.map((x) => /^--port=(\d+)$/.exec(x)).find(Boolean);
+  return m ? Number(m[1]) : 0;
+})();
+const PORT = Number(argPort || process.env.FD_RESET_UI_PORT || 4322);
 const HOST = '127.0.0.1';
+/* نشانه‌ی ابزار — اجراکننده و «همین ابزار از قبل باز است؟» از این استفاده می‌کنند */
+const TOOL_ID = 'reset-ui';
 const CSRF = crypto.randomBytes(18).toString('hex');
 
 /* ── api سرور برنامه (اگر باز باشد) ── */
@@ -268,6 +283,12 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${HOST}:${PORT}`);
   const p = url.pathname;
   try {
+    /* شناسه‌ی ابزار — برای تشخیص «همین ابزار از قبل باز است» */
+    if (req.method === 'GET' && p === '/__tool') {
+      json(res, 200, { tool: TOOL_ID, port: PORT, pid: process.pid });
+      return;
+    }
+
     if (req.method === 'GET' && (p === '/' || p === '/index.html')) {
       const html = fs.readFileSync(path.join(here, 'ui.html'), 'utf8')
         .replace('__CSRF__', CSRF);
@@ -386,33 +407,28 @@ const server = http.createServer(async (req, res) => {
 });
 
 /*
- * ── باگ (شکار باگ دور ۳۰) ────────────────────────────────────────────────
- * اگر پورت اشغال بود (ابزار از قبل باز است، یا برنامه‌ی دیگری آن را گرفته)،
- * Node یک استک‌تریس انگلیسی `EADDRINUSE` می‌ریخت و پنجره‌ی کنسول بسته
- * می‌شد — کاربر هیچ نمی‌فهمید چه شد. حالا پیام فارسی با راه‌حل.
+ * ── بالا آمدن سرور (بازنویسی دور ۳۶) ────────────────────────────────────
+ * قبلاً اگر پورت اشغال بود، سرور با پیام فارسی می‌مرد و ابزار «باز نمی‌شد».
+ * حالا پورت بعدی آزاد امتحان می‌شود؛ و مرورگر **بعد از** `listening` باز
+ * می‌شود (نه با تأخیر حدسی در start.cmd).
  */
-server.on('error', (e) => {
-  if (e && e.code === 'EADDRINUSE') {
-    console.error(`\n⛔ پورت ${PORT} در حال استفاده است.`);
-    console.error('   یعنی ابزار از قبل باز است (یکی از پنجره‌های قبلی) یا برنامه‌ی دیگری این پورت را گرفته.');
-    console.error(`   • اگر ابزار باز است، همان صفحه‌ی مرورگر را استفاده کنید: http://${HOST}:${PORT}`);
-    console.error('   • یا با یک پورت دیگر اجرا کنید:  FD_RESET_UI_PORT=' + (PORT + 1));
-    console.error('   برای بستن نسخه‌ی قبلی، پنجره‌ی کنسول آن را ببندید.\n');
+listenWithFallback({
+  server, host: HOST, port: PORT, toolId: TOOL_ID,
+  onListening: (port) => {
+    console.log(`\n🧹 ابزار «صفر کردن سیستم» → http://${HOST}:${port}\n`);
+    console.log(`   داده: ${dbFile}`);
+    console.log(`   منبع: ${resolved.source}${resolved.dbExists ? '' : '  (⚠ دیتابیس در این مسیر نیست)'}`);
+    if (!resolved.dbExists) {
+      console.log('   مسیرهای گشته‌شده:');
+      for (const c of resolved.searched || []) console.log(`     ${c.hasDb ? '✔' : '·'} ${c.dir}  [${c.source}]`);
+      console.log('   مسیر درست را با --data-dir بدهید:  node server.mjs --data-dir "<مسیر>"');
+    }
+    console.log('   تأیید: تیک «برگشت‌ناپذیر» + تایپ عبارت «صفر کردن» (کلید لازم نیست)');
+    console.log('   برای بستن: Ctrl+C\n');
+    openBrowser(`http://${HOST}:${port}/`);
+  },
+  onFatal: (e) => {
+    console.error(`\n⛔ سرور ابزار بالا نیامد: ${e?.message || e}\n`);
     process.exit(1);
-  }
-  console.error('\n⛔ سرور ابزار بالا نیامد:', e?.message || e, '\n');
-  process.exit(1);
-});
-
-server.listen(PORT, HOST, () => {
-  console.log(`\n🧹 ابزار «صفر کردن سیستم» → http://${HOST}:${PORT}\n`);
-  console.log(`   داده: ${dbFile}`);
-  console.log(`   منبع: ${resolved.source}${resolved.dbExists ? '' : '  (⚠ دیتابیس در این مسیر نیست)'}`);
-  if (!resolved.dbExists) {
-    console.log('   مسیرهای گشته‌شده:');
-    for (const c of resolved.searched || []) console.log(`     ${c.hasDb ? '✔' : '·'} ${c.dir}  [${c.source}]`);
-    console.log('   مسیر درست را با --data-dir بدهید:  node server.mjs --data-dir "<مسیر>"');
-  }
-  console.log('   تأیید: تیک «برگشت‌ناپذیر» + تایپ عبارت «صفر کردن» (کلید لازم نیست)');
-  console.log('   برای بستن: Ctrl+C\n');
+  },
 });

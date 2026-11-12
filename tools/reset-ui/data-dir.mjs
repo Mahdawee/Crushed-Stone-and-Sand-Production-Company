@@ -79,9 +79,20 @@ export function dataDirCandidates(o = {}) {
     /* مسیر قدیمی/جایگزین بعضی نصب‌ها */
     add(path.join(home, `.${APP_ID}`), 'home');
   }
-  /* ۶) حالت توسعه — `data/` کنار مخزن */
+  /* ۶) حالت توسعه — `data/` کنار مخزن
+   *
+   * ⚠ فقط وقتی «مخزن» واقعاً مخزن است (باگ دور ۳۶): در نسخه‌ی نصب‌شده
+   * `server.mjs` در `<نصب>\_up_\tools\reset-ui` است و `../..` می‌شود
+   * `<نصب>\_up_`؛ آن‌وقت گزینه‌ی `repo` می‌شد `<نصب>\_up_\data` — مسیری
+   * ساختگی که هیچ‌وقت دیتابیس ندارد، ولی چون «آخرین سنگر» است می‌توانست
+   * به اپراتور مسیر غلط نشان دهد. حالا فقط وقتی افزوده می‌شود که واقعاً
+   * `data/farday.db` وجود داشته باشد یا پوشه `tools/` کنارش باشد (نشانه‌ی
+   * ریشه‌ی مخزن).
+   */
   const root = o.root ? path.resolve(o.root) : '';
-  if (root) add(path.join(root, 'data'), 'repo');
+  if (root && (exists(path.join(root, 'data', DB_NAME)) || exists(path.join(root, 'tools')))) {
+    add(path.join(root, 'data'), 'repo');
+  }
   if (platform === 'tmp') add(path.join(os.tmpdir(), APP_ID), 'temp');
 
   return out;

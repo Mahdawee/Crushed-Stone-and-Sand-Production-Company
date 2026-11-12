@@ -96,6 +96,60 @@ function inPath(exe) {
   return '';
 }
 
+/**
+ * کاپی ابزارهای بیرونی به `src-tauri/tools/` قبل از ساخت.
+ *
+ * ── باگ (دور ۳۶): ساخت واقعی کاربر شکست ─────────────────────────────
+ * `bundle.resources` الگوها را **نسبت به پوشه‌ی `src-tauri/`** حل می‌کند، نه
+ * نسبت به ریشه‌ی مخزن. پس الگوی `tools/reset-ui/**/*` هیچ فایلی پیدا نمی‌کرد و
+ * Tauri ساخت را با این پیام می‌شکست:
+ *
+ *     glob pattern tools/reset-ui/**/* path not found or didn't match any files
+ *
+ * نمودن `../tools/...` هم به رفتار نسخه‌های مختلف Tauri وابسته است (بعضی
+ * نسخه‌ها مسیر بیرون از پوشه‌ی برنامه را رد می‌کنند). راه قطعی: خودمان
+ * ابزارها را داخل `src-tauri/tools/` کاپی می‌کنیم تا الگو همیشه حل شود و
+ * هیچ فایلی از ریشه‌ی مخزن لازم نباشد.
+ *
+ * فقط فایل‌های لازم کاپی می‌شوند؛ `tools/license` عمداً کاپی **نمی‌شود**
+ * (ابزار فروشنده است — دور ۳۵).
+ */
+const BUNDLED_TOOLS = ['reset-ui'];
+function stageTools() {
+  const src = path.join(root, 'tools');
+  const dst = path.join(root, 'src-tauri', 'tools');
+  fs.rmSync(dst, { recursive: true, force: true });
+  const copied = [];
+  for (const tool of BUNDLED_TOOLS) {
+    const from = path.join(src, tool);
+    if (!fs.existsSync(from)) {
+      console.log(`  ${C.warn(`⚠ پوشه‌ی tools/${tool} پیدا نشد — از بسته‌بندی رد می‌شود`)}`);
+      continue;
+    }
+    const to = path.join(dst, tool);
+    fs.cpSync(from, to, { recursive: true });
+    copied.push(tool);
+  }
+  if (copied.length) {
+    console.log(`  ${C.ok(`✔ ابزارهای بیرونی برای بسته آماده شدند: ${copied.join(', ')}`)}`);
+  }
+  /* چک آخر: هر الگوی منابع باید واقعاً فایل پیدا کند، وگرنه build.rs/Tauri می‌شکند */
+  try {
+    const conf = JSON.parse(fs.readFileSync(path.join(root, 'src-tauri', 'tauri.conf.json'), 'utf8'));
+    const patterns = conf?.bundle?.resources || [];
+    const empty = patterns.filter((pat) => {
+      try { return fs.globSync(String(pat), { cwd: path.join(root, 'src-tauri') }).length === 0; }
+      catch { return true; }
+    });
+    if (empty.length) {
+      console.log(`  ${C.bad(`⛔ این الگوهای bundle.resources هیچ فایلی پیدا نمی‌کنند: ${empty.join(', ')}`)}`);
+      return false;
+    }
+    console.log(`  ${C.ok('✔ همه‌ی الگوهای bundle.resources فایل پیدا می‌کنند')}`);
+  } catch { /* نبود/خرابی conf در جای دیگری گزارش می‌شود */ }
+  return true;
+}
+
 /** cargo در PATH؟ */
 function cargoFromPath() {
   return inPath(cargoExeName);
@@ -624,6 +678,11 @@ if (skipApiPack) {
 
 console.log(`\n${C.bold(`▶ ۳/۳ ساخت نصب‌کننده${wantDebug ? ' (debug)' : ''}${wantOffline ? ' — آفلاین' : ''}`)}`);
 console.log(`  ${C.dim('اولین ساخت ۳ تا ۱۰ دقیقه طول می‌کشد (کامپایل crateها).')}`);
+/* کاپی ابزارهای بیرونی داخل src-tauri تا الگوهای منابع حل شوند (باگ دور ۳۶) */
+if (!stageTools()) {
+  console.log(`  ${C.bad('⛔ بسته‌بندی متوقف شد: الگوی resources بدون فایل، ساخت را می‌شکند.')}`);
+  process.exit(1);
+}
 code = await runTauriBuild(env);
 
 if (code !== 0) {

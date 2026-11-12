@@ -12,6 +12,8 @@ apps/web/dist/
 src-tauri/target/
 src-tauri/gen/
 src-tauri/api/
+# ابزارهای کاپی‌شده برای بسته‌بندی (desktop:build خودش می‌سازد)
+src-tauri/tools/
 
 # local data (never commit the company database or backups)
 data/

@@ -79,27 +79,33 @@ check('تأیید متنی «صفر کردن» باقی است', /confirm/.test(
 check('تیک «برگشت‌ناپذیر» باقی است', /id="ack"/.test(html));
 check('پشتیبان اجباری در سرور هست', /backup:\s*true/.test(serverSrc));
 
-console.log('\n— ۶) اجراکننده‌ی ابزار (مرورگر بعد از سرور باز شود) —');
+console.log('\n— ۶) اجراکننده‌ی ابزار: پورت آزاد و باز کردن مرورگر بعد از سرور —');
 {
+  /*
+   * ── بازنویسی دور ۳۶ ────────────────────────────────────────────────────
+   * چیدمان قدیم: `start.cmd` با `timeout /t 2` سپس `start <url>` مرورگر را
+   * باز می‌کرد و `start.sh` با curl تا آماده شدن سرور صبر می‌کرد. دو مشکل
+   * واقعی داشت: (۱) با تأخیر ثابت، روی کمپیوتر کند سرور آماده نبود؛
+   * (۲) اگر پورت اشغال بود سرور می‌مرد و ابزار «باز نمی‌شد».
+   * چیدمان نو: خودِ سرور بعد از `listening` مرورگر را باز می‌کند و اگر پورت
+   * اشغال باشد پورت بعدی را می‌گیرد. این‌جا همان قرارداد بررسی می‌شود.
+   */
+  const shared = fs.readFileSync(path.join(root, 'tools', 'shared', 'tool-server.mjs'), 'utf8');
+  check('منطق مشترک پورت/مرورگر یک‌جا هست (tools/shared/tool-server.mjs)', /export async function listenWithFallback/.test(shared));
+  check('اگر پورت اشغال بود پورت بعدی امتحان می‌شود', /EADDRINUSE/.test(shared) && /first \+ i/.test(shared));
+  check('اگر همین ابزار از قبل باز بود نسخه‌ی دوم ساخته نمی‌شود', /isSameTool/.test(shared) && /reused: true/.test(shared));
+  /* باگ واقعی: ENOENT غیرهمگامِ spawn کل سرور را می‌کشت */
+  check('شکست باز کردن مرورگر سرور را نمی‌کشد (on(\'error\'))',
+    /child\.on\('error'/.test(shared));
+  check('FD_NO_BROWSER برای تست و CI هست', /FD_NO_BROWSER/.test(shared));
+
   for (const tool of ['reset-ui', 'license']) {
-    const cmd = fs.readFileSync(path.join(root, 'tools', tool, 'start.cmd'), 'utf8');
-    const sh = fs.readFileSync(path.join(root, 'tools', tool, 'start.sh'), 'utf8');
-    /*
-     * باگ (شکار باگ دور ۳۰): این تأخیر فقط در ابزار «صفر کردن» اضافه شده
-     * بود؛ `tools/license/start.cmd` هنوز مرورگر را **قبل** از بالا آمدن
-     * سرور باز می‌کرد (ERR_CONNECTION_REFUSED). حالا هر دو ابزار بررسی
-     * می‌شوند و اسکریپت‌های شل تا آماده شدن سرور صبر می‌کنند (نه تأخیر ثابت).
-     */
-    check(`${tool}/start.cmd قبل از باز کردن مرورگر صبر می‌کند`, /timeout \/t \d/.test(cmd));
-    check(`${tool}/start.cmd کوتیشن تودرتو ندارد`, !/cmd \/c "timeout[^"]*start ""/.test(cmd));
-    check(`${tool}/start.sh تا آماده شدن سرور صبر می‌کند (نه sleep ثابت)`,
-      /curl -sf -o \/dev\/null/.test(sh) && !/^\s*sleep \d(\.\d)?\s*$/.test(sh));
-    check(`${tool}/start.sh فقط یک بار مرورگر را باز می‌کند`,
-      (sh.match(/xdg-open "http:\/\/127\.0\.0\.1/g) || []).length === 1);
-    /* پورت اشغال: پیام فارسی، نه استک‌تریس EADDRINUSE */
     const serverSrc = fs.readFileSync(path.join(root, 'tools', tool, 'server.mjs'), 'utf8');
-    check(`${tool}/server.mjs پورت اشغال را با پیام فارسی می‌گوید`,
-      /EADDRINUSE/.test(serverSrc) && /در حال استفاده است/.test(serverSrc));
+    check(`${tool}/server.mjs از منطق مشترک استفاده می‌کند`,
+      /listenWithFallback\(\{/.test(serverSrc) && /openBrowser\(/.test(serverSrc));
+    check(`${tool}/server.mjs شناسه‌ی ابزار را سرو می‌کند`, /'\/__tool'/.test(serverSrc) && /TOOL_ID/.test(serverSrc));
+    check(`${tool}/server.mjs پورت را از --port هم می‌گیرد`, /--port/.test(serverSrc));
+    check(`${tool}/server.mjs دیگر با EADDRINUSE نمی‌میرد`, !/process\.exit\(1\)[\s\S]{0,80}EADDRINUSE|EADDRINUSE[\s\S]{0,120}process\.exit\(1\)/.test(serverSrc));
   }
 }
 
