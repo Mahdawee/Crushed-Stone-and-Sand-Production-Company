@@ -239,9 +239,17 @@ export class ReportsController {
       const receiptTrust = num(r0.trust);
       const expenseAfn = num(e0.afn);
       const salaryTotal = num(sa0.total);
-      const cashIn = accurate ? cashSales + num(r0.toBox) : cashSales + (receiptTotal - receiptTrust);
-      const cashOut = accurate ? num(e0.fromBox) + num(sa0.fromBox) : expenseAfn + salaryTotal;
+      /*
+       * ── باگ (شکار باگ دور ۳۴): مبلغ دالری در «متحرک دخل» بود، در «خروج» نه ─
+       * `cashOut` فقط افغانی را می‌شمرد، ولی `cashBalance` (و در نتیجه
+       * «متحرک دخل») مصرف دالری را با نرخ تنظیمات هم کم می‌کرد. نتیجه:
+       *   cashIn − cashOut ≠ cashBalance
+       * و جمع ستون «خروج» با «موجودی» نمی‌خواند. حالا هر دو یک قاعده دارند:
+       * اگر «نرخ دالر در سود» روشن باشد، مصرف دالری هم بیرون‌رفت نقدی است.
+       */
       const usdRow = await this.usdAfn(num(e0.usd));
+      const cashIn = accurate ? cashSales + num(r0.toBox) : cashSales + (receiptTotal - receiptTrust);
+      const cashOut = (accurate ? num(e0.fromBox) + num(sa0.fromBox) : expenseAfn + salaryTotal) + usdRow.usdAfn;
       const cashBalance = r2(cashIn - cashOut);
       running += cashBalance;
 
@@ -354,13 +362,29 @@ export class ReportsController {
         volume: r2(num(s[0]?.volume)), expensesUsd: r2(num(e[0]?.usd)),
       });
     }
+    /*
+     * ── باگ (شکار باگ دور ۳۴): ستون‌های دالری در «جمع» نبودند ──────────────
+     * `expensesUsd`, `expensesUsdAfn` و `usdRate` در ردیف هر ماه می‌آمدند ولی
+     * در `totals` هیچ‌جا جمع نمی‌شدند؛ پایین جدول «جمع دالری» ۰ می‌شد در حالی
+     * که ستون بالایش عدد داشت — و کاربر خروجی اکسل را دستی جمع می‌کرد.
+     */
     const totals = rows.reduce((a: any, r: any) => {
       a.cashSales += r.cashSales; a.creditSales += r.creditSales; a.totalSales += r.totalSales;
       a.receipts += r.receipts; a.expenses += r.expenses; a.salaries += r.salaries;
       a.totalExpenses += r.totalExpenses; a.profit += r.profit; a.loss += r.loss; a.volume += r.volume;
+      a.expensesUsd += r.expensesUsd; a.expensesUsdAfn += r.expensesUsdAfn || 0;
       return a;
-    }, { cashSales: 0, creditSales: 0, totalSales: 0, receipts: 0, expenses: 0, salaries: 0, totalExpenses: 0, profit: 0, loss: 0, volume: 0 });
-    return { year: y, calendar: mode, rows, totals };
+    }, {
+      cashSales: 0, creditSales: 0, totalSales: 0, receipts: 0, expenses: 0, salaries: 0,
+      totalExpenses: 0, profit: 0, loss: 0, volume: 0, expensesUsd: 0, expensesUsdAfn: 0,
+    });
+    for (const k of ['cashSales', 'creditSales', 'totalSales', 'receipts', 'expenses', 'salaries',
+      'totalExpenses', 'profit', 'loss', 'volume', 'expensesUsd', 'expensesUsdAfn']) {
+      totals[k] = r2(totals[k]);
+    }
+    /* نرخ دالرِ همان لحظه — تا خروجی/چاپ بداند تبدیل با چه نرخی بوده */
+    const rate = await this.usdAfn(0);
+    return { year: y, calendar: mode, rows, totals, usdRate: rate.usdRate, usdInProfit: rate.usdInProfit };
   }
 
   @Get('yearly')
@@ -499,6 +523,26 @@ export class ReportsController {
         kind: fromBox ? '' : 'info',
         doc: e.no, party: e.description,
         in: 0, out: fromBox ? num(e.amountAfn) : 0,
+      });
+    }
+    /*
+     * ── باگ (شکار باگ دور ۳۴): مصرف دالری در دفتر صندوق نبود ───────────────
+     * «راپور روزانه» با تنظیم «نرخ دالر در سود» مبلغ دالری را به افغانی
+     * تبدیل و از موجودی کم می‌کرد، ولی «دفتر صندوق» هیچ ردیفی برایش نداشت؛
+     * جمع دفتر با جمع راپور روزانه نمی‌خواند. حالا وقتی تبدیل روشن است،
+     * یک ردیف «مصرف دالری» هم می‌آید (با همان نرخی که در تنظیمات است).
+     */
+    const usdByDate: any[] = await p.$queryRawUnsafe(
+      `SELECT "date" d, COALESCE(SUM("amountUsd"),0) usd FROM "Expense"
+        WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=? GROUP BY "date"`, start, end);
+    for (const u of usdByDate) {
+      const conv = await this.usdAfn(num(u.usd));
+      if (!conv.usdInProfit || conv.usdAfn <= 0) continue;
+      /* هر روز ردیف خودش — نه یک ردیف در پایان بازه (ترتیب زمانی به‌هم نخورد) */
+      entries.push({
+        date: String(u.d),
+        type: `مصرف دالری (${num(u.usd)} دالر × ${conv.usdRate})`,
+        doc: 'USD', party: '—', in: 0, out: conv.usdAfn,
       });
     }
     for (const s2 of salaries) {

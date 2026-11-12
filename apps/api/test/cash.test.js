@@ -218,6 +218,32 @@ const daily = (token, from, to) =>
   check('سود سالانه = سود ماه‌های همان سال', yr && Math.abs((yr.profit - yr.loss) - (sumProfit - sumLoss)) < 0.02,
     `سال ${yr && (yr.profit - yr.loss)} ≠ ماه‌ها ${sumProfit - sumLoss}`);
 
+  /*
+   * ── باگ (شکار باگ دور ۳۴): «خروج» دالری را نمی‌شمرد و دفتر صندوق آن را
+   * نداشت ─────────────────────────────────────────────────────────────────
+   * در راپور روزانه، cashIn − cashOut با cashBalance نمی‌خواند؛ و دفتر صندوق
+   * اصلاً ردیفی برای مصرف دالری نداشت، پس جمعش با راپور روزانه فرق می‌کرد.
+   */
+  const cb = (await api('GET', '/reports/cashbook?from=2026-11-01&to=2026-11-10', undefined, token)).body;
+  const cbOut = Math.round(cb.rows.reduce((a, r) => a + r.out, 0) * 100) / 100;
+  const cbIn = Math.round(cb.rows.reduce((a, r) => a + r.in, 0) * 100) / 100;
+  check('دفتر صندوق ردیف مصرف دالری دارد', cb.rows.some((r) => String(r.type).includes('دالری')),
+    JSON.stringify(cb.rows.map((r) => r.type)));
+  check('جمع دفتر صندوق = ورودی − خروجی', Math.abs((cbIn - cbOut) - cb.totals.balance) < 0.02,
+    `${cbIn} − ${cbOut} ≠ ${cb.totals.balance}`);
+
+  const dayUsd = (await api('GET', '/reports/daily?from=2026-11-04&to=2026-11-04', undefined, token)).body.rows[0];
+  check('راپور روزانه: ورودی − خروجی = موجودی (دالری هم در خروج)', 
+    Math.abs((dayUsd.cashIn - dayUsd.cashOut) - dayUsd.cashBalance) < 0.02,
+    `${dayUsd.cashIn} − ${dayUsd.cashOut} ≠ ${dayUsd.cashBalance}`);
+
+  const mo = (await api('GET', '/reports/monthly?year=1405', undefined, token)).body;
+  check('جمع دالری در totals راپور ماهانه هست', Number(mo.totals.expensesUsd) > 0,
+    JSON.stringify({ t: mo.totals && mo.totals.expensesUsd }));
+  check('جمع «دالری به افغانی» در totals برابر جمع ستون ماه‌ها', 
+    Math.abs(Number(mo.totals.expensesUsdAfn) - mo.rows.reduce((a, r) => a + Number(r.expensesUsdAfn || 0), 0)) < 0.02,
+    String(mo.totals && mo.totals.expensesUsdAfn));
+
   const badSet = await api('PUT', '/settings', { usdInProfit: 'yes' }, token);
   check('مقدار نامعتبر رد می‌شود (۴۰۰)', badSet.status === 400, String(badSet.status));
 
