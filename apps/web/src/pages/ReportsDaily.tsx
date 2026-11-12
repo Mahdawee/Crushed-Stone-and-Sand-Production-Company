@@ -107,7 +107,8 @@ export default function ReportsDaily() {
         </div>
         <div className="grid c3">
           <Stat label="داخل دخل (دوره)" value={money(d.totals.cashIn ?? 0)} kind="ok" foot="فروش نقده + رسیدات دخل" />
-          <Stat label="خارج دخل (دوره)" value={money(d.totals.cashOut ?? 0)} kind="bad" foot="مصارف + معاشات نقدی" />
+          {/* «مصرف دالری» هم بخشی از خروج است (وقتی نرخ دالر در سود روشن باشد) */}
+          <Stat label="خارج دخل (دوره)" value={money(d.totals.cashOut ?? 0)} kind="bad" foot="مصارف + معاشات نقدی + دالری" />
           {(() => {
             /*
              * ── باگ (شکار باگ دور ۳۲): دو عدد با یک برچسب ─────────────────
