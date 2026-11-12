@@ -101,6 +101,11 @@ pub fn ours_is_running(port: u16) -> bool {
 }
 
 /// True if *something* (maybe a different program) occupies the port.
+///
+/// فعلاً جایی صدا زده نمی‌شود (هشدار dead_code در بیلد). عمداً نگه داشته شد:
+/// مستند است و اگر روزی «چرا پورت آزاد نیست؟» لازم شد، دوباره نوشتنش
+/// همان منطق را با احتمال خطای بیشتر تکرار می‌کند.
+#[allow(dead_code)]
 pub fn port_busy(port: u16) -> bool {
     port_open(port) && !ours_is_running(port)
 }
@@ -608,6 +613,7 @@ pub fn tail_log(data_dir: &Path, lines: usize) -> String {
 }
 
 /// A rough free-port scan used when 4317 is occupied by another program.
+#[allow(dead_code)] // مسیر جایگزین است؛ فعلاً پورت از سمت Node انتخاب می‌شود
 pub fn first_free_port_from(start_port: u16) -> Option<u16> {
     /* `start_port + 20` در حالت دیباگ می‌تواند سرریز کند (پنیک) — با saturating */
     let end = start_port.saturating_add(20);
@@ -708,6 +714,7 @@ pub fn run_recovery(app: &tauri::AppHandle, data_dir: &Path, extra_args: &[&str]
 }
 
 /// مسیرهای «کجا را نگاه کنم» برای پیام خطا — بدون گشتن در حافظه‌ی کاربر.
+#[allow(dead_code)] // متن خطا امروز جای دیگری ساخته می‌شود
 pub fn paths_hint(data_dir: &Path) -> String {
     format!(
         "پوشه داده: {}\napi.log: {}\nshell.log: {}",

@@ -127,6 +127,7 @@ pub fn unsealed_public_key() -> Option<&'static str> {
 }
 
 /// آیا این نسخه با «مُهر» ساخته شده است؟ (برای گزارش وضعیت در لاگ)
+#[allow(dead_code)] // گزارش وضعیت فعلاً از مسیر دیگری خوانده می‌شود
 pub fn is_sealed() -> bool {
     unsealed_public_key().is_some()
 }
@@ -164,6 +165,7 @@ pub fn unsealed_reset_key() -> Option<&'static str> {
 }
 
 /// آیا این نسخه کلید صفر کردن دارد؟ (وضعیت در `/api/health`)
+#[allow(dead_code)]
 pub fn has_reset_key() -> bool {
     unsealed_reset_key().is_some()
 }
