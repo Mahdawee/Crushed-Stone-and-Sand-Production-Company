@@ -11,7 +11,7 @@
 import { db, databaseFile, dataDir, BACKUP_DIR, resetDb } from './db';
 import { RECEIPT_SOURCE_ALIASES, RECEIPT_SOURCES, WALK_IN_CODE, WALK_IN_NAME } from './common/domain';
 import { SHAPE_VERSION, appVersion, logUpgrade, isNewerDatabase } from './common/upgrade';
-import { makeBackup, pruneBackups, restoreFromBackup } from './common/backup';
+import { makeBackup, compactBackup, pruneBackups, restoreFromBackup } from './common/backup';
 import { ensureDefaultLookups, hasDefaultLookups } from './common/defaults';
 import { basename } from 'node:path';
 
@@ -587,6 +587,17 @@ export async function ensureSchemaAsync(force = false) {
       } catch { /* ignore */ }
       try {
         upgradeBackup = makeBackup(databaseFile(), BACKUP_DIR(), `pre-upgrade-v${dbVersion}`);
+        /*
+         * فشرده‌سازی (پیشنهاد B4) — پشتیبانِ قبل از مهاجرت باید سالم باشد،
+         * ولی لازم نیست فضای مرده را هم با خود ببرد. شکستش بی‌خطر است:
+         * پشتیبان کاپی‌شده سر جایش می‌ماند و مهاجرت ادامه می‌یابد.
+         */
+        try {
+          const c = await compactBackup(upgradeBackup, (sql) => p.$executeRawUnsafe(sql));
+          if (c) console.log(`پشتیبان مهاجرت فشرده شد: ${Math.round(c.beforeBytes / 1048576)}MB → ${Math.round(c.bytes / 1048576)}MB`);
+        } catch (e: any) {
+          console.warn('فشرده‌سازی پشتیبان مهاجرت انجام نشد (پشتیبان سالم است):', e?.message || e);
+        }
         pruneBackups(BACKUP_DIR(), 30, /^pre-upgrade-.*\.db$/);
       } catch (e: any) {
         /*
