@@ -35,6 +35,7 @@
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -256,9 +257,23 @@ async function resetThroughApi(opts, port) {
     };
   }
   const { token } = await login.json();
+  /*
+   * ── نشان اپراتور (پیشنهاد C3، دور ۴۰) ────────────────────────────────
+   * ابزار «صفر کردن» روی کمپیوتر مشتری اجرا می‌شود و تنها چیزی که از اپراتور
+   * می‌داند همین نام کاربری سیستم است. آن را در هدر می‌فرستیم تا تاریخچه‌ی
+   * صفر کردن بگوید **چه کسی** این کار را کرد (نه فقط «reset-tool»).
+   *
+   * نام کاربری، هرچه باشد، فقط برای ثبت است — سرور آن را trim و کوتاه می‌کند.
+   */
+  let osUser = '';
+  try { osUser = os.userInfo().username || ''; } catch { /* ignore */ }
   const r = await fetch(`${base}/system/reset`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-auth-token': token },
+    headers: {
+      'content-type': 'application/json',
+      'x-auth-token': token,
+      ...(osUser ? { 'x-operator': osUser } : {}),
+    },
     body: JSON.stringify(opts),
   });
   const body = await r.json().catch(() => ({}));
@@ -363,6 +378,17 @@ const server = http.createServer(async (req, res) => {
         confirm: 'صفر کردن',
         reason: String(body.reason || '').slice(0, 300),
         operator: String(body.operator || '').slice(0, 80) || 'reset-tool',
+        /*
+         * برچسب کامل (پیشنهاد C3): «اپراتور · ویندوز: کاربر». همین رشته در
+         * reset-history.log نوشته می‌شود تا وقتی بعداً می‌پرسند «چه کسی این
+         * کار را کرد؟» پاسخ واقعی باشد، نه یک نام عمومی.
+         */
+        operatorLabel: (() => {
+          const who = String(body.operator || '').slice(0, 80) || 'reset-tool';
+          let u = '';
+          try { u = os.userInfo().username || ''; } catch { /* ignore */ }
+          return u && u !== who ? `${who} · ویندوز: ${u}` : who;
+        })(),
         backup: true,
         keepAdmin: body.keepAdmin !== false,
         wipeBackups: body.wipeBackups !== false,

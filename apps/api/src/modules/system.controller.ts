@@ -294,6 +294,24 @@ export class SystemController {
     };
   }
 
+  /**
+   * نام کاربر ویندوز/سیستم — پیشنهاد C3، دور ۴۰.
+   *
+   * رابط برنامه این را می‌گیرد و در هدر `x-operator` هنگام «صفر کردن»
+   * می‌فرستد، تا تاریخچه بگوید کدام شخص روی کدام کمپیوتر این کار را کرد.
+   *
+   * ⚠ فقط نام کاربری سیستم برمی‌گردد — نه مسیر خانه، نه نام کامل، نه هیچ
+   * چیز دیگری. و برای کاربر مدیر است، نه هر کسی.
+   */
+  @Get('operator')
+  @ManagerOnly()
+  operator() {
+    const os = require('node:os') as typeof import('node:os');
+    let user = '';
+    try { user = os.userInfo().username || ''; } catch { /* ignore */ }
+    return { osUser: user, host: os.hostname() || '' };
+  }
+
   @Post('reset')
   @ManagerOnly()
   async resetNow(@Req() req: any, @Body() body: ResetOptions) {
@@ -306,10 +324,39 @@ export class SystemController {
       throw new HttpException('این عملیات فقط از خودِ همین کمپیوتر ممکن است.', 403);
     }
     const who = userOf(req) || 'system';
+    /*
+     * ── نشان اپراتور (پیشنهاد C3، دور ۴۰) ──────────────────────────────
+     * پیش از این فقط نام کاربری ثبت می‌شد. روی یک کمپیوتر اداری با دو
+     * اکانت ویندوز، «admin» کافی نیست: وقتی بعداً می‌پرسند «چه کسی این
+     * سیستم را صفر کرد؟» باید بشود گفت «حساب ویندوزیِ کدام شخص».
+     *
+     * از هدر `x-operator` استفاده می‌شود:
+     *   • ابزار نجات (`tools/reset-ui`) آن را می‌فرستد.
+     *   • رابط برنامه آن را از `/system/operator` می‌گیرد.
+     *
+     * ⚠ این **شناسایی نیست**، فقط ثبت است. کسی که به پوشه‌ی داده دسترسی
+     * دارد، هر نامی بخواهد می‌نویسد. عمداً «امضای دیجیتال» نساختیم: کاربر
+     * نباید برای «صفر کردن» به کلید و رمز اضافه نیاز داشته باشد، وگرنه در
+     * همان لحظه‌ای که به این ابزار نیاز دارد گیر می‌کند. برای این هدف
+     * (فهمیدن اینکه چه شد) ثبت کافی است.
+     *
+     * نام کاربری همیشه در کنار آن می‌ماند — پس اگر هدر جعلی باشد، دست‌کم
+     * اکانت واقعیِ وارد‌شده ثبت شده است.
+     */
+    const osUser = String(req?.headers?.['x-operator'] || '').slice(0, 80).trim();
+    const role = String(req?.session?.role || '').slice(0, 20);
+    const fullName = String(req?.session?.fullName || '').slice(0, 80);
     const r = await resetSystem({
       ...(body || {}),
       confirm: String(body?.confirm ?? ''),
       operator: body?.operator || who,
+      /* برچسب یکپارچه: «نام کاربری (نام کامل) · ویندوز: کاربر» */
+      operatorLabel: [
+        who,
+        fullName && fullName !== who ? `(${fullName})` : '',
+        role ? `· نقش ${role === 'manager' ? 'مدیر' : role}` : '',
+        osUser ? `· ویندوز: ${osUser}` : '',
+      ].filter(Boolean).join(' '),
     });
     /*
      * باگ (شکار باگ دور ۳۰): در خطا فقط `message` به کاربر می‌رسید و

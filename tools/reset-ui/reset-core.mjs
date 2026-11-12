@@ -468,7 +468,15 @@ export async function resetOffline(paths, opts) {
     const total = Object.values(counts).reduce((a, b) => a + b, 0);
     const at = new Date().toISOString();
     const report = {
-      at, operator: opts.operator || 'reset-tool', reason: String(opts.reason || '').slice(0, 300),
+      at, operator: opts.operator || 'reset-tool',
+      /*
+       * برچسب خوانا (پیشنهاد C3، دور ۴۰) — همان قاعده‌ی مسیر آنلاین: نام
+       * اپراتور + نام کاربر سیستم، تا تاریخچه بگوید کدام شخص روی کدام
+       * کمپیوتر این کار را کرد. دو مسیر باید یک شکل بنویسند، وگرنه خواندن
+       * تاریخچه به حدس تبدیل می‌شود.
+       */
+      operatorLabel: String(opts.operatorLabel || opts.operator || 'reset-tool').slice(0, 200),
+      reason: String(opts.reason || '').slice(0, 300),
       counts, total, backupFile: path.basename(backupFile), admin,
       removedLicense, removedBackups: 0, mode: 'offline', host: hostName(),
       id: crypto.randomBytes(6).toString('hex'),
@@ -477,7 +485,7 @@ export async function resetOffline(paths, opts) {
     try {
       fs.appendFileSync(
         path.join(paths.dataDir, 'reset-history.log'),
-        `${at} · ${report.operator} · ${total} ردیف · ${report.reason || '—'} · پشتیبان: ${report.backupFile}\n`,
+        `${at} · ${report.operatorLabel} · ${total} ردیف · ${report.reason || '—'} · پشتیبان: ${report.backupFile}\n`,
         'utf8',
       );
     } catch { /* ignore */ }

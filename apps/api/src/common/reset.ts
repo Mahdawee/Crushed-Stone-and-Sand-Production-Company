@@ -89,6 +89,12 @@ export type ResetOptions = {
   reason?: string;
   /** نام اپراتور — از صفحه‌ی ابزار یا نام کاربر API */
   operator?: string;
+  /**
+   * برچسب کامل اپراتور (پیشنهاد C3، دور ۴۰) — «نام کاربری (نام کامل) · نقش … ·
+   * ویندوز: کاربر». `operator` برای سازگاری و مقایسه‌ی برنامه‌ای می‌ماند و
+   * این برچسب فقط برای خواندن آدم است. اگر نیامده باشد، از `operator` پر می‌شود.
+   */
+  operatorLabel?: string;
   /** پشتیبان بگیر؟ پیش‌فرض بله و اجباری */
   backup?: boolean;
   /** آیا مدیر پیش‌فرض دوباره ساخته شود؟ پیش‌فرض بله (وگرنه هیچ‌کس نمی‌تواند وارد شود) */
@@ -107,6 +113,8 @@ export type ResetResult = {
   admin?: { username: string; password: string } | null;
   at?: string;
   operator?: string;
+  /** برچسب خوانای اپراتور (نام کامل، نقش، کاربر ویندوز) — پیشنهاد C3 */
+  operatorLabel?: string;
   removedLicense?: boolean;
   removedBackups?: number;
   note?: string;
@@ -115,7 +123,7 @@ export type ResetResult = {
 };
 
 /** آیا این نصب قبلاً صفر شده است؟ (برای نمایش در ابزار) */
-export function resetMark(): { at: string; operator: string; reason: string } | null {
+export function resetMark(): { at: string; operator: string; operatorLabel?: string; reason: string } | null {
   try {
     const f = path.join(dataDir(), RESET_MARK_FILE);
     if (!fs.existsSync(f)) return null;
@@ -439,7 +447,11 @@ export async function resetSystem(opts: ResetOptions): Promise<ResetResult> {
   const at = new Date().toISOString();
   const report = {
     ...(resetMark() || {}),
-    at, operator: opts.operator || 'system', reason: String(opts.reason || '').slice(0, 300),
+    at,
+    operator: opts.operator || 'system',
+    /* برچسب خوانا — در گزارش و تاریخچه می‌نشیند */
+    operatorLabel: String(opts.operatorLabel || opts.operator || 'system').slice(0, 200),
+    reason: String(opts.reason || '').slice(0, 300),
     counts, total: Object.values(counts).reduce((a, b) => a + b, 0),
     backupFile: backupFile ? path.basename(backupFile) : '',
     admin, removedLicense, removedBackups,
@@ -452,7 +464,7 @@ export async function resetSystem(opts: ResetOptions): Promise<ResetResult> {
     fs.writeFileSync(path.join(dataDir(), RESET_MARK_FILE), JSON.stringify(report, null, 2), 'utf8');
     fs.appendFileSync(
       path.join(dataDir(), 'reset-history.log'),
-      `${at} · ${report.operator} · ${report.total} ردیف · ${report.reason || '—'} · نسخه‌ی پشتیبان: ${report.backupFile || '—'}\n`,
+      `${at} · ${report.operatorLabel} · ${report.total} ردیف · ${report.reason || '—'} · نسخه‌ی پشتیبان: ${report.backupFile || '—'}\n`,
       'utf8',
     );
   } catch { /* ignore */ }
@@ -470,7 +482,7 @@ export async function resetSystem(opts: ResetOptions): Promise<ResetResult> {
       ? `سیستم صفر شد — ${total.toLocaleString('fa-IR')} ردیف پاک شد.${adminNote}`
       : `دیتابیس از قبل خالی بود؛ فهرست‌های پیش‌فرض و «مشتری گذری» بازسازی شد.${adminNote}`,
     counts, total, backupFile: report.backupFile, admin, at,
-    operator: report.operator, removedLicense, removedBackups,
+    operator: report.operator, operatorLabel: report.operatorLabel, removedLicense, removedBackups,
     reason: report.reason,
   };
 }
