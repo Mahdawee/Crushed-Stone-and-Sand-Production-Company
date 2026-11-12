@@ -662,7 +662,7 @@ if (!tauriLocal) {
 if (wantOffline && !registryHasCrates) {
   console.log(`\n${C.bad('⛔ حالت آفلاین انتخاب شده ولی کریت‌های Rust دانلود نشده‌اند.')}`);
   console.log(`   یک بار با انترنت:  ${C.bold('npm run desktop:build -- --prefetch')}`);
-  console.log(`   ${C.dim('یا فایل ZIP نود را بدهید: npm run desktop:build:offline -- "D:\\node-v22-win-x64.zip"')}\n`);
+
   process.exit(1);
 }
 
@@ -732,7 +732,7 @@ if (haveBundle) {
   /* node.exe گم‌شده روی ویندوز هم یعنی بسته‌بندی لازم است */
   if (isWin && !fs.existsSync(nodeInBundle)) staleness.push('node.exe در بسته نیست');
 }
-const needPack = !haveBundle || staleness.length > 0;
+const needPack = !haveBundle || staleness.length > 0 || Boolean(process.env.FD_NODE_ZIP);
 
 if (skipApiPack) {
   console.log(`\n${C.dim('▶ ۲/۳ بسته‌بندی API — با --skip-api رد شد')}`);
@@ -751,7 +751,7 @@ if (skipApiPack) {
   code = runNodeScript(packArgs, env);
   if (code !== 0) {
     console.log(C.bad('\n⛔ بسته‌بندی API ناموفق بود.'));
-    console.log(`   اگر پیام مربوط به دانلود node.exe بود، یعنی اینترنت لازم است.`);
+    console.log(`   جزئیات خطا را در پیام بالا ببینید؛ Node ویندوز x64 سازگار معمولاً بدون دانلود استفاده می‌شود.`);
     console.log(`   راه آفلاین: فایل ZIP نود را از قبل بگیرید و بزنید:`);
     console.log(`     ${C.bold(`npm run desktop:build:offline -- "D:\\node-v${process.versions.node}-win-x64.zip"`)}`);
     console.log(`   ${C.dim('لینک دانلود همان ZIP: https://nodejs.org/dist/v' + process.versions.node + `/node-v${process.versions.node}-win-x64.zip`)}\n`);

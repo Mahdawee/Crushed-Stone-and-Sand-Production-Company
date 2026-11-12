@@ -157,7 +157,7 @@ ok('باینری ویندوزی libSQL در بسته‌بندی تضمین می�
 ok('نبودِ باینری ویندوزی در حالت سخت‌گیر ساخت را متوقف می‌کند',
   /hasWinLibsql/.test(packScript) && /باینری ویندوزی libSQL داخل بسته نیست/.test(packScript));
 ok('node.exe قبل از بسته‌بندی اعتبار PE x64 بررسی می‌شود',
-  /function assertWindowsExe/.test(packScript) && /0x8664/.test(packScript));
+  /assertWindowsExe/.test(packScript) && /0x8664/.test(fs.readFileSync(path.join(root, 'scripts/lib/node-runtime.mjs'), 'utf8')));
 
 const sysCtrl = fs.readFileSync(path.join(root, 'apps/api/src/modules/system.controller.ts'), 'utf8');
 ok('خودآزمایی زمان اجرا در /system/info هست (باینری دیتابیس، پوشه قابل نوشتن)',

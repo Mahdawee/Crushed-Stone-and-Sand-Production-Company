@@ -77,21 +77,20 @@ console.log('\n— بدون npx شکننده —');
 ok('Tauri CLI مستقیم با node اجرا می‌شود', /@tauri-apps['"],\s*'cli['"],\s*'tauri\.js'/.test(build));
 ok('npx فقط با --no-install (نسخه پشتیبان)', /npx['"],\s*\['--no-install'/.test(build));
 ok('هیچ `npx tauri` بدون --no-install نیست', !/'npx',\s*\['tauri/.test(build));
-ok('prepare-offline هم --no-install دارد', /'--no-install',\s*'tauri'/.test(off));
-ok('ZIP نود بدون shell به اسکریپت پاس می‌شود (مسیرهای دارای فاصله)',
-  /runNode\(\[[^\]]*'--node-zip'/.test(off));
+ok('prepare-offline از همان سازندهٔ امن دسکتاپ استفاده می‌کند', /build-desktop\.mjs/.test(off) && /'--offline'/.test(off));
+ok('ZIP نود بدون shell به اسکریپت ساخت داده می‌شود', /FD_NODE_ZIP/.test(off) && /spawnSync\(process\.execPath/.test(off));
 
 console.log('\n— ساخت آفلاین —');
 ok('CARGO_NET_OFFLINE در build-desktop', /CARGO_NET_OFFLINE = 'true'/.test(build));
-ok('CARGO_NET_OFFLINE در prepare-offline', /CARGO_NET_OFFLINE = 'true'/.test(off));
+ok('CARGO_NET_OFFLINE در prepare-offline', /CARGO_NET_OFFLINE:\s*'true'/.test(off));
 ok('npm_config_offline گذاشته می‌شود', /npm_config_offline/.test(build));
 ok('--prefetch از cargo fetch استفاده می‌کند', /'fetch',\s*'--manifest-path'/.test(build));
-ok('Cargo.lock بررسی می‌شود', /Cargo\.lock/.test(build) && /Cargo\.lock/.test(off));
+ok('Cargo.lock بررسی می‌شود', /Cargo\.lock/.test(build) && /build-desktop\.mjs/.test(off));
 ok('اگر رجیستری خالی و --offline بود، پیام روشن می‌دهد',
   /حالت آفلاین انتخاب شده ولی کریت‌های Rust دانلود نشده/.test(build));
 ok('رجیستری با readdir بررسی می‌شود (نه فرض)', /registry['"],\s*'cache'/.test(build));
-ok('prepare-offline وجود node.exe را می‌سنجد', /node\.exe'\)\)|nodeInBundle/.test(off));
-ok('ZIP ناقص/کوچک رد می‌شود', /5_000_000/.test(off));
+ok('prepare-offline بسته‌بندی و کنترل node.exe را به سازندهٔ اصلی واگذار می‌کند', /build-desktop\.mjs/.test(off) && /--require-node/.test(build));
+ok('ZIP داده‌شده باید فایل موجود باشد', /fs\.statSync\(zip\)\.isFile\(\)/.test(off));
 ok('FD_NODE_ZIP به بسته‌بندی پاس می‌شود', /FD_NODE_ZIP/.test(build));
 
 console.log('\n— لینکر C++ (link.exe) — خطای واقعی کاربر —');

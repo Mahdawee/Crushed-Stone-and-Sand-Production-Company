@@ -16,7 +16,7 @@
 > `npm run desktop:build` خودش این حالت را تشخیص می‌دهد و راه‌حل می‌دهد.
 >
 > **اگر اینترنت ندارید:** یک بار `npm run desktop:prefetch` (با اینترنت) و بعد
-> `npm run desktop:build --offline` → بخش ۸.
+> `npm run desktop:build -- --offline` → بخش ۸.
 >
 > **دو پیش‌نیاز جدا که هر دو لازم‌اند:** (۱) Rust برای `cargo` — بخش ۲؛
 > (۲) کامپایلر C++ مایکروسافت برای `link.exe` — بخش ۳. یکی بدون دیگری کافی نیست:
@@ -214,13 +214,15 @@ src-tauri/target/release/farday-roshan.exe                               (نسخ
 
 ## ۸) ساخت بدون انترنت (Air-gapped)
 
-هدف: روی کمپیوتر بدون اینترنت، فایل نصب بسازیم. سه چیز باید از قبل حاضر باشد:
+هدف: روی کمپیوتر بدون اینترنت، فایل نصب بسازیم. پیش‌نیازهای زیر باید از قبل حاضر باشند:
 
 | چه چیزی | چرا | چطور آماده می‌شود |
 |---|---|---|
 | `node_modules` | npm و Vite و Tauri CLI از اینجا اجرا می‌شوند | `npm ci` (یک بار، با اینترنت) |
 | crateهای Rust | cargo در ساخت به اینترنت دست نزند | `npm run desktop:prefetch` |
-| `node-v22-win-x64.zip` | تا `node.exe` داخل نصب‌کننده برود | یک بار دانلود، بعد فلش |
+| Node ویندوز x64 نسخه 22.12 یا بالاتر | همان `node.exe` اجراکننده داخل بسته کپی می‌شود | نصب قبلی؛ در صورت نیاز ZIP رسمی جایگزین است |
+| Rust، MSVC C++ و Windows SDK | کامپایل نصب‌کننده | نصب و آماده‌سازی قبلی روی ویندوز |
+| ابزار NSIS و نصب‌کننده WebView2 در کش Tauri | ساخت بسته نصبی | یک ساخت موفق آنلاین و `npm run webview2:prepare` |
 | `.cache/libsql/win32-x64-msvc-*.tgz` | درایور SQLite ویندوزی — بدون آن نصب‌کننده روی ویندوز صفحه‌ی سفید می‌دهد | `npm run desktop:prefetch` (خودکار) |
 
 > **درباره‌ی `libsql` (دور ۱۶ اضافه شد):** برنامه هنوز روی لینوکس ساخته شود،
@@ -244,7 +246,7 @@ npm run desktop:prefetch      # = cargo fetch ؛ همه‌ی crateها را در
 
 `prefetch` در پایان می‌گوید چند crate ذخیره شد و `Cargo.lock` ساخته شد یا نه.
 
-فایل ZIP نود را هم بگیرید (نسخه باید با `node -v` جاری یکی باشد):
+ZIP رسمی Node اختیاری است؛ در صورت نبود Node سازگار می‌توانید آن را از قبل تهیه کنید:
 
 ```
 https://nodejs.org/dist/v22.22.3/node-v22.22.3-win-x64.zip
@@ -259,26 +261,28 @@ https://nodejs.org/dist/v22.22.3/node-v22.22.3-win-x64.zip
 | `C:\Users\<user>\.cargo` | همان مسیر |
 | `C:\Users\<user>\.rustup` | همان مسیر (خودِ کامپایلر) |
 | `src-tauri\target` *(اختیاری)* | همان مسیر — کامپایل‌های آماده، ساخت را چند دقیقه‌ای می‌کند |
-| `node-v22.x-win-x64.zip` | مثلاً `D:\` |
+| `node-v22.x-win-x64.zip` *(اختیاری)* | مثلاً `D:\` |
+| کش Tauri در `%LOCALAPPDATA%\tauri` | همان مسیر کاربر مقصد |
 
-> کپی `.cargo` و `.rustup` یعنی **لازم نیست Rust را روی کمپیوتر آفلاین نصب کنید**.
+> ابزارهای Rust، MSVC و Windows SDK باید روی ماشین مقصد قابل اجرا و پیکربندی شده باشند؛ کپی پوشه‌ها به‌تنهایی نصب و پیکربندی آن‌ها را تضمین نمی‌کند. `node_modules` نیز باید با ویندوز و معماری مقصد سازگار باشد.
 
 ### گام ۳ — ساخت آفلاین
 
 ```powershell
-# فقط ساخت (node.exe از قبل در بسته هست یا ZIP می‌دهید)
+# استفاده از Node سازگار نصب‌شده
+npm run desktop:build:offline
+# یا استفاده صریح از ZIP محلی
 npm run desktop:build:offline -- "D:\node-v22.22.3-win-x64.zip"
 ```
 
-یا اگر `node.exe` قبلاً داخل `src-tauri\api` هست:
+یا با سازنده اصلی:
 
 ```powershell
-npm run desktop:build --offline
+npm run desktop:build -- --offline
 ```
 
 هر دو مسیر، `CARGO_NET_OFFLINE=true` می‌گذارند. یعنی اگر crate‌ای کم باشد،
-cargo **سریع** می‌گوید کدام است — نه اینکه چند دقیقه منتظر شبکه بماند و بعد
-خطای گمراه‌کننده بدهد.
+cargo خطا می‌دهد. npm نیز در حالت آفلاین اجرا می‌شود و اسکریپت پروژه برای Node یا libSQL دانلود نمی‌کند. **محدودیت مهم:** خود Tauri bundler ممکن است برای یافتن WebView2 یا آماده‌سازی NSIS همچنان به شبکه مراجعه کند؛ حالت آفلاین Cargo مانع شبکهٔ همهٔ ابزارهای جانبی نیست. بنابراین ساخت کاملاً قطع از شبکه تضمین نشده است. `desktop:prefetch` فقط Cargo و libSQL را آماده می‌کند، نه WebView2 یا NSIS.
 
 ### گام ۴ — بررسی
 
@@ -407,7 +411,7 @@ npm run desktop:build
 `build-desktop.mjs` در حالت `--offline` بدون آن‌ها با پیام روشن متوقف می‌شود.
 | `npm run desktop:build` | نصب‌کننده ویندوز می‌سازد (خودش cargo را پیدا و PATH را اصلاح می‌کند) | برای توزیع به کمپیوتر شرکت |
 | `npm run desktop:prefetch` | یک بار با اینترنت، crateهای Rust را ذخیره می‌کند | پیش از رفتن به کمپیوتر آفلاین |
-| `npm run desktop:build --offline` | ساخت بدون اینترنت | وقتی crateها ذخیره شده‌اند |
+| `npm run desktop:build -- --offline` | ساخت بدون اینترنت | وقتی crateها ذخیره شده‌اند |
 | `npm run desktop:dev` | پنجره دسکتاپ در حالت توسعه | آزمایش پنجره بدون ساخت نصب‌کننده |
 | `npm run package:api` | فقط بسته API/`src-tauri/api` را آماده می‌کند | به‌ندرت؛ داخل `desktop:build` هست |
 | `npm run test:api` | ۵۳ تست رفتاری API | بعد از تغییرات بک‌اند |
@@ -472,7 +476,7 @@ npm run desktop:build
 
 ```
 ▶ ۱/۳ ساخت API و رابط کاربری       ← اگر اینجا شکست: مشکل Node/TypeScript
-▶ ۲/۳ بسته‌بندی API + node.exe      ← اگر اینجا شکست: مشکل دانلود/اینترنت (یا ZIP نود)
+▶ ۲/۳ بسته‌بندی API + node.exe      ← در صورت خطا پیام بالا و Node/ZIP محلی را بررسی کنید
 ▶ ۳/۳ ساخت نصب‌کننده                ← اگر اینجا شکست: مشکل Rust/MSVC/NSIS
 ```
 

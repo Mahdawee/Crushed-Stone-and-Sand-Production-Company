@@ -66,7 +66,7 @@ async function main() {
   /* FD_API_ENTRY → اجرای همین تست روی بسته‌ی نهایی نصب‌کننده (src-tauri/api) */
   const entry = process.env.FD_API_ENTRY || path.join(__dirname, '..', 'dist', 'main.js');
   console.log(`\n— اجرا با: ${entry} —`);
-  const child = spawn(process.execPath, [entry], {
+  const child = spawn(process.env.FD_NODE_RUNTIME || process.execPath, [entry], {
     env: { ...process.env, FD_DATA_DIR: dataDir, FD_PORT: String(PORT), FD_HOST: '127.0.0.1' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

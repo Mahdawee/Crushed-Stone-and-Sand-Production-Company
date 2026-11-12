@@ -41,7 +41,7 @@
     "test:paths": "node scripts/ui-check/paths.test.mjs",
     "test:tracking": "npm run build -w @farday/api && node apps/api/test/tracking.test.js",
     "test:print": "node scripts/ui-check/print-quality.test.mjs",
-    "test:build": "node scripts/ui-check/build-scripts.test.mjs",
+    "test:build": "node scripts/ui-check/build-scripts.test.mjs && node scripts/ui-check/node-runtime.test.mjs",
     "test:api:smoke": "node apps/api/test/smoke.test.js",
     "test:softdelete": "npm run build -w @farday/api && node apps/api/test/softdelete.test.js",
     "test:scenario": "npm run build -w @farday/api && node apps/api/test/scenario.test.js",

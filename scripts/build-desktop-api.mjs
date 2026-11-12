@@ -6,7 +6,7 @@
  *   src-tauri/api/package.json  { "type": "commonjs" }
  *
  * Usage:
- *   npm run package:api                 # all platforms, downloads the Node runtime
+ *   npm run package:api                 # reuse a compatible Windows Node runtime, otherwise download it
  *   node scripts/build-desktop-api.mjs --no-node   # reuse the system Node
  */
 import { execSync } from 'node:child_process';
@@ -15,6 +15,7 @@ import path from 'node:path';
 import os from 'node:os';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { assertWindowsExe, copyInstalledNode } from './lib/node-runtime.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const apiSrc = path.join(root, 'apps/api');
@@ -190,30 +191,6 @@ function extractFileFromZip(zipPath, wantedSuffix, destPath) {
 }
 
 
-/**
- * بررسی امضای فایل اجرایی ویندوز (PE).
- *
- * چرا: فایل ZIP نود ممکن است ناقص/اشتباه باشد (دانلود قطع‌شده، نسخه ۳۲ بیتی).
- * اگر node.exe خراب داخل نصب‌کننده برود، کاربر فقط «برنامه باز نمی‌شود» می‌بیند.
- * اینجا قبل از بسته‌بندی جلوی آن گرفته می‌شود.
- */
-function assertWindowsExe(file, label = 'node.exe') {
-  let buf;
-  try { buf = fs.readFileSync(file); } catch { throw new Error(`${label} خوانده نشد`); }
-  if (buf.length < 1024 || buf[0] !== 0x4d || buf[1] !== 0x5a) {
-    throw new Error(`${label} فایل اجرایی ویندوز نیست (امضای MZ ندارد)`);
-  }
-  const peOff = buf.readUInt32LE(0x3c);
-  if (buf.length < peOff + 6 || buf.toString('latin1', peOff, peOff + 4) !== 'PE\u0000\u0000') {
-    throw new Error(`${label} ساختار PE معتبر ندارد`);
-  }
-  const machine = buf.readUInt16LE(peOff + 4);
-  if (machine !== 0x8664) {
-    throw new Error(`${label} برای x64 نیست (machine=0x${machine.toString(16)})`);
-  }
-  return true;
-}
-
 console.log('▶ 1/5 ساخت API (nest build)…');
 run('npx nest build', apiSrc);
 
@@ -369,10 +346,19 @@ if (!noNode) {
       console.error(`⛔ استخراج node.exe از ${localZip} انجام نشد: ${e instanceof Error ? e.message : e}`);
       process.exit(1);
     }
-    finish();
-    process.exit(0);
-  }
-
+  } else {
+    let copiedInstalled = false;
+    try {
+      copiedInstalled = copyInstalledNode(path.join(out, 'node.exe'));
+      if (copiedInstalled) console.log(`▶ 4/5 Node نصب‌شده ویندوز x64 کاپی شد (نسخه ${ver}، بدون دانلود)`);
+    } catch (e) {
+      console.error(`   ⚠ Node نصب‌شده قابل استفاده نیست: ${e instanceof Error ? e.message : e}`);
+    }
+    if (!copiedInstalled && offlineMode) {
+      console.error('⛔ حالت آفلاین: Node ویندوز x64 سازگار در دسترس نیست؛ فایل ZIP رسمی را با --node-zip بدهید.');
+      process.exit(1);
+    }
+    if (!copiedInstalled) {
   console.log('▶ 4/5 دانلود runtime نود برای ویندوز (نسخه بدون نصب)…');
   const url = `https://nodejs.org/dist/v${ver}/${zipName}`;
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'farday-node-'));
@@ -406,6 +392,8 @@ if (!noNode) {
     console.log('     را دستی در ' + path.join(out, 'node.exe') + ' کاپی کنید.');
   } finally {
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+    }
   }
 } else {
   console.log('▶ 4/5 (بدون کاپی نود — از نود نصب‌شده سیستم استفاده می‌شود)');
