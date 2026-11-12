@@ -225,7 +225,26 @@ const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDa
   check('صفر کردن شکست خورد (نه ۲۰۰ بی‌اثر)', failedReset.status === 400, String(failedReset.status));
   check('پیام می‌گوید برگردانده شد', /برگردانده شد|بازگردانید/.test(String(failedReset.body?.message || '')),
     String(failedReset.body?.message));
-  check('پرچم rolledBack در پاسخ هست', failedReset.body?.rolledBack === true, JSON.stringify(failedReset.body?.rolledBack));
+  /*
+   * ⚠ این بررسی روی runner گیت‌هاب قرمز می‌شد و محلی سبز. برای این‌که
+   * دفعه‌ی بعد «چرا» معلوم باشد، نه فقط «false»، وضعیت کامل گزارش می‌شود:
+   * چه فایل پشتیبانی ساخته شد، آیا وجود دارد، و بدنه‌ی پاسخ چه می‌گوید.
+   */
+  {
+    const b = failedReset.body || {};
+    const bakName = String(b.backupFile || '');
+    const bakPath = bakName ? path.join(dataDir, 'backups', bakName) : '';
+    const diag = {
+      rolledBack: b.rolledBack,
+      ok: b.ok,
+      backupFile: bakName,
+      backupExists: bakPath ? fs.existsSync(bakPath) : null,
+      backupSize: bakPath && fs.existsSync(bakPath) ? fs.statSync(bakPath).size : null,
+      messageHead: String(b.message || '').slice(0, 120),
+      status: failedReset.status,
+    };
+    check('پرچم rolledBack در پاسخ هست', b.rolledBack === true, JSON.stringify(diag));
+  }
 
   const afterFail = await api('GET', '/sales', undefined, token);
   check('داده‌ها بعد از شکست سر جایشان‌اند',
