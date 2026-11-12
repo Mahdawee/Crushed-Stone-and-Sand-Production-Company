@@ -22,6 +22,7 @@ import path from 'node:path';
 import struct from 'node:buffer';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { decodeMsiStreamName, listCab } from '../lib/msi-inspect.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
@@ -70,7 +71,22 @@ function dirent(name, etype, start = ENDCHAIN, size = 0, child = NOSTREAM, right
   return e;
 }
 
-function makeMsi(names) {
+// Encode MSI's standard table stream format to exercise real on-disk names.
+function encodeMsiName(name) {
+  const alphabet = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz._';
+  let out = '';
+  if (name.startsWith('!')) { out = String.fromCharCode(0x4840); name = name.slice(1); }
+  for (let i = 0; i < name.length; i++) {
+    const a = alphabet.indexOf(name[i]);
+    if (a < 0) { out += name[i]; continue; }
+    const b = i + 1 < name.length ? alphabet.indexOf(name[i + 1]) : -1;
+    if (b >= 0) { out += String.fromCharCode(0x3800 + a + (b << 6)); i++; }
+    else out += String.fromCharCode(0x4800 + a);
+  }
+  return out;
+}
+
+function makeMsi(names, encoded = false) {
   const cab = makeCab(names);
   const streams = [['!_StringData', Buffer.from('Farday Roshan' + String.fromCharCode(0) + 'Version' + String.fromCharCode(0) + '9.9.9', 'latin1')],
                    ['!_Tables', Buffer.alloc(400, 0x54)],
@@ -81,7 +97,7 @@ function makeMsi(names) {
     let off = ndir + 1;
     for (const [nm, d] of streams) { starts.push([nm, off, d.length]); off += pad(d).length / SEC; }
     const ents = [dirent('Root Entry', 5, FREESECT, 0, 1)];
-    starts.forEach(([nm, st, sz], i) => ents.push(dirent(nm, 2, st, sz, NOSTREAM, i + 2 < starts.length ? i + 2 : NOSTREAM)));
+    starts.forEach(([nm, st, sz], i) => ents.push(dirent(encoded ? encodeMsiName(nm) : nm, 2, st, sz, NOSTREAM, i + 2 < starts.length ? i + 2 : NOSTREAM)));
     const dirdata = pad(Buffer.concat(ents));
     const need = dirdata.length / SEC;
     if (need === ndir) { var dirBuf = dirdata; break; }
@@ -121,14 +137,30 @@ const verify = (dir) => {
   } catch (e) { return { code: e.status, out: String(e.stdout || '') }; }
 };
 
-console.log('\n— MSI سالم → سبز —');
+console.log('\n— فهرست CAB خوانده‌شده، ولی کامل بودن MSI نامعلوم —');
 const good = verify(bundleOf('good', makeMsi([
   'api\\app.js', 'tools\\reset-ui\\server.mjs', 'tools\\reset-ui\\ui.html', 'farday-public.b64',
 ])));
-ok('خارج ۰', good.code === 0, `خارج ${good.code}`);
+ok('فهرست ناقص‌اثبات‌شده نامعلوم است (خارج ۲)', good.code === 2, `خارج ${good.code}`);
 ok('reset-ui دیده شد', /reset-ui\).*داخل بسته هست/.test(good.out));
 ok('API دیده شد', /API \(app\.js\).*داخل بسته هست/.test(good.out));
 ok('کلید عمومی دیده شد', /کلید عمومی.*داخل بسته هست/.test(good.out));
+
+console.log('\n— نام‌های استاندارد MSI و UTF-8 در CAB —');
+const encodedName = encodeMsiName('!_StringData');
+ok('نام کدگذاری‌شدهٔ جدول MSI خوانده می‌شود', decodeMsiStreamName(encodedName) === '!_StringData');
+const encodedMsi = verify(bundleOf('encoded', makeMsi([
+  'api\\app.js', 'tools\\reset-ui\\server.mjs', 'farday-public.b64',
+], true)));
+ok('جریان کدگذاری‌شده خوانده و API شناسایی می‌شود', encodedMsi.code === 2 && /API \(app\.js\).*داخل بسته هست/.test(encodedMsi.out), encodedMsi.out);
+const utfName = 'پوشه/رسید.txt';
+const utfCab = makeCab([utfName]);
+const utfBytes = Buffer.from(utfName, 'utf8');
+const utfHdr = Buffer.from(utfCab.subarray(0, 52));
+utfHdr.writeUInt16LE(0x80, 36 + 14);
+utfHdr.writeUInt32LE(utfHdr.length + utfBytes.length + 1, 8);
+const utfFixture = Buffer.concat([utfHdr, utfBytes, Buffer.from([0])]);
+ok('نام UTF-8 در CAB درست خوانده می‌شود', listCab(utfFixture)?.names[0] === utfName);
 
 console.log('\n— نشت کلید خصوصی → قرمز (این همان چیزی است که نسخه‌ی قبل نمی‌گرفت) —');
 const leak = verify(bundleOf('leak', makeMsi([
@@ -138,10 +170,10 @@ ok('خارج ۱', leak.code === 1, `خارج ${leak.code}`);
 ok('کلید خصوصی گزارش شد', /کلید خصوصی/.test(leak.out) && /نباید باشند/.test(leak.out));
 ok('ابزار لایسنس گزارش شد', /ابزار لایسنس/.test(leak.out));
 
-console.log('\n— نبود ابزار صفر کردن → قرمز واقعی —');
+console.log('\n— نیافتن ابزار در فهرست ناقص → نامعلوم —');
 const miss = verify(bundleOf('missing', makeMsi(['api\\app.js', 'farday-public.b64'])));
-ok('خارج ۱', miss.code === 1, `خارج ${miss.code}`);
-ok('پیام «نیست» دارد', /صفر کردن.*داخل بسته نیست/.test(miss.out));
+ok('نبود با فهرست ناقص نامعلوم است', miss.code === 2, `خارج ${miss.code}`);
+ok('پیام صادقانه می‌دهد', /کامل بودن فهرست ثابت نشده/.test(miss.out));
 
 console.log('\n— نام کوتاه ۸.۳ (همان چیزی که WiX واقعاً می‌نویسد) —');
 /*
@@ -152,8 +184,8 @@ console.log('\n— نام کوتاه ۸.۳ (همان چیزی که WiX واقع�
 const short83 = verify(bundleOf('short83', makeMsi([
   'API\\APP.JS', 'SERVER~1.MJS', 'FARDAY~1.B64',
 ])));
-ok('خارج ۰ با نام کوتاه', short83.code === 0, `خارج ${short83.code}`);
-ok('می‌گوید با نام کوتاه شناخته شد', /نام کوتاه/.test(short83.out));
+ok('نام کوتاه به‌تنهایی تأیید نیست', short83.code === 2, `خارج ${short83.code}`);
+ok('دلیل نامعلوم بودن نام کوتاه را می‌گوید', /نام کوتاه/.test(short83.out));
 
 console.log('\n— فایل خوانده‌نشدنی → نامعلوم (۲)، هرگز «سالم» —');
 const junk = Buffer.alloc(20000); for (let i = 0; i < junk.length; i++) junk[i] = (i * 131) & 0xff;

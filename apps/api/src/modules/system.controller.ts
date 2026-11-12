@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query, Req, UseGuards, HttpException, Res } from '@nestjs/common';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { db, databaseFile, BACKUP_DIR, resetDb } from '../db';
 import { ensureSchemaAsync, TABLE_LIST } from '../schema';
 import { AuthGuard, ManagerOnly, Public, userOf } from '../common/auth';
@@ -535,10 +536,16 @@ export class SystemController {
     }
 
     const target = databaseFile();
-    // safety copy of the current database before overwriting
-    const safety = path.join(BACKUP_DIR(), `before-restore-${Date.now()}.db`);
-    try { fs.copyFileSync(target, safety); } catch { /* ignore */ }
-    try { await db().$executeRawUnsafe('PRAGMA wal_checkpoint(TRUNCATE)'); } catch { /* ignore */ }
+    // Take a transactionally consistent snapshot including committed WAL.
+    const safety = path.join(BACKUP_DIR(), `before-restore-${Date.now()}-${randomUUID()}.db`);
+    try {
+      await db().$executeRawUnsafe(`VACUUM INTO '${safety.replace(/'/g, "''")}'`);
+      const verified = checkBackupFile(safety, fs.statSync(safety).size);
+      if (!verified.ok) throw new Error(verified.message);
+      await db().$executeRawUnsafe('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch (e: any) {
+      throw new HttpException(`بازگردانی متوقف شد: نسخهٔ ایمنی آماده نشد (${e?.message || e}). دیتابیس فعلی دست‌نخورده است.`, 500);
+    }
     /*
      * باگ جدی: اتصال باز روی فایل قدیمی باقی می‌ماند، پس بعد از «بازگردانی»
      * برنامه همان داده‌ی قبل را نشان می‌داد و بازگردانی به نظر شکست‌خورده
@@ -553,13 +560,15 @@ export class SystemController {
        * ایمنی که چند خط بالاتر گرفتیم برمی‌گردانیم. (اگر خودِ کاپی ایمنی
        * نبود، خطا را واضح می‌دهیم و به کاربر می‌گوییم فایل در کجاست.)
        */
-      try { fs.copyFileSync(safety, target); } catch { /* ignore */ }
-      await ensureSchemaAsync(true);
-      settingsService.clearCache();
-      throw new HttpException(
-        `کاپی فایل پشتیبان انجام نشد (${e?.message || e}). دیتابیس قبلی برگردانده شد.`,
-        500,
-      );
+      try {
+        for (const suffix of ['-wal', '-shm']) fs.rmSync(target + suffix, { force: true });
+        fs.copyFileSync(safety, target);
+        await ensureSchemaAsync(true);
+        settingsService.clearCache();
+      } catch (rollback: any) {
+        throw new HttpException(`بازیابی خودکار ناموفق بود (${rollback?.message || rollback}). نسخهٔ ایمنی را نگه دارید: ${safety}`, 500);
+      }
+      throw new HttpException(`کاپی پشتیبان انجام نشد (${e?.message || e}). دیتابیس از نسخهٔ ایمنی برگردانده شد.`, 500);
     }
     /* فایل‌های WAL/SHM قدیمی به دیتابیس تازه تعلق ندارند و باید بروند */
     for (const suffix of ['-wal', '-shm']) {

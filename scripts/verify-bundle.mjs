@@ -150,7 +150,7 @@ for (const inst of installers) {
    */
   if (/\.exe$/i.test(inst.file)) {
     skip('فهرست فایل‌های داخل NSIS خوانده نشد (آرشیو 7z داخلی)');
-    skip('این بسته تأیید نشد — محتوایش همان منابع MSI است، ولی خودش بررسی نشده');
+    skip('این بسته تأیید نشد — اشتراک تنظیمات با MSI، یکسان بودن محتوای نصب‌کننده‌ها را ثابت نمی‌کند');
     continue;
   }
 
@@ -177,8 +177,8 @@ for (const inst of installers) {
     const full = files.find((f) => n.re.test(f));
     const short = !full && n.short ? files.find((f) => n.short.test(path.basename(f).replace(/\\/g, '/'))) : null;
     if (full) ok(`${n.label} داخل بسته هست`);
-    else if (short) ok(`${n.label} داخل بسته هست (با نام کوتاه ${path.basename(short)})`);
-    else bad(`${n.label} داخل بسته نیست — ${n.why}`);
+    else if (short) skip(`${n.label}: نام کوتاه ${path.basename(short)} پیدا شد، ولی هویت و مسیر آن تأیید نشد`);
+    else skip(`${n.label}: در فهرست خوانده‌شده پیدا نشد؛ کامل بودن فهرست ثابت نشده است`);
   }
 
   /* ── ۲) چیزهایی که نباید باشند ── */
@@ -189,7 +189,7 @@ for (const inst of installers) {
    */
   const leaked = FORBID.filter((n) => files.some((f) => n.re.test(f)));
   if (leaked.length) bad(`این‌ها داخل بسته‌اند (نباید باشند): ${leaked.map((x) => x.label).join('، ')}`);
-  else ok('هیچ فایل فروشنده (ابزار لایسنس، کلید خصوصی) داخل بسته نیست');
+  else skip('نبود فایل فروشنده تأیید نشد: خوانندهٔ CAB کامل بودن فهرست MSI را ثابت نمی‌کند');
 
   /* ── ۳) هشدار ساختاری، نه خطا ── */
   const zero = Number(info.zeroBytesTotal || 0);

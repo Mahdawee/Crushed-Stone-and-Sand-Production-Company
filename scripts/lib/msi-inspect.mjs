@@ -37,19 +37,36 @@ const NOSTREAM = 0xffffffff;
 
 /* ─────────────────────────── CFB / OLE reader ─────────────────────────── */
 
-function readSectors(buf, fat, start, endMark = ENDCHAIN) {
+function readSectors(buf, fat, start, secSize, endMark = ENDCHAIN) {
   const parts = [];
   const seen = new Set();
   let cur = start;
   while (cur < endMark && cur !== FREESECT && !seen.has(cur)) {
     if (cur >= fat.length) return null;
     seen.add(cur);
-    const off = 512 + cur * 512;
-    if (off + 512 > buf.length) return null;
-    parts.push(buf.subarray(off, off + 512));
+    const off = (cur + 1) * secSize;
+    if (off + secSize > buf.length) return null;
+    parts.push(buf.subarray(off, off + secSize));
     cur = fat[cur];
   }
   return Buffer.concat(parts);
+}
+
+// Windows Installer compresses table/stream names into Unicode codepoints.
+// 0x4840 marks a table stream; 0x3800..0x47ff encode pairs, 0x4800..0x483f singles.
+export function decodeMsiStreamName(name) {
+  const alphabet = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz._';
+  let result = '';
+  for (const ch of name) {
+    const code = ch.codePointAt(0);
+    if (code === 0x4840) result += '!';
+    else if (code >= 0x4800 && code < 0x4840) result += alphabet[code - 0x4800];
+    else if (code >= 0x3800 && code < 0x4800) {
+      const v = code - 0x3800;
+      result += alphabet[v & 63] + alphabet[(v >> 6) & 63];
+    } else result += ch;
+  }
+  return result;
 }
 
 /** درخت دایرکتوری CFB را پیمایش می‌کند و مسیر کامل هر stream را می‌دهد. */
@@ -70,7 +87,7 @@ export function readCfbStreams(buf) {
   const guard = new Set();
   while (ds < 0xfffffffa && !guard.has(ds) && guard.size < 10000) {
     guard.add(ds);
-    const off = 512 + ds * secSize;
+    const off = (ds + 1) * secSize;
     if (off + secSize > buf.length) break;
     const per = secSize / 4 - 1;
     for (let i = 0; i < per; i++) {
@@ -81,13 +98,13 @@ export function readCfbStreams(buf) {
   }
   const fat = [];
   for (const fs2 of fatSectors) {
-    const off = 512 + fs2 * secSize;
+    const off = (fs2 + 1) * secSize;
     if (off + secSize > buf.length) continue;
     for (let i = 0; i < secSize / 4; i++) fat.push(buf.readUInt32LE(off + 4 * i));
   }
   if (!fat.length) return null;
 
-  const dirBuf = readSectors(buf, fat, dirStart);
+  const dirBuf = readSectors(buf, fat, dirStart, secSize);
   if (!dirBuf) return null;
 
   const entries = [];
@@ -95,7 +112,7 @@ export function readCfbStreams(buf) {
     const off = i * 128;
     const nameLen = dirBuf.readUInt16LE(off + 64);
     if (nameLen < 2 || nameLen > 64) { entries.push(null); continue; }
-    const name = dirBuf.subarray(off, off + nameLen - 2).toString('utf16le');
+    const name = decodeMsiStreamName(dirBuf.subarray(off, off + nameLen - 2).toString('utf16le'));
     entries.push({
       name,
       type: dirBuf[off + 66],          // 1=storage 2=stream 5=root
@@ -133,7 +150,7 @@ export function readCfbStreams(buf) {
 export function readCfbStream(buf, cfb, name) {
   const s = cfb.streams.get(name);
   if (!s) return null;
-  const data = readSectors(buf, cfb.fat, s.start);
+  const data = readSectors(buf, cfb.fat, s.start, cfb.secSize);
   if (!data) return null;
   return data.subarray(0, s.size);
 }
@@ -147,8 +164,7 @@ const CAB_MAGIC = Buffer.from([0x4d, 0x53, 0x43, 0x46]); // "MSCF"
  *
  * ── سه باگ که تست روی فایل ساختگی گرفت ─────────────────────────────────
  *  ۱) جابه‌جایی آفست: ستون `attribs` در `CFFILE` در آفست **۱۴** است، نه
- *     ۱۶؛ من ۱۶ گرفته بودم که در واقع شروع نام است. با آن، پرچم UTF-16
- *     هرگز دیده نمی‌شد و نام‌های فارسی به `A\u0006'\u0006…` تبدیل می‌شدند.
+ *     ۱۶؛ آن پرچم مشخص می‌کند نام به UTF-8 است. در غیر این صورت نام فارسی به `A\u0006'\u0006…` تبدیل می‌شدند.
  *  ۲) فایل ناقص: `break` می‌کردم و فهرست **کوتاه** برمی‌گرداند — یعنی
  *     «فقط ۲ فایل دارد» به‌جای «نتوانستم بخوانم». برای بررسی امنیتی،
  *     فهرست ناقص از «نامعلوم» خطرناک‌تر است.
@@ -181,18 +197,11 @@ export function listCab(buf, offset = 0) {
     p += 16;
 
     let name;
-    if (isUtf) {
-      let q = p;
-      while (q + 1 < end && !(buf[q] === 0 && buf[q + 1] === 0)) q += 2;
-      if (q + 1 >= end) return null;
-      name = buf.subarray(p, q).toString('utf16le');
-      p = q + 2;
-    } else {
-      const z = buf.indexOf(0, p);
-      if (z < 0 || z > end) return null;
-      name = buf.subarray(p, z).toString('latin1');
-      p = z + 1;
-    }
+    const z = buf.indexOf(0, p);
+    if (z < 0 || z >= end) return null;
+    // CAB _A_NAME_IS_UTF marks UTF-8, not UTF-16.
+    name = buf.subarray(p, z).toString(isUtf ? 'utf8' : 'latin1');
+    p = z + 1;
     names.push(name);
     /* فایل‌های با نام را ذخیره می‌کنیم (نام را از نام جدا) */
     void attribs;

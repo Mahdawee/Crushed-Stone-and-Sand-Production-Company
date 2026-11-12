@@ -142,6 +142,16 @@ async function main() {
     check('داده‌ی بعد از پشتیبان حذف شد (بازگردانی واقعاً اثر کرد)',
       rowsAfter.length < countBefore, `${countBefore} → ${rowsAfter.length}`);
     check('داده‌ی داخل پشتیبان برگشت', rowsAfter.some((c) => c.name === 'مشتری الف'));
+    const safetyFile = path.join(backupDir, String(restoreGood.body?.safetyCopy || ''));
+    let safetyHasNewCustomer = false;
+    if (restoreGood.body?.safetyCopy && fs.existsSync(safetyFile)) {
+      const { DatabaseSync } = require('node:sqlite');
+      const safetyDb = new DatabaseSync(safetyFile, { readOnly: true });
+      try { safetyHasNewCustomer = !!safetyDb.prepare('SELECT id FROM Customer WHERE name = ?').get('مشتری بعد از پشتیبان'); }
+      finally { safetyDb.close(); }
+    }
+    check('نسخهٔ ایمنی بازگردانی دادهٔ جدید را دارد', safetyHasNewCustomer);
+
 
     console.log('\n— ۴) ابزار نجات خط فرمان —');
     /* دیتابیس را واقعاً خراب می‌کنیم و می‌بینیم ابزار نجات نجاتش می‌دهد */
