@@ -33,8 +33,21 @@ jobs:
         run: npm run test:syntax
       - name: ساخت بسته‌ی API (پیش‌نیاز تست‌ها)
         run: npm run build -w @farday/api
+      # ── باگ دور ۴۳: لاگ CI از بیرون خوانده نمی‌شد ──────────────────────
+      # «کل تست‌ها» قرمز بود ولی هیچ‌کس نمی‌توانست بگوید **کدام** بررسی.
+      # خروجی حالا در یک فایل ذخیره و به‌عنوان artifact گذاشته می‌شود، تا
+      # هم این‌جا و هم بعداً قابل خواندن باشد.
       - name: کل تست‌ها
-        run: npm test
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee /tmp/test-linux.log
+      - name: ذخیره‌ی لاگ تست
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-log-linux
+          path: /tmp/test-linux.log
+          if-no-files-found: warn
 
   # ── ۲) تست روی ویندوز: رفتار cmd.exe و مسیرهای ویندوزی ────────────────
   test-windows:
@@ -63,7 +76,16 @@ jobs:
       - name: ساخت بسته‌ی API
         run: npm run build -w @farday/api
       - name: کل تست‌ها روی ویندوز
-        run: npm test
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test-windows.log
+      - name: ذخیره‌ی لاگ تست ویندوز
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-log-windows
+          path: test-windows.log
+          if-no-files-found: warn
       - name: اجراکننده‌های ابزار باید واقعاً بالا بیایند
         run: npm run test:tool-runners
 
