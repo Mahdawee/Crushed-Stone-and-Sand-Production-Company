@@ -135,12 +135,28 @@ export class ExpensesController {
     const eid = idParam(id, 'شناسه‌ی سند مصرف');
     await assertLive('Expense', eid, 'سند مصرف');
     const mode = await settingsService.calendar();
+    /*
+     * ── باگ (شکار باگ دور ۳۴): ویرایش ناقص، فیلدهای دیگر را پاک می‌کرد ──────
+     * بدنه «کامل» فرض می‌شد؛ فراخوانی مثل `PUT /expenses/5 {date, amountAfn}`
+     * شرح، دسته، پیمانکار/فروشگاه، شماره بل خرید، پرداخت‌کننده و یادداشت را
+     * **خالی** می‌کرد و مبلغ دالری را صفر. حالا با ردیف موجود ادغام می‌شود و
+     * فقط کلیدهای موجود در بدنه نوشته می‌شوند. (تاریخ هم اگر نیاید از ردیف
+     * موجود می‌آید، نه اینکه «امروز» یا خطا شود.)
+     */
+    const curRows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Expense" WHERE "id"=?`, eid);
+    const existing: any = curRows?.[0] || {};
     let date = '';
-    try { date = parseUserDate(body.date, mode); }
+    try { date = body.date === undefined ? String(existing.date ?? '') : parseUserDate(body.date, mode); }
     catch (e: any) { throw new HttpException(e.message, 400); }
+    if (!date) throw new HttpException('تاریخ سند مصرف را وارد کنید.', 400);
+    const merged: any = { ...existing };
+    for (const k of ['description', 'categoryId', 'categoryName', 'contractorId', 'contractorName',
+      'purchaseBillNo', 'shopName', 'payerId', 'payerName', 'paymentType', 'note']) {
+      if (body?.[k] !== undefined) merged[k] = body[k];
+    }
     /* همان اعتبارسنجیِ ثبت، برای ویرایش هم لازم است — وگرنه مصرف منفی ذخیره می‌شد */
-    const amountAfn = Number(body.amountAfn) || 0;
-    const amountUsd = Number(body.amountUsd) || 0;
+    const amountAfn = body.amountAfn === undefined ? Number(existing.amountAfn) || 0 : Number(body.amountAfn) || 0;
+    const amountUsd = body.amountUsd === undefined ? Number(existing.amountUsd) || 0 : Number(body.amountUsd) || 0;
     if (amountAfn < 0 || amountUsd < 0) throw new HttpException('مبلغ مصرف نمی‌تواند منفی باشد.', 400);
     /* سقف مبلغ — عدد غول‌آسا در SQLite به Infinity گرد می‌شد و جمع دخل/مصرف
        را برای همیشه خراب می‌کرد (شکار باگ دور ۲۸). */
@@ -148,7 +164,7 @@ export class ExpensesController {
       throw new HttpException('مبلغ مصرف از حد مجاز بزرگ‌تر است.', 400);
     }
     if (amountAfn <= 0 && amountUsd <= 0) throw new HttpException('مبلغ مصرف را وارد کنید (افغانی یا دالری).', 400);
-    const branch = await resolveRelatedBranch(body.contractorId, body.contractorName);
+    const branch = await resolveRelatedBranch(merged.contractorId, merged.contractorName);
 
     /* همان باگ «شماره در ویرایش گم می‌شد» — با رفتار صریح (حفظ یا ۴۰۹) */
     const curNo: any[] = await db().$queryRawUnsafe(`SELECT "no" FROM "Expense" WHERE "id"=?`, eid);
@@ -166,11 +182,11 @@ export class ExpensesController {
       `UPDATE "Expense" SET "no"=?, "date"=?, "description"=?, "categoryId"=?, "categoryName"=?, "contractorId"=?, "contractorName"=?,
        "purchaseBillNo"=?, "shopName"=?, "amountAfn"=?, "amountUsd"=?, "payerId"=?, "payerName"=?, "paymentType"=?, "note"=?
        WHERE "id"=?`,
-      finalNo, date, body.description || '', body.categoryId ? Number(body.categoryId) : null, body.categoryName || '',
+      finalNo, date, merged.description || '', merged.categoryId ? Number(merged.categoryId) : null, merged.categoryName || '',
       branch.contractorId, branch.contractorName,
-      body.purchaseBillNo || '', body.shopName || '', amountAfn, amountUsd,
-      body.payerId ? Number(body.payerId) : null, body.payerName || '',
-      body.paymentType === 'credit' ? 'credit' : 'cash', body.note || '', eid,
+      merged.purchaseBillNo || '', merged.shopName || '', amountAfn, amountUsd,
+      merged.payerId ? Number(merged.payerId) : null, merged.payerName || '',
+      merged.paymentType === 'credit' ? 'credit' : 'cash', merged.note || '', eid,
     );
     await logActivity({ action: 'update', entity: 'Expense', entityId: eid, detail: finalNo });
     return { ok: true, no: finalNo };

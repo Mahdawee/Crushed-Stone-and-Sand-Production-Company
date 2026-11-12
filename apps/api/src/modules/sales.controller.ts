@@ -243,25 +243,50 @@ export class SalesController {
     const sid = idParam(id, 'شناسه‌ی بل');
     await assertLiveRow('Sale', sid, 'بل فروش');
     const mode = await settingsService.calendar();
+    /*
+     * ── باگ (شکار باگ دور ۳۴): ویرایش ناقص، بل را به «مشتری گذری» می‌برد ─────
+     * بدنه «کامل» فرض می‌شد. اگر فراخواننده `customerId` را نمی‌فرستاد،
+     * `resolveSaleCustomer` **مشتری گذری** را برمی‌گرداند و بل بی‌صدا از حساب
+     * مشتری واقعی جدا می‌شد (بدهی‌اش گم). راننده، پلاک موتر، مقصد، مواد و
+     * یادداشت هم خالی می‌شدند. تاریخ هم اجباری بود، بنابراین «فقط یادداشت را
+     * عوض کن» با خطای «تاریخ بل را وارد کنید» رد می‌شد.
+     * حالا با ردیف موجود ادغام می‌شود.
+     */
+    const curRows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Sale" WHERE "id"=?`, sid);
+    const existing: any = curRows?.[0] || {};
     let date = '';
-    try { date = body.date ? parseUserDate(body.date, mode) : ''; }
+    try { date = body.date ? parseUserDate(body.date, mode) : String(existing.date ?? ''); }
     catch (e: any) { throw new HttpException(e.message, 400); }
     if (!date) throw new HttpException('تاریخ بل را وارد کنید.', 400);
-    const { volume, unitPrice, freightPerUnit, freightTotal, total } = readNumbers(body);
+    const merged: any = { ...existing };
+    for (const k of ['customerId', 'customerName', 'driverName', 'truckPlate', 'destination',
+      'materialId', 'materialName', 'paymentType', 'note']) {
+      if (body?.[k] !== undefined) merged[k] = body[k];
+    }
+    /*
+     * اعداد هم اگر فرستاده نشوند از ردیف موجود می‌آیند؛ وگرنه ویرایشِ فقط
+     * «راننده» با `volume` صفر به خطای «متراژ باید بزرگ‌تر از صفر باشد»
+     * می‌خورد (یعنی ویرایش ناقص عملاً غیرممکن بود).
+     */
+    const numsFrom: any = { ...merged };
+    for (const k of ['volume', 'unitPrice', 'freightPerUnit']) {
+      if (body?.[k] !== undefined) numsFrom[k] = body[k];
+    }
+    const { volume, unitPrice, freightPerUnit, freightTotal, total } = readNumbers(numsFrom);
     /*
      * باگ: در ویرایش، مشتری ناموجود فقط باعث می‌شد نام قدیمی حفظ شود و
      * `customerId` به عددی اشاره کند که چنین مشتری‌ای وجود ندارد (بل یتیم،
      * بدهی گم‌شده). همان بررسیِ «ثبت» اینجا هم لازم است (و گذری هم پشتیبانی
      * می‌شود).
      */
-    const cust = await resolveSaleCustomer(body);
-    if (cust.walkIn && body.paymentType === 'credit') {
+    const cust = await resolveSaleCustomer(merged);
+    if (cust.walkIn && merged.paymentType === 'credit') {
       throw new HttpException(
         'فروش «قرضه» به مشتری گذری ثبت نمی‌شود — برای قرضه، مشتری را انتخاب کنید. یا پرداخت را «نقده» بگذارید.', 400,
       );
     }
     /* «مربوط» (شاخه‌ی مصرف): نام از شناسه خوانده می‌شود، نه از کلاینت */
-    const branch = await resolveRelatedBranch(body.contractorId, body.contractorName);
+    const branch = await resolveRelatedBranch(merged.contractorId, merged.contractorName);
 
     /*
      * ── باگ: شماره بل در ویرایش گم می‌شد ────────────────────────────────
@@ -275,8 +300,7 @@ export class SalesController {
      * حالا: اگر `no` فرستاده نشود، شماره‌ی فعلی **حفظ** می‌شود؛ اگر
      * فرستاده شود، معتبر و یکتا بودنش روشن گزارش می‌شود.
      */
-    const cur: any[] = await db().$queryRawUnsafe(`SELECT "no" FROM "Sale" WHERE "id"=?`, sid);
-    const currentNo = String(cur?.[0]?.no ?? '');
+    const currentNo = String(existing.no ?? '');
     const wantedNo = String(body.no ?? '').trim();
     const finalNo = wantedNo || currentNo;
     if (wantedNo && wantedNo !== currentNo) {
@@ -293,11 +317,11 @@ export class SalesController {
         `UPDATE "Sale" SET "no"=?, "date"=?, "customerId"=?, "customerName"=?, "driverName"=?, "truckPlate"=?, "destination"=?,
           "materialId"=?, "materialName"=?, "volume"=?, "unitPrice"=?, "freightPerUnit"=?, "freightTotal"=?, "total"=?,
           "contractorId"=?, "contractorName"=?, "paymentType"=?, "note"=? WHERE "id"=?`,
-        finalNo, date, cust.id, cust.name || body.customerName || '', body.driverName || '',
-        body.truckPlate || '', body.destination || '', body.materialId ? Number(body.materialId) : null,
-        body.materialName || '', volume, unitPrice, freightPerUnit, freightTotal, total,
+        finalNo, date, cust.id, cust.name || merged.customerName || '', merged.driverName || '',
+        merged.truckPlate || '', merged.destination || '', merged.materialId ? Number(merged.materialId) : null,
+        merged.materialName || '', volume, unitPrice, freightPerUnit, freightTotal, total,
         branch.contractorId, branch.contractorName,
-        body.paymentType === 'credit' ? 'credit' : 'cash', body.note || '', sid,
+        merged.paymentType === 'credit' ? 'credit' : 'cash', merged.note || '', sid,
       );
     } catch (e: any) {
       /* خطای اعتبارسنجی خودمان (۴۰۰) نباید به ۵۰۰ تبدیل شود */

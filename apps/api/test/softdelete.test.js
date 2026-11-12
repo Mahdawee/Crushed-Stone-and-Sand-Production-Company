@@ -113,6 +113,30 @@ const makeLicense = ({ privateKey, payload }) => {
   check('صفحه‌ی کارمند باز می‌شود', profile.status === 200 && Boolean(profile.body?.employee));
   check('صفحه‌ی کارمند پرچم «حذف‌نشده» دارد', profile.body?.deleted === false, String(profile.body?.deleted));
 
+  /*
+   * ── باگ دور ۳۴: «ایام حاضر» فقط از ۶۰ ردیف آخر جمع می‌شد ────────────────
+   * فهرست حضور در پروفایل `LIMIT 60` دارد، ولی UI همان فهرست را جمع می‌زد؛
+   * برای کارمند با سابقه‌ی چندماهه عدد کمتر از واقعیت بود. سرور حالا جمعِ کل
+   * را در `totals` می‌فرستد و `listTruncated` می‌گوید فهرست بریده است.
+   */
+  {
+    const mkDay = (i) => addDays('2025-01-01', i);
+    const items = Array.from({ length: 70 }, (_, i) => ({
+      employeeId: empRow.id, date: mkDay(i),
+      status: i % 7 === 6 ? 'absent' : 'present', overtime: i % 3,
+    }));
+    const bulk = await api('POST', '/attendance/bulk', { items }, token);
+    check('۷۰ روز حضور و غیاب ثبت شد', bulk.status === 200 || bulk.status === 201, String(bulk.status));
+    const p2 = await api('GET', `/employees/${empRow.id}`, undefined, token);
+    const t = p2.body?.totals || {};
+    check('totals.days همه‌ی روزها را می‌شمارد (نه فقط ۶۰)', Number(t.days) === 70, String(t.days));
+    check('totals.present از فهرست ۶۰ ردیفی بیشتر است', Number(t.present) === 60, String(t.present));
+    check('totals.absent درست است', Number(t.absent) === 10, String(t.absent));
+    check('totals.overtime جمع کل است', Number(t.overtime) === 69, String(t.overtime));
+    check('listTruncated=true وقتی بیش از ۶۰ روز سابقه است', t.listTruncated === true, String(t.listTruncated));
+    check('فهرست نمایشی همچنان حداکثر ۶۰ ردیف است', (p2.body?.attendance || []).length === 60, String((p2.body?.attendance || []).length));
+  }
+
   /* ================================================================ */
   console.log('\n— حضور و غیاب: حذف نرم و اثرش —');
 

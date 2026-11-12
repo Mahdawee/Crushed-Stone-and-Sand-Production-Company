@@ -68,7 +68,19 @@ export class CompanyController {
      * با نام خالی، فاکتورِ تحویلی به مشتری بی‌نام چاپ می‌شد و کسی هم خطا
      * نمی‌دید. حالا نام الزامی است و طول‌ها محدود شده‌اند.
      */
-    const name = String(body?.name ?? '').trim();
+    /*
+     * ── باگ (شکار باگ دور ۳۴): ویرایش ناقص، بقیه‌ی فیلدهای شرکت را پاک می‌کرد ─
+     * `PUT /company` هم بدنه را کامل فرض می‌کرد: فراخوانی با `{name}` آدرس،
+     * سال مالی، مدیر مالی، سرپرست، تلفن و ایمیل را خالی می‌کرد — و همین‌ها
+     * سرصفحه‌ی اسناد چاپی‌اند. حالا با ردیف موجود ادغام می‌شود؛ تنها کلیدهای
+     * موجود در بدنه نوشته می‌شوند.
+     */
+    const curRows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Company" WHERE "id"=1`);
+    const existing: any = curRows?.[0] || {};
+    const pickText = (key: string, max: number) => (
+      body?.[key] === undefined ? String(existing[key] ?? '') : String(body[key] ?? '').replace(/\s+$/, '').slice(0, max)
+    );
+    const name = (body?.name === undefined ? String(existing.name ?? '') : String(body.name ?? '')).trim();
     if (!name) throw new HttpException('نام شرکت لازم است — روی سرصفحه‌ی همه‌ی اسناد چاپی می‌آید.', 400);
     if (name.length > 120) throw new HttpException('نام شرکت حداکثر ۱۲۰ حرف باشد.', 400);
     const p = db();
@@ -76,13 +88,13 @@ export class CompanyController {
     await p.$executeRawUnsafe(
       `UPDATE "Company" SET "name"=?, "activityType"=?, "address"=?, "fiscalYear"=?, "financeManager"=?, "supervisor"=?, "phone"=?, "email"=?, "updatedAt"=CURRENT_TIMESTAMP WHERE "id"=1`,
       name,
-      String(body.activityType ?? '').slice(0, 120),
-      String(body.address ?? '').slice(0, 200),
-      String(body.fiscalYear ?? '').slice(0, 40),
-      String(body.financeManager ?? '').slice(0, 80),
-      String(body.supervisor ?? '').slice(0, 80),
-      String(body.phone ?? '').slice(0, 60),
-      String(body.email ?? '').slice(0, 120),
+      pickText('activityType', 120),
+      pickText('address', 200),
+      pickText('fiscalYear', 40),
+      pickText('financeManager', 80),
+      pickText('supervisor', 80),
+      pickText('phone', 60),
+      pickText('email', 120),
     );
     await logActivity({ action: 'update', entity: 'Company', entityId: 1, detail: 'ویرایش مشخصات شرکت' });
     return this.get();
@@ -107,6 +119,11 @@ export class CompanyController {
      * ۳) وضعیت هر رشته‌ای بود؛ فیلترهای UI فقط `active`/`repair`/`idle` را
      *    می‌شناسند، پس ماشین با وضعیت ناشناخته از همه‌ی فیلترها می‌افتاد.
      */
+    /*
+     * ── باگ (شکار باگ دور ۲۵، ادامه) ────────────────────────────────────
+     * ثبت ماشین تازه است، پس «ادغام با ردیف موجود» این‌جا معنا ندارد؛
+     * همان اعتبارسنجی `readMachinery` کافی است.
+     */
     const name = String(body?.name ?? '').trim();
     if (!name) throw new HttpException('نام ماشین لازم است.', 400);
     const m = readMachinery(body);
@@ -123,9 +140,23 @@ export class CompanyController {
   async updateMachinery(@Param('id') id: string, @Body() body: any) {
     const mid = idParam(id, 'شناسه‌ی ماشین');
     await assertLive('Machinery', mid, 'ماشین');
-    const name = String(body?.name ?? '').trim();
+    /*
+     * ── باگ (شکار باگ دور ۳۴): ویرایش ناقص، فیلدهای دیگر را پاک می‌کرد ──────
+     * این مسیر بدنه را «کامل» فرض می‌کرد؛ فراخوانی که فقط `name` می‌فرستاد
+     * مدل، پلاک، تعداد و یادداشت را **خالی** و تعداد را ۱ می‌کرد. حالا با
+     * ردیف موجود ادغام می‌شود؛ فقط کلیدهای آمده در بدنه نوشته می‌شوند.
+     * (فرم وب کل شیء را می‌فرستد، پس رفتارش تغییری نمی‌کند.)
+     */
+    const curRows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Machinery" WHERE "id"=?`, mid);
+    const existing: any = curRows?.[0] || {};
+    const merged: any = { ...existing };
+    if (body?.name !== undefined) merged.name = body.name;
+    for (const k of ['model', 'plateNo', 'count', 'status', 'note']) {
+      if (body?.[k] !== undefined) merged[k] = body[k];
+    }
+    const name = String(merged.name ?? '').trim();
     if (!name) throw new HttpException('نام ماشین لازم است.', 400);
-    const m = readMachinery(body);
+    const m = readMachinery(merged);
     await db().$executeRawUnsafe(
       `UPDATE "Machinery" SET "name"=?, "model"=?, "plateNo"=?, "count"=?, "status"=?, "note"=? WHERE "id"=?`,
       name, m.model, m.plateNo, m.count, m.status, m.note, mid,

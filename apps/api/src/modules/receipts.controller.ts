@@ -197,11 +197,18 @@ export class ReceiptsController {
     const rid = idParam(id, 'شناسه‌ی رسید');
     await assertLive('Receipt', rid, 'رسید');
     const mode = await settingsService.calendar();
+    /*
+     * تاریخ و مبلغ هم مثل بقیه‌ی فیلدها «اختیاری» می‌شوند: نبودشان یعنی
+     * «همان مقدار قبلی»، نه «امروز» و نه صفر (شکار باگ دور ۳۴).
+     */
+    const curRows: any[] = await db().$queryRawUnsafe(`SELECT * FROM "Receipt" WHERE "id"=?`, rid);
+    const existing: any = curRows?.[0] || {};
     let date = '';
-    try { date = parseUserDate(body.date, mode); }
+    try { date = body.date === undefined ? String(existing.date ?? '') : parseUserDate(body.date, mode); }
     catch (e: any) { throw new HttpException(e.message, 400); }
+    if (!date) throw new HttpException('تاریخ رسید را وارد کنید.', 400);
     /* ویرایش هم نباید مبلغ صفر/منفی بسازد (ثبت، چنین چیزی را رد می‌کند) */
-    const amount = Number(body.amount) || 0;
+    const amount = body.amount === undefined ? Number(existing.amount) || 0 : Number(body.amount) || 0;
     if (amount <= 0) throw new HttpException('مبلغ رسید باید بزرگتر از صفر باشد.', 400);
     /* سقف مبلغ — عدد غول‌آسا به Infinity گرد می‌شد و مانده‌ی مشتری را برای
        همیشه خراب می‌کرد (شکار باگ دور ۲۸). */
@@ -210,8 +217,20 @@ export class ReceiptsController {
      * باگ: در ویرایش، مشتری ناموجود بررسی نمی‌شد؛ `customerId` به ردیفی اشاره
      * می‌کرد که وجود ندارد و نامِ قدیمی روی رسید می‌ماند (کارت حساب خراب).
      */
-    const cust = await resolveReceiptCustomer(body);
-    const sourceName = await resolveSourceName(body.sourceId, body.sourceName);
+    /*
+     * ── باگ (شکار باگ دور ۳۴): ویرایش ناقص، فیلدهای دیگر را پاک می‌کرد ──────
+     * این مسیر بدنه را «کامل» فرض می‌کرد. فراخوانی مثل
+     * `PUT /receipts/5 {date, amount}` قبلاً `relatedBillNo`، `receivedBy`،
+     * `note` و حتی `sourceId` را **خالی** می‌کرد — بی‌هیچ هشداری، در حالی که
+     * `sourceName` (نوع رسید) از ردیف قبلی می‌ماند؛ یعنی رسیدِ متناقض:
+     * «امانت» با sourceId خالی. حالا با ردیف موجود ادغام می‌شود.
+     */
+    const merged: any = { ...existing };
+    for (const k of ['customerId', 'customerName', 'sourceId', 'sourceName', 'relatedBillNo', 'receivedBy', 'note']) {
+      if (body?.[k] !== undefined) merged[k] = body[k];
+    }
+    const cust = await resolveReceiptCustomer(merged);
+    const sourceName = await resolveSourceName(merged.sourceId, merged.sourceName);
 
     /*
      * ── باگ: شماره رسید در ویرایش گم می‌شد ─────────────────────────────
@@ -235,9 +254,9 @@ export class ReceiptsController {
     await db().$executeRawUnsafe(
       `UPDATE "Receipt" SET "no"=?, "date"=?, "customerId"=?, "customerName"=?, "amount"=?, "relatedBillNo"=?,
        "sourceId"=?, "sourceName"=?, "receivedBy"=?, "note"=? WHERE "id"=?`,
-      finalNo, date, cust.id, cust.name || body.customerName || '', amount,
-      body.relatedBillNo || '', body.sourceId ? Number(body.sourceId) : null, sourceName,
-      body.receivedBy || '', body.note || '', rid,
+      finalNo, date, cust.id, cust.name || merged.customerName || '', amount,
+      merged.relatedBillNo || '', merged.sourceId ? Number(merged.sourceId) : null, sourceName,
+      merged.receivedBy || '', merged.note || '', rid,
     );
     await logActivity({ action: 'update', entity: 'Receipt', entityId: rid, detail: finalNo });
     return { ok: true, no: finalNo };

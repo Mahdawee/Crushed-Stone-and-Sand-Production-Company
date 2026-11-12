@@ -47,12 +47,22 @@ export default function EmployeeProfile() {
    */
   const isDeleted = Boolean(d.deleted);
   const att = d.attendance || [];
-  const sum = att.reduce((a: any, r: any) => {
+  /*
+   * ── باگ (شکار باگ دور ۳۴) ────────────────────────────────────────────────
+   * این آمار از همان فهرست نمایشی (۶۰ ردیف آخر) جمع می‌شد. برای کارمندی که
+   * چند ماه سابقه داشت، «ایام حاضر» و «اضافه‌کاری» **کمتر از واقعیت** بود و
+   * هیچ نشانه‌ای هم نداشت. حالا جمعِ کل از سرور می‌آید؛ فقط اگر سرور آن را
+   * نفرستاده باشد (نسخه‌ی قدیمی) همان جمع محلی می‌ماند.
+   */
+  const localSum = att.reduce((a: any, r: any) => {
     if (r.status === 'present') a.present++; else if (r.status === 'absent') a.absent++;
     else if (r.status === 'leave') a.leave++; else if (r.status === 'sick') a.sick++;
     a.overtime += Number(r.overtime) || 0; return a;
   }, { present: 0, absent: 0, leave: 0, sick: 0, overtime: 0 });
-  const totalSalary = (d.salaries || []).reduce((a: number, s: any) => a + Number(s.total || 0), 0);
+  const sum = d.totals || localSum;
+  const truncated = Boolean(d.totals?.listTruncated);
+  const totalSalary = d.totals ? Number(d.totals.salaryTotal || 0)
+    : (d.salaries || []).reduce((a: number, s: any) => a + Number(s.total || 0), 0);
 
   return (
     <div className="col" style={{ gap: 16 }}>
@@ -79,7 +89,8 @@ export default function EmployeeProfile() {
 
       <div className="grid c4">
         <Stat label="معاش ثابت" value={money(e.baseSalary)} foot="افغانی" icon={<IconCoins size={16} />} />
-        <Stat label="ایام حاضر (آخرین سوابق)" value={sum.present} foot={`غایب ${sum.absent} — رخصت ${sum.leave}`} kind="ok" icon={<IconCheck size={16} />} />
+        <Stat label="ایام حاضر" value={sum.present}
+          foot={`غایب ${sum.absent} — رخصت ${sum.leave} — مریض ${sum.sick}`} kind="ok" icon={<IconCheck size={16} />} />
         <Stat label="اضافه کاری" value={`${money(sum.overtime)} ساعت`} foot="مجموع ثبت‌شده" icon={<IconClock size={16} />} />
         <Stat label="مجموع معاش پرداخت‌شده" value={money(totalSalary)} foot={`${(d.salaries || []).length} سند`} icon={<IconReceipt size={16} />} />
       </div>
@@ -124,7 +135,11 @@ export default function EmployeeProfile() {
       </div>
 
       <div className="card">
-        <div className="card-h"><h3>حضور و غیاب اخیر</h3><div style={{ flex: 1 }} /><Link className="small" to="/attendance">رفتن به شیت حضور و غیاب</Link></div>
+        <div className="card-h"><h3>حضور و غیاب اخیر</h3><div style={{ flex: 1 }} />
+          {/* اگر بیش از ۶۰ روز سابقه دارد، بگویم این فهرست کامل نیست
+              (وگرنه کاربر فکر می‌کرد کل سابقه همین است) */}
+          {truncated ? <span className="small muted">۶۰ روز آخر از {sum.days} روز</span> : null}
+          <Link className="small" to="/attendance">رفتن به شیت حضور و غیاب</Link></div>
         <div className="card-b tight">
           <Table head={['تاریخ', 'وضعیت', 'ورود', 'خروج', 'اضافه کاری', 'توضیحات']} compact empty="سابقه‌ای موجود نیست.">
             {att.map((r: any) => (

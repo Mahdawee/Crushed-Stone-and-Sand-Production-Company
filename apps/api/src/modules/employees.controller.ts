@@ -307,11 +307,44 @@ export class EmployeesController {
       `SELECT * FROM "Attendance" WHERE "employeeId"=? AND COALESCE("deletedAt",'')='' ORDER BY "date" DESC LIMIT 60`,
       eid,
     );
+    /*
+     * ── باگ (شکار باگ دور ۳۴): آمار پروفایل ناقص بود ──────────────────────
+     * صفحه‌ی کارمند «ایام حاضر» و «مجموع اضافه‌کاری» را از همان ۶۰ ردیف
+     * آخر حساب می‌کرد. برای کارمندی که چند ماه سابقه داشت، این دو عدد
+     * **کمتر از واقعیت** بود — بدون هیچ نشانه‌ای. حالا جمعِ کل از سرور
+     * می‌آید (`totals`) و فهرست ۶۰ ردیفی فقط برای نمایش می‌ماند.
+     */
+    const totals: any[] = await db().$queryRawUnsafe(
+      `SELECT
+         COALESCE(SUM(CASE WHEN "status"='present' THEN 1 ELSE 0 END),0) AS present,
+         COALESCE(SUM(CASE WHEN "status"='absent' THEN 1 ELSE 0 END),0) AS absent,
+         COALESCE(SUM(CASE WHEN "status"='leave' THEN 1 ELSE 0 END),0) AS leave,
+         COALESCE(SUM(CASE WHEN "status"='sick' THEN 1 ELSE 0 END),0) AS sick,
+         COALESCE(SUM("overtime"),0) AS overtime,
+         COUNT(*) AS days
+       FROM "Attendance" WHERE "employeeId"=? AND COALESCE("deletedAt",'')=''`,
+      eid,
+    );
+    const t = totals?.[0] || {};
+    const salaryTotal: any[] = await db().$queryRawUnsafe(
+      `SELECT COALESCE(SUM("total"),0) AS total, COUNT(*) AS docs
+         FROM "Salary" WHERE "employeeId"=? AND COALESCE("deletedAt",'')=''`,
+      eid,
+    );
     return {
       employee: rows[0],
       deleted: Boolean(rows[0].deletedAt),
       salaries: salary,
       attendance: att,
+      totals: {
+        present: Number(t.present || 0), absent: Number(t.absent || 0),
+        leave: Number(t.leave || 0), sick: Number(t.sick || 0),
+        overtime: Number(t.overtime || 0), days: Number(t.days || 0),
+        /* `attendance` فقط ۶۰ ردیف آخر است — UI باید این را بداند */
+        listTruncated: Number(t.days || 0) > 60,
+        salaryTotal: Number(salaryTotal?.[0]?.total || 0),
+        salaryDocs: Number(salaryTotal?.[0]?.docs || 0),
+      },
     };
   }
 
