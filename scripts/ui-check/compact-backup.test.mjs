@@ -15,11 +15,18 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+/*
+ * ⚠ باگ دور ۴۳: روی ویندوز `import()` با مسیر خام می‌شکند —
+ * ERR_UNSUPPORTED_ESM_URL_SCHEME با پروتکل 'd:'. روی لینوکس سالم است
+ * (مسیر با / شروع می‌شود) و همین باعث شد از چشم بیفتد.
+ * نسخه‌ی اول نگهبان win-imports هم این را نگرفت، چون `path.join` در
+ * این‌جا در خط بعدی بود و الگوی تک‌خطی آن را نمی‌دید.
+ */
 const { makeBackup, compactBackup, restoreFromBackup } = await import(
-  path.join(root, 'apps/api/dist/common/backup.js')
+  pathToFileURL(path.join(root, 'apps/api/dist/common/backup.js')).href
 );
 
 let pass = 0, fail = 0;

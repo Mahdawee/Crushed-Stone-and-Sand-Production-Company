@@ -70,13 +70,34 @@ for (const f of files) {
   let text;
   try { text = fs.readFileSync(f, 'utf8'); } catch { continue; }
 
+  /*
+   * ⚠ باگ دور ۴۳ در خودِ این نگهبان: نسخه‌ی اول خط‌به‌خط می‌گشت و
+   * `compact-backup.test.mjs` را ندید، چون `path.join` در خط بعد از
+   * `await import(` بود:
+   *
+   *     await import(
+   *       path.join(root, 'apps/api/dist/common/backup.js')
+   *     );
+   *
+   * روی ویندوز این همان ERR_UNSUPPORTED_ESM_URL_SCHEME را داد و تنها
+   * شکست باقی‌مانده بود. حالا کل فایل (چند خط) سنجیده می‌شود.
+   */
   const lines = text.split('\n');
-  lines.forEach((line, i) => {
-    /* ۱) import( <path.join|resolve|__dirname...> ) بدون pathToFileURL */
-    if (/await\s+import\s*\(\s*(path\.(join|resolve)|__dirname|[\w.]+\s*\+\s*['"][/\\])/.test(line)) {
-      barePath.push(`${rel}:${i + 1}`);
+  const lineOf = (idx) => text.slice(0, idx).split('\n').length;
+
+  /* ۱) import( ... path.join/resolve ... ) بدون pathToFileURL — چند خطی هم */
+  {
+    const re = /await\s+import\s*\(([\s\S]{0,200}?)\)/g;
+    let m;
+    while ((m = re.exec(text))) {
+      const arg = m[1];
+      if (/path\.(join|resolve)\s*\(|__dirname/.test(arg) && !/pathToFileURL/.test(arg)) {
+        barePath.push(`${rel}:${lineOf(m.index)}`);
+      }
     }
-    /* ۲) file:// + مسیر (دو اسلش، نه pathToFileURL) — مسیرهای fake در تست مسیر معاف‌اند */
+  }
+  /* ۲) file:// + مسیر (دو اسلش، نه pathToFileURL) */
+  lines.forEach((line, i) => {
     if (/file:\/\/\$\{/.test(line) && !/pathToFileURL/.test(line)) {
       twoSlash.push(`${rel}:${i + 1}`);
     }
@@ -94,15 +115,26 @@ console.log('\n— خودِ سنجه درست کار می‌کند —');
 const BAD = [
   "const m = await import(path.join(root, 'x.mjs'));",
   'const m = await import(`file://${path.join(root, "x.mjs")}`);',
+  /* چندخطی — همان شکلی که یک بار از چشم افتاد */
+  "const m = await import(\n  path.join(root, 'x.mjs')\n);",
 ];
 const GOOD = [
   "const m = await import(pathToFileURL(path.join(root, 'x.mjs')).href);",
   "const m = await import('node:fs');",
   "const m = await import('react');",
 ];
-const sawBare = BAD.filter((l) => /await\s+import\s*\(\s*(path\.(join|resolve)|__dirname)/.test(l));
+const bareOf = (t) => {
+  const re = /await\s+import\s*\(([\s\S]{0,200}?)\)/g;
+  const out = [];
+  let m;
+  while ((m = re.exec(t))) {
+    if (/path\.(join|resolve)\s*\(|__dirname/.test(m[1]) && !/pathToFileURL/.test(m[1])) out.push(m[0]);
+  }
+  return out;
+};
+const sawBare = BAD.filter((l) => bareOf(l).length > 0);
 const sawTwo = BAD.filter((l) => /file:\/\/\$\{/.test(l) && !/pathToFileURL/.test(l));
-ok('الگوی خراب ۱ گرفته می‌شود', sawBare.length === 1, String(sawBare.length));
+ok('هر سه الگوی خراب گرفته می‌شوند', sawBare.length === 3, String(sawBare.length));
 ok('الگوی خراب ۲ گرفته می‌شود', sawTwo.length === 1, String(sawTwo.length));
 const falsePos = GOOD.filter((l) => /await\s+import\s*\(\s*(path\.(join|resolve)|__dirname)/.test(l) || (/file:\/\/\$\{/.test(l) && !/pathToFileURL/.test(l)));
 ok('الگوهای سالم هشدار نمی‌دهند', falsePos.length === 0, falsePos.join(' | '));
