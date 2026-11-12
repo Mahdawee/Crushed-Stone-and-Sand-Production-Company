@@ -41,6 +41,27 @@ jobs:
         run: |
           set -o pipefail
           npm test 2>&1 | tee /tmp/test-linux.log
+          exit ${PIPESTATUS[0]}
+
+      # ── خطاها را به «annotation» تبدیل می‌کند ───────────────────────────
+      # لاگ و artifact از بعضی محیط‌ها (از جمله ساندباکس ما) خوانده نمی‌شوند،
+      # ولی annotationها از api.github.com خوانده می‌شوند. با این کار «کدام
+      # بررسی قرمز شد» بدون دانلود هیچ فایلی معلوم است.
+      - name: خلاصه‌ی خطاها در annotation
+        if: always()
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs");
+            let t = "";
+            try { t = fs.readFileSync("/tmp/test-linux.log", "utf8"); } catch { process.exit(0); }
+            const bad = t.split("\n").filter((l) => /^\s*✘|^⛔|FAIL|Error:/.test(l)).slice(0, 40);
+            if (!bad.length) { console.log("::notice title=همه سبز::هیچ بررسی قرمزی پیدا نشد"); process.exit(0); }
+            for (const line of bad) {
+              const msg = line.trim().replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, " ");
+              console.log("::error title=بررسی قرمز::" + msg);
+            }
+          '
       - name: ذخیره‌ی لاگ تست
         if: always()
         uses: actions/upload-artifact@v4
@@ -79,6 +100,23 @@ jobs:
         run: |
           set -o pipefail
           npm test 2>&1 | tee test-windows.log
+          exit ${PIPESTATUS[0]}
+
+      - name: خلاصه‌ی خطاها در annotation (ویندوز)
+        if: always()
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs");
+            let t = "";
+            try { t = fs.readFileSync("test-windows.log", "utf8"); } catch { process.exit(0); }
+            const bad = t.split("\n").filter((l) => /^\s*✘|^⛔|FAIL|Error:/.test(l)).slice(0, 40);
+            if (!bad.length) { console.log("::notice title=همه سبز::هیچ بررسی قرمزی پیدا نشد"); process.exit(0); }
+            for (const line of bad) {
+              const msg = line.trim().replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, " ");
+              console.log("::error title=بررسی قرمز::" + msg);
+            }
+          '
       - name: ذخیره‌ی لاگ تست ویندوز
         if: always()
         uses: actions/upload-artifact@v4
