@@ -289,6 +289,52 @@ const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDa
     check('کارمند بعد از ماه در ورق نیست', !later);
   }
 
+  /* ---------------------------- فهرست‌ها ---------------------------- */
+  /*
+   * ── باگ (شکار باگ دور ۳۸) ───────────────────────────────────────────
+   * `PUT /lookups/:id` تنها مسیری بود که قاعده‌ی «کلید غایب = دست نزن» را
+   * رعایت نمی‌کرد و `body.x || …` می‌نوشت. ویرایش فقط نام:
+   *   • `extra` را پاک می‌کرد،
+   *   • `sortOrder` را ۰ می‌کرد (قلم به بالای فهرست می‌پرید)،
+   *   • `active` را **غیرفعال** می‌کرد — قلم بی‌صدا از همه‌ی فهرست‌های
+   *     انتخاب حذف می‌شد. این باگ در تست ویرایش ناقص جا افتاده بود.
+   */
+  console.log('\n— فهرست‌ها: ویرایش نام، قلم را غیرفعال/صفر نمی‌کند —');
+  {
+    const created = await api('POST', '/lookups', { type: 'material', name: 'قلم آزمون ویرایش', extra: 'کد-ویژه' }, token);
+    check('قلم فهرست ساخته شد', created.status === 200 || created.status === 201, String(created.status));
+    const manage = await api('GET', '/lookups/manage?type=material', undefined, token);
+    const row = (manage.body?.rows || []).find((r) => r.name === 'قلم آزمون ویرایش') || {};
+    check('قلم در فهرست مدیریت هست', Boolean(row.id), JSON.stringify(manage.body).slice(0, 120));
+    const before = { extra: row.extra, sortOrder: Number(row.sortOrder), active: Boolean(row.active) };
+    check('قلم تازه فعال است', before.active === true, String(before.active));
+    check('ترتیب اولیه ذخیره شده', before.sortOrder > 0, String(before.sortOrder));
+
+    const up = await api('PUT', `/lookups/${row.id}`, { name: 'قلم آزمون ویرایش‌شده' }, token);
+    check('ویرایش فقط نام، موفق است', up.status === 200, `${up.status} ${JSON.stringify(up.body).slice(0, 120)}`);
+
+    const after = ((await api('GET', '/lookups/manage?type=material', undefined, token)).body?.rows || [])
+      .find((r) => r.id === row.id) || {};
+    check('نام تازه نوشته شد', after.name === 'قلم آزمون ویرایش‌شده', String(after.name));
+    check('«extra» پاک نشد', String(after.extra || '') === 'کد-ویژه', String(after.extra));
+    check('«sortOrder» صفر نشد', Number(after.sortOrder) === before.sortOrder,
+      `${after.sortOrder} ≠ ${before.sortOrder}`);
+    check('قلم **غیرفعال نشد**', Boolean(after.active) === true, String(after.active));
+    /* و هنوز در فهرست انتخاب (فعال‌ها) دیده می‌شود */
+    const activeList = await api('GET', '/lookups', undefined, token);
+    const inActive = (activeList.body?.items?.material || []).some((r) => Number(r.id) === Number(row.id));
+    check('قلم هنوز در فهرست فعال‌ها هست', inActive);
+
+    /* و وقتی صریحاً خواسته شود، باید کار کند */
+    await api('PUT', `/lookups/${row.id}`, { name: 'قلم آزمون ویرایش‌شده', active: false }, token);
+    const off = ((await api('GET', '/lookups/manage?type=material', undefined, token)).body?.rows || [])
+      .find((r) => r.id === row.id) || {};
+    check('غیرفعال‌کردن صریح کار می‌کند', Boolean(off.active) === false, String(off.active));
+    const offList = await api('GET', '/lookups', undefined, token);
+    check('قلم غیرفعال از فهرست فعال‌ها رفت',
+      !(offList.body?.items?.material || []).some((r) => Number(r.id) === Number(row.id)));
+  }
+
   /* نام خالی هنوز رد می‌شود (محافظ قبلی نشکسته باشد) */
   const bad = await api('PUT', '/company', { name: '   ' }, token);
   check('نام شرکتِ خالی هنوز ۴۰۰ می‌گیرد', bad.status === 400, String(bad.status));

@@ -204,18 +204,49 @@ export class LookupsController {
      * ۲) نام تکراری پذیرفته می‌شد (دو قلم هم‌نام).
      */
     const rows: any[] = await db().$queryRawUnsafe(
-      `SELECT "id","type" FROM "LookupItem" WHERE "id"=?`, lid,
+      `SELECT "id","type","extra","sortOrder","active" FROM "LookupItem" WHERE "id"=?`, lid,
     );
     if (!rows?.length) throw new HttpException('این قلم پیدا نشد (ممکن است حذف شده باشد).', 404);
+    const cur = rows[0];
     const dup: any[] = await db().$queryRawUnsafe(
       `SELECT "id" FROM "LookupItem" WHERE "type"=? AND lower(trim("name"))=lower(?) AND "id"<>?`,
-      rows[0].type, name, lid,
+      cur.type, name, lid,
     );
     if (dup?.length) throw new HttpException('نام تکراری است — قلم دیگری با همین نام در این فهرست هست.', 409);
 
+    /*
+     * ── باگ (شکار باگ دور ۳۸): فیلدِ نیامده = «عوض نکن»، نه «صفر کن» ────
+     * کلاینت‌ها همه با همین قاعده کار می‌کنند: هر فیلدی که در بدنه نباشد،
+     * دست‌نخورده می‌ماند (همین قاعده در customers/employees/expenses/
+     * receipts/sales/company پیاده شده). این هندلر تنها استثنا بود و
+     * `body.x || …` می‌نوشت، پس:
+     *   • ویرایش فقط نام → `extra` پاک می‌شد،
+     *   • `sortOrder` به ۰ می‌رفت (قلم به بالای فهرست می‌پرید)،
+     *   • `active` **غیرفعال** می‌شد — یعنی ویرایش یک نام، قلم را از
+     *     تمام فهرست‌های انتخاب حذف می‌کرد (باگ داده‌ای خاموش).
+     * حالا `undefined` یعنی «همان مقدار قبلی».
+     */
+    const extra = body?.extra === undefined ? String(cur.extra ?? '') : String(body.extra ?? '');
+    const sortOrder = body?.sortOrder === undefined
+      ? Number(cur.sortOrder) || 0
+      : Number(body.sortOrder);
+    if (!Number.isFinite(sortOrder)) throw new HttpException('ترتیب باید عدد باشد.', 400);
+    /* `active` می‌تواند boolean یا ۰/۱ یا رشته باشد؛ هر چیز دیگری نادیده */
+    const parseActive = (v: unknown): number => {
+      if (v === undefined || v === null) return Number(cur.active) ? 1 : 0;
+      if (typeof v === 'boolean') return v ? 1 : 0;
+      const n = Number(v);
+      if (Number.isFinite(n)) return n ? 1 : 0;
+      const t = String(v).trim().toLowerCase();
+      if (['true', '1', 'yes', 'on', 'فعال'].includes(t)) return 1;
+      if (['false', '0', 'no', 'off', 'غیرفعال'].includes(t)) return 0;
+      return Number(cur.active) ? 1 : 0;
+    };
+    const active = parseActive(body?.active);
+
     await db().$executeRawUnsafe(
       `UPDATE "LookupItem" SET "name"=?, "extra"=?, "sortOrder"=?, "active"=? WHERE "id"=?`,
-      name, body.extra || '', Number(body.sortOrder) || 0, body.active ? 1 : 0, lid,
+      name, extra, sortOrder, active, lid,
     );
     await logActivity({ action: 'update', entity: 'LookupItem', entityId: lid, detail: name });
     return { ok: true };
