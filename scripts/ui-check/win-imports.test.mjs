@@ -62,6 +62,7 @@ console.log(`\n— ${files.length} فایل بررسی شد —`);
 
 const barePath = [];
 const twoSlash = [];
+const bareVariable = [];
 
 for (const f of files) {
   const rel = path.relative(root, f);
@@ -96,6 +97,11 @@ for (const f of files) {
       }
     }
   }
+  // A path stored in a variable is just as unsafe as path.join(...) on Windows.
+  // Require dynamic variables to be explicitly converted with pathToFileURL.
+  for (const m of text.matchAll(/\bimport\s*\(\s*([A-Za-z_$][\w$]*)\s*\)/g)) {
+    bareVariable.push(`${rel}:${lineOf(m.index)}`);
+  }
   /* ۲) file:// + مسیر (دو اسلش، نه pathToFileURL) */
   lines.forEach((line, i) => {
     if (/file:\/\/\$\{/.test(line) && !/pathToFileURL/.test(line)) {
@@ -106,12 +112,15 @@ for (const f of files) {
 
 console.log('\n— import پویا با مسیر خام (روی ویندوز می‌شکند) —');
 ok('هیچ `import(path.join(...))` خامی نیست', barePath.length === 0, barePath.slice(0, 8).join(', '));
+ok('هیچ import با متغیر خام نیست', bareVariable.length === 0, bareVariable.slice(0, 8).join(', '));
 
 console.log('\n— file:// با دو اسلش —');
 ok('هیچ `file://${...}` خامی نیست', twoSlash.length === 0, twoSlash.slice(0, 8).join(', '));
 
 /* ── اثبات این‌که الگوها واقعاً از هم قابل تفکیک‌اند ─────────────────── */
 console.log('\n— خودِ سنجه درست کار می‌کند —');
+ok('import با متغیر مسیر خام تشخیص می‌شود', /\bimport\s*\(\s*([A-Za-z_$][\w$]*)\s*\)/.test('await import(engineFile)'));
+ok('import با URL تبدیل‌شده متغیر خام نیست', !/\bimport\s*\(\s*([A-Za-z_$][\w$]*)\s*\)/.test('await import(pathToFileURL(engineFile).href)'));
 const BAD = [
   "const m = await import(path.join(root, 'x.mjs'));",
   'const m = await import(`file://${path.join(root, "x.mjs")}`);',

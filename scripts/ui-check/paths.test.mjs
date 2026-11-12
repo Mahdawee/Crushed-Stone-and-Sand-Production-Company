@@ -156,7 +156,7 @@ const engineFile = path.join(root, 'apps', 'api', 'dist', 'common', 'sqlite-engi
 check('ماژول sqlite-engine ساخته شده', fs.existsSync(engineFile));
 
 const { ensureSqliteEngine, nativePackageName, searchRoots, nativeCandidates, rootsFrom } =
-  await import(engineFile);
+  await import(pathToFileURL(engineFile).href);
 const st = ensureSqliteEngine();
 check('موتور روی این سیستم بارگذاری می‌شود', st.ok === true, st.detail);
 check('نام پکیج بومی منطبق با پلتفرم است',
@@ -239,7 +239,7 @@ console.log('\n— ۵.۵) موتور دیتابیس داخل بسته نصبی �
 {
   const bundledEngine = path.join(bundleApi, 'common', 'sqlite-engine.js');
   if (fs.existsSync(bundledEngine)) {
-    const mod = await import(bundledEngine);
+    const mod = await import(pathToFileURL(bundledEngine).href);
     /*
      * مهم: `__dirname` این ماژول داخل بسته `<resources>/api/common` است.
      * مسیر درست باینری `<resources>/api/node_modules/...` است — یعنی
@@ -263,7 +263,7 @@ console.log('\n— ۵.۵) موتور دیتابیس داخل بسته نصبی �
 /* ---------------------------------------------------------------- */
 console.log('\n— ۶) پیام خطای نبود موتور —');
 {
-  const mod = await import(engineFile);
+  const mod = await import(pathToFileURL(engineFile).href);
   const before = process.env.FD_ENGINE_FORCE_MISSING;
   process.env.FD_ENGINE_FORCE_MISSING = '1';
   mod.resetEngineCache();

@@ -10,6 +10,7 @@ import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { findMsvc } from './lib/msvc.mjs';
 import { projectRoot } from './lib/project-root.mjs';
 
@@ -247,7 +248,7 @@ console.log('\n— ۹) موتور دیتابیس در بسته نصبی —');
   const engineFile = path.join(root, 'apps', 'api', 'dist', 'common', 'sqlite-engine.js');
   if (fs.existsSync(engineFile)) {
     try {
-      const { ensureSqliteEngine } = await import(engineFile);
+      const { ensureSqliteEngine } = await import(pathToFileURL(engineFile).href);
       const st = ensureSqliteEngine();
       if (st.ok) ok(`موتور دیتابیس روی همین سیستم بارگذاری می‌شود (${st.package})`);
       else {
