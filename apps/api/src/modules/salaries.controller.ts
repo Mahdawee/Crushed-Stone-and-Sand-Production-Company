@@ -194,10 +194,28 @@ export class SalariesController {
         if (n > MAX_MONEY) throw new HttpException(`«${label}» از حد مجاز بزرگ‌تر است.`, 400);
         return n;
       };
-      const base = amountOf(r.baseSalary, 'معاش ماهانه');
-      const bonus = amountOf(r.bonus, 'مکافات');
-      const penalty = amountOf(r.penalty, 'جریمه');
-      const overtimeAmount = amountOf(r.overtimeAmount, 'مبلغ اضافه‌کاری');
+      /*
+       * ── باگ (شکار باگ دور ۳۴): ذخیره‌ی دوباره‌ی ورق معاش، مکافات/جریمه را
+       * **صفر** می‌کرد ─────────────────────────────────────────────────────────
+       * ورق معاش ستون‌های مکافات/جریمه/اضافه‌کاریِ ذخیره‌شده را نشان می‌دهد،
+       * ولی فورم فقط ردیف‌هایی را می‌فرستد که کاربر تغییر داده (یا همه را،
+       * ولی بدون این کلیدها وقتی از مسیر دیگری مثل «پرداخت گروهی» می‌آید).
+       * نبودِ کلید یعنی ۰ — و کل مکافات/جریمه بی‌صدا از سند پاک می‌شد.
+       * حالا کلیدِ غایب = «همان مقدار ثبت‌شده». (فرم وب همه را می‌فرستد.)
+       */
+      const prevEx: any[] = await p.$queryRawUnsafe(
+        `SELECT "baseSalary","bonus","penalty","overtimeAmount","payerName","paymentType","note"
+           FROM "Salary" WHERE "employeeId"=? AND "periodStart"=?`,
+        Number(r.employeeId), b.start,
+      );
+      const prev: any = prevEx?.[0] || {};
+      const pickAmount = (v: any, prevKey: string, label: string) => (
+        v === undefined ? Number(prev[prevKey] ?? 0) || 0 : amountOf(v, label)
+      );
+      const base = pickAmount(r.baseSalary, 'baseSalary', 'معاش ماهانه');
+      const bonus = pickAmount(r.bonus, 'bonus', 'مکافات');
+      const penalty = pickAmount(r.penalty, 'penalty', 'جریمه');
+      const overtimeAmount = pickAmount(r.overtimeAmount, 'overtimeAmount', 'مبلغ اضافه‌کاری');
       const total = Math.round((base + bonus + overtimeAmount - penalty) * 100) / 100;
       /* معاش منفی هیچ معنایی ندارد؛ بهتر است همان‌جا گفته شود تا در راپور گم شود */
       if (total < 0) throw new HttpException('جمع معاش منفی می‌شود — جریمه از مجموع بیشتر است.', 400);
@@ -216,8 +234,10 @@ export class SalariesController {
           `UPDATE "Salary" SET "baseSalary"=?, "bonus"=?, "penalty"=?, "overtimeAmount"=?, "total"=?,
            "payerName"=?, "paymentType"=?, "payDate"=?, "note"=?,
            "deletedAt"=NULL, "deletedBy"=NULL WHERE "id"=?`,
-          base, bonus, penalty, overtimeAmount, total, r.payerName || '',
-          r.paymentType === 'hawala' ? 'hawala' : 'cash', payDate, r.note || '', ex[0].id,
+          base, bonus, penalty, overtimeAmount, total,
+          r.payerName === undefined ? (prev.payerName || '') : (r.payerName || ''),
+          (r.paymentType === undefined ? prev.paymentType : r.paymentType) === 'hawala' ? 'hawala' : 'cash',
+          payDate, r.note === undefined ? (prev.note || '') : (r.note || ''), ex[0].id,
         );
       } else {
         await p.$executeRawUnsafe(

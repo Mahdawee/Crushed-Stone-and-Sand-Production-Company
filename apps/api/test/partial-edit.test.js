@@ -191,6 +191,37 @@ const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDa
   check('سال مالی حفظ شد', co.fiscalYear === '1404', String(co.fiscalYear));
   check('مدیر مالی حفظ شد', co.financeManager === 'مدیر مالی', String(co.financeManager));
 
+  /* -------------------------- ورق معاش -------------------------- */
+  console.log('\n— ورق معاش: ذخیره‌ی دوباره مکافات/جریمه را صفر نمی‌کند —');
+  {
+    const emp = await api('POST', '/employees', { name: 'کارمند ورق معاش', baseSalary: 10000, hireDate: todayISO() }, token);
+    check('کارمند معاش ساخته شد', emp.status === 200 || emp.status === 201, String(emp.status));
+    const empRow = ((await api('GET', '/employees', undefined, token)).body?.rows || []).find((e) => e.name === 'کارمند ورق معاش') || {};
+    const month = '1404/08';
+    const first = await api('POST', '/salaries/sheet', {
+      month, payDate: todayISO(),
+      rows: [{ employeeId: empRow.id, baseSalary: 10000, bonus: 500, penalty: 200, overtimeAmount: 300, payerName: 'صندوق', paymentType: 'hawala', note: 'یادداشت معاش' }],
+    }, token);
+    check('ورق معاش ذخیره شد', first.status === 200 || first.status === 201, String(first.status));
+    /*
+     * بار دوم فقط معاش پایه فرستاده می‌شود — همان چیزی که یک کلاینت
+     * ساده/CLI می‌کند. پیش از این مکافات/جریمه/اضافه‌کاری صفر می‌شدند.
+     */
+    const second = await api('POST', '/salaries/sheet', {
+      month, payDate: todayISO(), rows: [{ employeeId: empRow.id, baseSalary: 11000 }],
+    }, token);
+    check('ذخیره‌ی دوباره‌ی ورق موفق است', second.status === 200 || second.status === 201, String(second.status));
+    const sal = ((await api('GET', `/salaries?month=${month}`, undefined, token)).body?.rows || []).find((x) => x.employeeId === empRow.id) || {};
+    check('معاش پایه به‌روز شد', Number(sal.baseSalary) === 11000, String(sal.baseSalary));
+    check('مکافات صفر نشد', Number(sal.bonus) === 500, String(sal.bonus));
+    check('جریمه صفر نشد', Number(sal.penalty) === 200, String(sal.penalty));
+    check('مبلغ اضافه‌کاری صفر نشد', Number(sal.overtimeAmount) === 300, String(sal.overtimeAmount));
+    check('جمع معاش درست دوباره حساب شد', Number(sal.total) === 11600, String(sal.total));
+    check('نام پرداخت‌کننده حفظ شد', sal.payerName === 'صندوق', String(sal.payerName));
+    check('نوع پرداخت حفظ شد', sal.paymentType === 'hawala', String(sal.paymentType));
+    check('یادداشت حفظ شد', sal.note === 'یادداشت معاش', String(sal.note));
+  }
+
   /* نام خالی هنوز رد می‌شود (محافظ قبلی نشکسته باشد) */
   const bad = await api('PUT', '/company', { name: '   ' }, token);
   check('نام شرکتِ خالی هنوز ۴۰۰ می‌گیرد', bad.status === 400, String(bad.status));
