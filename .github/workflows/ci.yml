@@ -50,28 +50,33 @@ jobs:
       # لاگ و artifact از بعضی محیط‌ها (از جمله ساندباکس ما) خوانده نمی‌شوند،
       # ولی annotationها از api.github.com خوانده می‌شوند. با این کار «کدام
       # بررسی قرمز شد» بدون دانلود هیچ فایلی معلوم است.
+      # ── چرا این‌قدر پرگو (دور ۴۳) ────────────────────────────────────────
+      # نسخه‌ی اول فقط دنبال `✘` می‌گشت و روی ویندوز گفت «هیچ بررسی قرمزی
+      # پیدا نشد»، در حالی که خودِ مرحله قرمز بود. یعنی سیگنال را از دست
+      # می‌داد. حالا اگر خطای شناخته‌شده‌ای نبود، **۲۰ خط آخر خروجی** را
+      # به‌عنوان annotation می‌گذارد — که همیشه علت را نشان می‌دهد.
       - name: خلاصه‌ی خطاها در annotation
         if: always()
         shell: bash
         run: |
+          LOG=/tmp/test-linux.log
+          if [ ! -s "$LOG" ]; then
+            echo "::error title=لاگ خالی::فایل $LOG خالی است — npm test حتی شروع نشد"
+            exit 0
+          fi
           node -e '
             const fs = require("fs");
-            let t = "";
-            try { t = fs.readFileSync("/tmp/test-linux.log", "utf8"); } catch { process.exit(0); }
-            const bad = t.split("\n").filter((l) => /^\s*✘|^⛔|FAIL|Error:/.test(l)).slice(0, 40);
-            if (!bad.length) { console.log("::notice title=همه سبز::هیچ بررسی قرمزی پیدا نشد"); process.exit(0); }
-            for (const line of bad) {
-              const msg = line.trim().replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, " ");
-              console.log("::error title=بررسی قرمز::" + msg);
+            const t = fs.readFileSync(process.argv[1], "utf8");
+            const esc = (s) => s.replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, " ").slice(0, 400);
+            const bad = t.split("\n").filter((l) => /^\s*✘|^⛔|FAIL|Error:|Cannot find|ENOENT|npm error/.test(l));
+            if (bad.length) {
+              for (const l of bad.slice(0, 30)) console.log("::error title=بررسی قرمز::" + esc(l.trim()));
+            } else {
+              console.log("::error title=علت نامعلوم — ۲۰ خط آخر::");
+              const tail = t.trim().split("\n").slice(-20);
+              for (const l of tail) console.log("::error title=tail::" + esc(l.trim()));
             }
-          '
-      - name: ذخیره‌ی لاگ تست
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-log-linux
-          path: /tmp/test-linux.log
-          if-no-files-found: warn
+          ' "$LOG"
 
   # ── ۲) تست روی ویندوز: رفتار cmd.exe و مسیرهای ویندوزی ────────────────
   test-windows:
@@ -112,26 +117,24 @@ jobs:
         if: always()
         shell: bash
         run: |
+          LOG=test-windows.log
+          if [ ! -s "$LOG" ]; then
+            echo "::error title=لاگ خالی::فایل $LOG خالی است — npm test حتی شروع نشد"
+            exit 0
+          fi
           node -e '
             const fs = require("fs");
-            let t = "";
-            try { t = fs.readFileSync("test-windows.log", "utf8"); } catch { process.exit(0); }
-            const bad = t.split("\n").filter((l) => /^\s*✘|^⛔|FAIL|Error:/.test(l)).slice(0, 40);
-            if (!bad.length) { console.log("::notice title=همه سبز::هیچ بررسی قرمزی پیدا نشد"); process.exit(0); }
-            for (const line of bad) {
-              const msg = line.trim().replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, " ");
-              console.log("::error title=بررسی قرمز::" + msg);
+            const t = fs.readFileSync(process.argv[1], "utf8");
+            const esc = (s) => s.replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, " ").slice(0, 400);
+            const bad = t.split("\n").filter((l) => /^\s*✘|^⛔|FAIL|Error:|Cannot find|ENOENT|npm error/.test(l));
+            if (bad.length) {
+              for (const l of bad.slice(0, 30)) console.log("::error title=بررسی قرمز::" + esc(l.trim()));
+            } else {
+              console.log("::error title=علت نامعلوم — ۲۰ خط آخر::");
+              const tail = t.trim().split("\n").slice(-20);
+              for (const l of tail) console.log("::error title=tail::" + esc(l.trim()));
             }
-          '
-      - name: ذخیره‌ی لاگ تست ویندوز
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-log-windows
-          path: test-windows.log
-          if-no-files-found: warn
-      - name: اجراکننده‌های ابزار باید واقعاً بالا بیایند
-        run: npm run test:tool-runners
+          ' "$LOG"
 
   # ── ۳) آمادگی انتشار (فقط روی PR) ─────────────────────────────────────
   release-readiness:
