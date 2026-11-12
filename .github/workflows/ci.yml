@@ -56,7 +56,7 @@ jobs:
       # می‌داد. حالا اگر خطای شناخته‌شده‌ای نبود، **۲۰ خط آخر خروجی** را
       # به‌عنوان annotation می‌گذارد — که همیشه علت را نشان می‌دهد.
       - name: خلاصه‌ی خطاها در annotation
-        if: always()
+        if: failure()
         shell: bash
         run: |
           LOG=/tmp/test-linux.log
@@ -68,14 +68,11 @@ jobs:
             const fs = require("fs");
             const t = fs.readFileSync(process.argv[1], "utf8");
             const esc = (s) => s.replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, " ").slice(0, 400);
-            const bad = t.split("\n").filter((l) => /^\s*✘|^⛔|FAIL|Error:|Cannot find|ENOENT|npm error/.test(l));
-            if (bad.length) {
-              for (const l of bad.slice(0, 30)) console.log("::error title=بررسی قرمز::" + esc(l.trim()));
-            } else {
-              console.log("::error title=علت نامعلوم — ۲۰ خط آخر::");
-              const tail = t.trim().split("\n").slice(-20);
-              for (const l of tail) console.log("::error title=tail::" + esc(l.trim()));
-            }
+            const lines = t.split("\n");
+            const bad = lines.filter((l) => !/^\s*✔/.test(l) && (/^\s*(✘|⛔)/.test(l) || /\bFAIL\b|Error:|Cannot find|ENOENT|npm error/i.test(l)));
+            for (const l of bad.slice(0, 30)) console.log("::error title=بررسی قرمز::" + esc(l.trim()));
+            // Always include the tail: a matching line alone may not explain the failure.
+            for (const l of lines.filter(Boolean).slice(-20)) console.log("::error title=tail::" + esc(l.trim()));
           ' "$LOG"
 
   # ── ۲) تست روی ویندوز: رفتار cmd.exe و مسیرهای ویندوزی ────────────────
@@ -114,7 +111,7 @@ jobs:
           exit ${PIPESTATUS[0]}
 
       - name: خلاصه‌ی خطاها در annotation (ویندوز)
-        if: always()
+        if: failure()
         shell: bash
         run: |
           LOG=test-windows.log
@@ -126,14 +123,11 @@ jobs:
             const fs = require("fs");
             const t = fs.readFileSync(process.argv[1], "utf8");
             const esc = (s) => s.replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, " ").slice(0, 400);
-            const bad = t.split("\n").filter((l) => /^\s*✘|^⛔|FAIL|Error:|Cannot find|ENOENT|npm error/.test(l));
-            if (bad.length) {
-              for (const l of bad.slice(0, 30)) console.log("::error title=بررسی قرمز::" + esc(l.trim()));
-            } else {
-              console.log("::error title=علت نامعلوم — ۲۰ خط آخر::");
-              const tail = t.trim().split("\n").slice(-20);
-              for (const l of tail) console.log("::error title=tail::" + esc(l.trim()));
-            }
+            const lines = t.split("\n");
+            const bad = lines.filter((l) => !/^\s*✔/.test(l) && (/^\s*(✘|⛔)/.test(l) || /\bFAIL\b|Error:|Cannot find|ENOENT|npm error/i.test(l)));
+            for (const l of bad.slice(0, 30)) console.log("::error title=بررسی قرمز::" + esc(l.trim()));
+            // Always include the tail: a matching line alone may not explain the failure.
+            for (const l of lines.filter(Boolean).slice(-20)) console.log("::error title=tail::" + esc(l.trim()));
           ' "$LOG"
 
   # ── ۳) آمادگی انتشار (فقط روی PR) ─────────────────────────────────────

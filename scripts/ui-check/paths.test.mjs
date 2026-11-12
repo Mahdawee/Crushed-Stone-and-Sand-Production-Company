@@ -83,11 +83,15 @@ check('تست، الگوی غلط را تشخیص می‌دهد (خودآزما�
 const winUrl = 'file:///C:/Users/DELL/Documents/GitHub/Crushed-Stone-and-Sand-Production-Company/scripts/doctor.mjs';
 {
   const got = fileURLToPath(new URL(winUrl));
+  const winExpected = path.win32.join('C:\\', 'Users', 'DELL', 'Documents', 'GitHub', 'Crushed-Stone-and-Sand-Production-Company', 'scripts', 'doctor.mjs');
   const expected = process.platform === 'win32'
-    ? 'C:\\Users\\DELL\\Documents\\GitHub\\Crushed-Stone-and-Sand-Production-Company\\scripts\\doctor.mjs'
+    ? winExpected
     : '/C:/Users/DELL/Documents/GitHub/Crushed-Stone-and-Sand-Production-Company/scripts/doctor.mjs';
   check('fileURLToPath روی مسیر ویندوزی حرف درایو را سالم می‌دهد', got === expected, `${got} ≠ ${expected}`);
-  check('حرف درایو تکرار نشده (نه «C:\\C:\\»)', !/^[A-Za-z]:\\[A-Za-z]:/.test(got), got);
+  // Node 22 supports explicit Windows conversion, so this also runs on Linux CI.
+  const windowsGot = fileURLToPath(new URL(winUrl), { windows: true });
+  check('تبدیل مسیر ویندوزی با جداکننده درست روی همه سیستم‌ها', windowsGot === winExpected, `${windowsGot} ≠ ${winExpected}`);
+  check('حرف درایو تکرار نشده', !/^[A-Za-z]:\\[A-Za-z]:/.test(windowsGot), windowsGot);
 }
 const buggy = path.win32.resolve('C:\\Users\\DELL\\Documents\\GitHub\\proj',
   '\\C:\\Users\\DELL\\Documents\\GitHub\\Crushed-Stone-and-Sand-Production-Company\\scripts');
