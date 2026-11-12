@@ -29,6 +29,10 @@ const { makeBackup, compactBackup, restoreFromBackup } = await import(
   pathToFileURL(path.join(root, 'apps/api/dist/common/backup.js')).href
 );
 
+const { snapshotDatabase } = await import(
+  pathToFileURL(path.join(root, 'apps/api/dist/common/snapshot.js')).href
+);
+
 let pass = 0, fail = 0;
 const ok = (n, c, extra = '') => {
   if (c) { pass++; console.log(`  ✔ ${n}`); } else { fail++; console.log(`  ✘ ${n}${extra ? ' → ' + extra : ''}`); }
@@ -97,6 +101,37 @@ try {
   ok('داده‌ی بازگردانی‌شده درست است',
     restored.prepare('SELECT COUNT(*) c FROM "t"').get().c === liveRows);
   restored.close();
+
+  console.log('\n— عکس مستقل با مسیر دارای کوتیشن و داده WAL —');
+  const quoted = path.join(dir, "quoted' path");
+  fs.mkdirSync(quoted);
+  const live = new DatabaseSync(path.join(quoted, 'live.db'));
+  live.exec('PRAGMA journal_mode=WAL; CREATE TABLE User(id INTEGER); INSERT INTO User VALUES(1); CREATE TABLE Customer(id INTEGER); CREATE TABLE Sale(id INTEGER);');
+  live.exec('PRAGMA wal_checkpoint(TRUNCATE); INSERT INTO Customer VALUES(37);');
+  const independent = path.join(quoted, 'snapshot.db');
+  await snapshotDatabase(independent, async (sql) => live.exec(sql));
+  const independentDb = new DatabaseSync(independent, { readOnly: true });
+  ok('عکس مستقل داده ثبت‌شده در WAL را در مسیر دارای کوتیشن دارد', independentDb.prepare('SELECT id FROM Customer').get()?.id === 37);
+  independentDb.close();
+  live.close();
+
+  console.log('\n— شکست ساخت عکس پشتیبان —');
+  const failedFile = path.join(dir, 'failed.db');
+  let rejected = false;
+  try {
+    await snapshotDatabase(failedFile, async (sql) => {
+      const match = /VACUUM INTO '(.+)'/.exec(sql);
+      fs.writeFileSync(match[1].replace(/''/g, "'"), 'partial');
+      throw new Error('شبیه‌سازی خطای دیسک');
+    });
+  } catch { rejected = true; }
+  ok('خطای ساخت به فراخوان منتقل می‌شود', rejected);
+  ok('فایل ناقص منتشر نمی‌شود', !fs.existsSync(failedFile));
+  ok('پوشهٔ موقت پس از خطا پاک می‌شود', !fs.readdirSync(dir).some((f) => f.startsWith('.snapshot-')));
+  rejected = false;
+  const previous = fs.readFileSync(bak2);
+  try { await snapshotDatabase(bak2, async () => { throw new Error('must not run'); }); } catch { rejected = true; }
+  ok('فایل قدیمی بازنویسی نمی‌شود', rejected && fs.readFileSync(bak2).equals(previous));
 
   db.close();
 } finally {

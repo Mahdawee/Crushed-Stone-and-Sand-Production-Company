@@ -16,6 +16,8 @@ const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const zlib = require('node:zlib');
+const { DatabaseSync } = require('node:sqlite');
 
 const root = path.resolve(__dirname, '..', '..', '..');
 /*
@@ -84,6 +86,16 @@ async function main() {
     await api('POST', '/customers', { name: 'مشتری الف', code: '101' });
     await api('POST', '/sales', { date: '1404/06/15', volume: 3, unitPrice: 500, paymentType: 'cash' });
 
+    console.log('\n— عکس سازگار با WAL —');
+    const liveFile = path.join(dataDir, 'farday.db');
+    const reader = new DatabaseSync(liveFile, { readOnly: true });
+    reader.exec('BEGIN');
+    reader.prepare('SELECT COUNT(*) AS n FROM Customer').get();
+    const walCustomer = await api('POST', '/customers', { name: 'مشتری فقط در WAL', code: 'wal-test' });
+    check('داده پس از باز شدن خواننده ثبت شد', [200, 201].includes(walCustomer.status), JSON.stringify(walCustomer.body));
+    const walFile = liveFile + '-wal';
+    check('WAL هنگام پشتیبان‌گیری واقعاً داده دارد', fs.existsSync(walFile) && fs.statSync(walFile).size > 0);
+
     console.log('\n— ۱) پشتیبان سالم —');
     const bk = await api('POST', '/system/backup', {});
     check('پشتیبان‌گیری انجام شد', [200, 201].includes(bk.status), JSON.stringify(bk.body).slice(0, 140));
@@ -95,6 +107,56 @@ async function main() {
     const list1 = await api('GET', '/system/backup/list');
     const goodRow = (list1.body?.rows || []).find((r) => r.file === goodName);
     check('پشتیبان سالم در فهرست «سالم» علامت خورده', goodRow?.healthy === true, JSON.stringify(goodRow));
+    const snap = new DatabaseSync(path.join(backupDir, goodName), { readOnly: true });
+    try { check('پشتیبان مستقل، دادهٔ WAL را دارد', !!snap.prepare('SELECT id FROM Customer WHERE name = ?').get('مشتری فقط در WAL')); }
+    finally { snap.close(); }
+    const zipCustomer = await api('POST', '/customers', { name: 'مشتری مخصوص ZIP', code: 'zip-test' });
+    check('دادهٔ تازه پیش از ZIP ثبت شد', [200, 201].includes(zipCustomer.status));
+    const legacyForZip = path.join(backupDir, 'legacy-for-zip.db');
+    fs.copyFileSync(path.join(backupDir, goodName), legacyForZip);
+    fs.writeFileSync(legacyForZip + '-wal', 'old-wal-for-test');
+    const zipResponse = await fetch(BASE + '/system/backup/bundle', { headers: { 'x-auth-token': token } });
+    check('ZIP پشتیبان ساخته می‌شود', zipResponse.status === 200, String(zipResponse.status));
+    const zip = Buffer.from(await zipResponse.arrayBuffer());
+    // Local ZIP records: inspect and decompress the actual HTTP response.
+    let p = 0, zippedLive = null;
+    const zippedNames = [];
+    while (p + 30 <= zip.length && zip.readUInt32LE(p) === 0x04034b50) {
+      const method = zip.readUInt16LE(p + 8), size = zip.readUInt32LE(p + 18);
+      const nameLength = zip.readUInt16LE(p + 26), extra = zip.readUInt16LE(p + 28);
+      const name = zip.subarray(p + 30, p + 30 + nameLength).toString('utf8');
+      zippedNames.push(name);
+      const start = p + 30 + nameLength + extra;
+      const payload = zip.subarray(start, start + size);
+      if (/^farday-live-.*\.db$/.test(name)) zippedLive = method === 8 ? zlib.inflateRawSync(payload) : payload;
+      p = start + size;
+    }
+    check('دیتابیس زنده داخل ZIP وجود دارد', !!zippedLive);
+    check('WAL پشتیبان قدیمی همراه آن در ZIP می‌ماند', zippedNames.includes('backups/legacy-for-zip.db') && zippedNames.includes('backups/legacy-for-zip.db-wal'));
+    fs.rmSync(legacyForZip + '-wal');
+    fs.rmSync(legacyForZip);
+    if (zippedLive) {
+      const extracted = path.join(dataDir, 'zip-snapshot-test.db');
+      fs.writeFileSync(extracted, zippedLive);
+      const zippedDb = new DatabaseSync(extracted, { readOnly: true });
+      try { check('دیتابیس ZIP دادهٔ WAL را دارد', !!zippedDb.prepare('SELECT id FROM Customer WHERE name = ?').get('مشتری مخصوص ZIP')); }
+      finally { zippedDb.close(); fs.rmSync(extracted, { force: true }); }
+    }
+    reader.exec('ROLLBACK');
+    reader.close();
+    check('فایل موقت ZIP پاک شده', !fs.readdirSync(backupDir).some((f) => f.startsWith('.bundle-') || f.startsWith('.snapshot-')));
+
+
+    console.log('\n— پشتیبان قدیمی وابسته به WAL —');
+    const legacy = path.join(backupDir, 'legacy-wal.db');
+    fs.copyFileSync(path.join(backupDir, goodName), legacy);
+    fs.writeFileSync(legacy + '-wal', 'simulated-wal');
+    const legacyRestore = await api('POST', '/system/restore', { file: 'legacy-wal.db' });
+    check('بازگردانی ناقص پشتیبان WALدار رد می‌شود', legacyRestore.status === 409, JSON.stringify(legacyRestore.body));
+    const legacyDownload = await fetch(BASE + '/system/backup/download?file=legacy-wal.db', { headers: { 'x-auth-token': token } });
+    check('دانلود ناقص پشتیبان WALدار رد می‌شود', legacyDownload.status === 409, String(legacyDownload.status));
+    fs.rmSync(legacy + '-wal');
+    fs.rmSync(legacy);
 
     console.log('\n— ۲) فایل خراب نباید دیتابیس را نابود کند —');
     const corrupt = path.join(backupDir, 'corrupt.db');
@@ -145,12 +207,19 @@ async function main() {
     const safetyFile = path.join(backupDir, String(restoreGood.body?.safetyCopy || ''));
     let safetyHasNewCustomer = false;
     if (restoreGood.body?.safetyCopy && fs.existsSync(safetyFile)) {
-      const { DatabaseSync } = require('node:sqlite');
       const safetyDb = new DatabaseSync(safetyFile, { readOnly: true });
       try { safetyHasNewCustomer = !!safetyDb.prepare('SELECT id FROM Customer WHERE name = ?').get('مشتری بعد از پشتیبان'); }
       finally { safetyDb.close(); }
     }
     check('نسخهٔ ایمنی بازگردانی دادهٔ جدید را دارد', safetyHasNewCustomer);
+    if (zippedLive) {
+      const zipRestoreName = 'zip-live-restore.db';
+      fs.writeFileSync(path.join(backupDir, zipRestoreName), zippedLive);
+      const zipRestore = await api('POST', '/system/restore', { file: zipRestoreName });
+      const zipRestoredCustomers = await api('GET', '/customers');
+      check('عکس استخراج‌شده از ZIP واقعاً بازگردانی می‌شود', [200, 201].includes(zipRestore.status) && Array.isArray(zipRestoredCustomers.body) && zipRestoredCustomers.body.some((c) => c.name === 'مشتری مخصوص ZIP'), JSON.stringify(zipRestore.body));
+    }
+
 
 
     console.log('\n— ۴) ابزار نجات خط فرمان —');

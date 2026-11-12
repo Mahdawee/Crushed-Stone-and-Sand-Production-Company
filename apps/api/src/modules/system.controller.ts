@@ -10,6 +10,7 @@ import { settingsService } from '../common/settings';
 import { dataDir } from '../db';
 import { ensureSqliteEngine, nativePackageName, type EngineStatus } from '../common/sqlite-engine';
 import { checkBackupFile } from '../common/backup-check';
+import { snapshotDatabase } from '../common/snapshot';
 import { buildZip, safeEntryName } from '../common/zip';
 import { isFolderKey, openFolder } from '../common/open-folder';
 import { SHAPE_VERSION, appVersion, recentUpgrades } from '../common/upgrade';
@@ -18,6 +19,15 @@ import { demoCounts, hasRealData, installDemo, removeDemo } from '../common/demo
 import {
   RESET_PHRASE, dataInventory, resetMark, resetPlan, resetSystem, workingRowCount, type ResetOptions,
 } from '../common/reset';
+
+// Legacy snapshots may depend on a separate WAL. Never download or restore
+// only the main file and silently discard those committed pages.
+function rejectPendingBackupWal(file: string): void {
+  const wal = file + '-wal';
+  if (fs.existsSync(wal) && fs.statSync(wal).size > 0) {
+    throw new HttpException('این پشتیبان قدیمی به فایل WAL وابسته است؛ آن را همراه فایل دیتابیس حفظ کنید و برای بازیابی از پشتیبانی کمک بگیرید.', 409);
+  }
+}
 
 /**
  * خودآزمایی «بدون نصب چیز اضافه» — همان چیزی که روی کمپیوتر کاربر مهم است.
@@ -400,6 +410,7 @@ export class SystemController {
     const name = path.basename(String(file || ''));
     const full = path.join(BACKUP_DIR(), name);
     if (!name || !fs.existsSync(full)) throw new HttpException('فایل پشتیبان پیدا نشد.', 404);
+    rejectPendingBackupWal(full);
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
     return res.sendFile(full);
@@ -409,12 +420,10 @@ export class SystemController {
   @ManagerOnly()
   async backup(@Body() body: { note?: string }) {
     await ensureSchemaAsync();
-    const src = databaseFile();
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const file = path.join(BACKUP_DIR(), `farday-${stamp}.db`);
-    // checkpoint the WAL so the copy is consistent
-    try { await db().$executeRawUnsafe('PRAGMA wal_checkpoint(TRUNCATE)'); } catch { /* ignore */ }
-    fs.copyFileSync(src, file);
+    const file = path.join(BACKUP_DIR(), `farday-${stamp}-${randomUUID()}.db`);
+    try { await snapshotDatabase(file, (sql) => db().$executeRawUnsafe(sql)); }
+    catch (e: any) { throw new HttpException(`پشتیبان ساخته نشد: ${e?.message || e}`, 500); }
     // keep the last 30 backups
     const all = fs.readdirSync(BACKUP_DIR()).filter((f) => f.endsWith('.db')).sort();
     while (all.length > 30) {
@@ -456,7 +465,7 @@ export class SystemController {
    * ── فشرده‌ی پشتیبان در یک فایل (C2) ────────────────────────────────────
    *
    * برای «بفرست به حسابدار / روی فلش ببر» یک فایل بهتر از ده فایل است.
-   * محتوا: دیتابیس زنده (با `wal_checkpoint` تا کاپی سالم باشد) + همه‌ی
+   * محتوا: عکس سازگار دیتابیس زنده (شامل WAL) + همه‌ی
    * پشتیبان‌های موجود + یک `README.txt` که می‌گوید چطور بازگردانی شود —
    * چون فایل zip ممکن است دست کسی بیفتد که این برنامه را نمی‌شناسد.
    */
@@ -464,47 +473,54 @@ export class SystemController {
   @ManagerOnly()
   async backupBundle(@Res() res: any) {
     await ensureSchemaAsync();
-    try { await db().$executeRawUnsafe('PRAGMA wal_checkpoint(TRUNCATE)'); } catch { /* ignore */ }
-
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const entries: { name: string; data?: Buffer; file?: string }[] = [];
 
-    /* دیتابیس زنده — نامش «live» است تا با فایل‌های پشتیبان قاطی نشود */
-    entries.push({ name: `farday-live-${stamp}.db`, file: databaseFile() });
-
+    /* Use a validated snapshot, never a raw copy of a live WAL database. */
     const dir = BACKUP_DIR();
-    if (fs.existsSync(dir)) {
-      /*
-       * همه‌ی پشتیبان‌ها، ولی سقف ۳۰ فایل — همان سقفی که ساخت پشتیبان
-       * نگه می‌دارد. بدون سقف، این پاسخ با ۵۰۰ پشتیبان چند صد مگابایت
-       * می‌شد و مرورگر قطع می‌کرد.
-       */
-      const files = fs.readdirSync(dir).filter((f) => f.endsWith('.db')).sort().slice(-30);
-      for (const f of files) {
-        const full = path.join(dir, f);
-        try { entries.push({ name: `backups/${safeEntryName(f)}`, file: full }); } catch { /* ignore */ }
+    const liveSnapshot = path.join(dir, `.bundle-${randomUUID()}.tmp`);
+    try { await snapshotDatabase(liveSnapshot, (sql) => db().$executeRawUnsafe(sql)); }
+    catch (e: any) { throw new HttpException(`ساخت پشتیبان ZIP انجام نشد: ${e?.message || e}`, 500); }
+    let zip: Buffer;
+    try {
+      entries.push({ name: `farday-live-${stamp}.db`, file: liveSnapshot });
+      if (fs.existsSync(dir)) {
+        /*
+         * همه‌ی پشتیبان‌ها، ولی سقف ۳۰ فایل — همان سقفی که ساخت پشتیبان
+         * نگه می‌دارد. بدون سقف، این پاسخ با ۵۰۰ پشتیبان چند صد مگابایت
+         * می‌شد و مرورگر قطع می‌کرد.
+         */
+        const files = fs.readdirSync(dir).filter((f) => f.endsWith('.db')).sort().slice(-30);
+        for (const f of files) {
+          const full = path.join(dir, f);
+          entries.push({ name: `backups/${safeEntryName(f)}`, file: full });
+          // Older backups may depend on their WAL. Keep the pair together.
+          for (const suffix of ['-wal', '-shm']) {
+            if (fs.existsSync(full + suffix)) entries.push({ name: `backups/${safeEntryName(f)}${suffix}`, file: full + suffix });
+          }
+        }
       }
-    }
 
-    const readme = [
-      'پشتیبان فردای روشن',
-      `تاریخ ساخت: ${new Date().toISOString()}`,
-      '',
-      'این فایل زیپ شامل موارد زیر است:',
-      '  • farday-live-*.db  — دیتابیس در لحظه‌ی ساخت این فایل',
-      '  • backups/*.db      — پشتیبان‌های قبلی',
-      '',
-      'بازگردانی:',
-      '  ۱) برنامه را باز کنید و به صفحه‌ی «پشتیبان‌گیری» بروید.',
-      '  ۲) فایل مورد نظر را در پوشه‌ی پشتیبان کاپی کنید:',
-      '     %APPDATA%\af.farday.roshan\backups',
-      '  ۳) فهرست را تازه کنید و روی «بازگردانی» بزنید.',
-      '',
-      'دیتابیس را هرگز وقتی برنامه باز است دستی تعویض نکنید.',
-    ].join('\r\n');
-    entries.push({ name: 'README.txt', data: Buffer.from(readme, 'utf8') });
+      const readme = [
+        'پشتیبان فردای روشن',
+        `تاریخ ساخت: ${new Date().toISOString()}`,
+        '',
+        'این فایل زیپ شامل موارد زیر است:',
+        '  • farday-live-*.db  — دیتابیس در لحظه‌ی ساخت این فایل',
+        '  • backups/*.db      — پشتیبان‌های قبلی (اگر فایل -wal دارند، هر دو را حفظ کنید و برای بازیابی از پشتیبانی کمک بگیرید)',
+        '',
+        'بازگردانی:',
+        '  ۱) برنامه را باز کنید و به صفحه‌ی «پشتیبان‌گیری» بروید.',
+        '  ۲) فایل مورد نظر را در پوشه‌ی پشتیبان کاپی کنید:',
+        '     %APPDATA%\af.farday.roshan\backups',
+        '  ۳) فهرست را تازه کنید و روی «بازگردانی» بزنید.',
+        '',
+        'دیتابیس را هرگز وقتی برنامه باز است دستی تعویض نکنید.',
+      ].join('\r\n');
+      entries.push({ name: 'README.txt', data: Buffer.from(readme, 'utf8') });
 
-    const zip = buildZip(entries);
+      zip = buildZip(entries);
+    } finally { fs.rmSync(liveSnapshot, { force: true }); }
     const name = `farday-bundle-${stamp}.zip`;
     await logActivity({ action: 'backup-bundle', entity: 'System', detail: `${name} (${entries.length} فایل)` });
     res.setHeader('Content-Type', 'application/zip');
@@ -519,6 +535,7 @@ export class SystemController {
     const name = path.basename(String(body?.file || ''));
     const full = path.join(BACKUP_DIR(), name);
     if (!fs.existsSync(full)) throw new HttpException('فایل پشتیبان پیدا نشد.', 404);
+    rejectPendingBackupWal(full);
 
     /*
      * ── حفاظ حیاتی (شکار باگ دور ۲۸) ────────────────────────────────────

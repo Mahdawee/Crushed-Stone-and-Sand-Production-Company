@@ -65,7 +65,9 @@ for (const [file, claimed, flags] of claims) {
     const m = /(\d+) موفق/.exec(out);
     counted = m ? Number(m[1]) : -1;
   } catch { counted = -1; }
-  ok(`${path.basename(file)}: سند ${claimed} می‌گوید`, counted === claimed, `واقعی ${counted}`);
+  // A historical audit records the checks available then; added checks must
+  // not make the historical claim false. Fewer checks still fail.
+  ok(`${path.basename(file)}: دست‌کم ${claimed} بررسی سند`, counted >= claimed, `واقعی ${counted}`);
   /*
    * خودِ سند هم باید همان عدد را کنار همان فایل نوشته باشد — نه اینکه
    * عدد «جایی» در سند باشد. نسخه‌ی اول شرط `|| claimed === N` داشت که
