@@ -44,20 +44,49 @@ export function toInputDate(isoStr: string, mode: CalendarMode): string {
   return c.jy ? `${c.jy}/${pad2(c.jm)}/${pad2(c.jd)}` : '';
 }
 
-/** Parse "1404/05/12" (Dari digits allowed) into a Gregorian ISO string. */
+/**
+ * Parse "1404/05/12" (Dari digits allowed) into a Gregorian ISO string.
+ *
+ * ── باگ (شکار باگ دور ۳۴) ──────────────────────────────────────────────────
+ * فقط جداکننده تعیین می‌کرد تاریخ شمسی است یا میلادی. با تقویم شمسی، تایپ
+ * «2026/11/10» سال ۲۰۲۶ **هجری** حساب می‌شد و سند ۶۲۱ سال جلو می‌افتاد
+ * (بی‌هیچ خطایی، سند هم از فهرست ماه بیرون می‌رفت). برعکسش هم: با تقویم
+ * میلادی، «1405/08/19» سال ۱۴۰۵ میلادی می‌شد.
+ * حالا **بازه‌ی سال** تعیین‌کننده است: ۱۰۰۰–۱۷۰۰ شمسی، بالاتر میلادی — همان
+ * قاعده‌ی سرور (`common/calendar.ts`) تا هر دو طرف یک چیز بگویند.
+ */
 export function parseInputDate(input: string, mode: CalendarMode): string {
   const raw = String(input || '').replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).trim();
-  const m = raw.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
+  const m = raw.match(/^(\d{3,4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
   if (!m) {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      const y0 = Number(raw.slice(0, 4));
+      /* «YYYY-MM-DD» با سال شمسی (۱۴۰۵…) هم همان تاریخ شمسی است */
+      if (y0 >= 1000 && y0 <= 1700) {
+        const jm = Number(raw.slice(5, 7));
+        const jd = Number(raw.slice(8, 10));
+        if (jalaali.isValidJalaaliDate(y0, jm, jd)) return fromCalendar(y0, jm, jd, 'jalali');
+      }
+      return raw;
+    }
     throw new Error('تاریخ درست نیست — نمونه: ۱۴۰۴/۰۵/۱۲');
   }
   const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  if (mode === 'jalali') {
+  const readJalali = () => {
     if (!jalaali.isValidJalaaliDate(y, mo, d)) throw new Error('تاریخ شمسی درست نیست.');
     return fromCalendar(y, mo, d, 'jalali');
-  }
-  return `${y}-${pad2(mo)}-${pad2(d)}`;
+  };
+  const readGregorian = () => {
+    const date = `${y}-${pad2(mo)}-${pad2(d)}`;
+    const dt = new Date(Date.UTC(y, mo - 1, d));
+    if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) {
+      throw new Error('تاریخ میلادی درست نیست.');
+    }
+    return date;
+  };
+  if (y >= 1000 && y <= 1700) return readJalali();
+  if (y >= 1700) return readGregorian();
+  return mode === 'jalali' ? readJalali() : readGregorian();
 }
 
 /**
