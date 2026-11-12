@@ -14,7 +14,7 @@
  *      با متن امضاشده → API باز می‌شود؛ متن جعلی/دست‌کاری‌شده رد می‌شود.
  *   ۶) کلید دستگاه پایدار است و با ورودی‌های مختلف قالب یکسان می‌دهد.
  */
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -117,6 +117,22 @@ const machine = require(path.join(common, 'license-machine.js'));
   const mk1 = await machine.machineKeyForDevice();
   const mk2 = await machine.machineKeyForDevice();
   check('کلید دستگاه پایدار است', mk1 === mk2, `${mk1} != ${mk2}`);
+  // Simulate a changing system probe in a fresh process; the second request
+  // must use the same identity instead of re-reading a transient value.
+  const probeTest = `
+    const os = require('node:os');
+    let calls = 0;
+    os.hostname = () => 'host-' + (++calls);
+    const machine = require(process.argv[1]);
+    const a = machine.computeMachineKey();
+    const b = machine.computeMachineKey();
+    process.stdout.write(JSON.stringify({ a, b, calls }));
+  `;
+  const probe = spawnSync(process.execPath, ['-e', probeTest, path.join(common, 'license-machine.js')], { encoding: 'utf8', timeout: 30000 });
+  let probeResult = null;
+  try { probeResult = JSON.parse(probe.stdout); } catch { /* report test failure */ }
+  check('تغییر موقت شناسه در همان اجرا کلید را عوض نمی‌کند', probe.status === 0 && probeResult?.a === probeResult?.b && probeResult?.calls === 1, probe.stderr || probe.stdout);
+
   check('کلید دستگاه قالب ۵×۵ دارد', /^[2-9A-HJ-NP-Z]{5}(-[2-9A-HJ-NP-Z]{5}){4}$/.test(mk1), mk1);
   check('همان بذر → همان کلید', license.machineKeyFromSeed('abc') === license.machineKeyFromSeed('abc'));
   check('بذر متفاوت → کلید متفاوت', license.machineKeyFromSeed('abc') !== license.machineKeyFromSeed('abd'));

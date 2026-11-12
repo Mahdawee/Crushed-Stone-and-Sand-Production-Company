@@ -92,8 +92,13 @@ export function deviceSeed(): string {
 }
 
 /** کد ۲۵ نویسه‌ای «کلید دستگاه» — قالبی مثل `A74PA-AW6C7-UAB99-PAPJU-VQWQW` */
+// Hardware probes can fail intermittently (e.g. Windows WMI timeouts). Keep
+// the first result for this process so a valid license cannot change identity
+// between two requests. The existing derivation stays unchanged for compatibility.
+let processMachineKey: string | undefined;
 export function computeMachineKey(): string {
-  return machineKeyFromSeed(sha256(deviceSeed()));
+  if (!processMachineKey) processMachineKey = machineKeyFromSeed(sha256(deviceSeed()));
+  return processMachineKey;
 }
 
 /**
