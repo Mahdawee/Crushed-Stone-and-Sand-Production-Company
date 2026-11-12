@@ -68,9 +68,27 @@ check('تست، الگوی غلط را تشخیص می‌دهد (خودآزما�
   badPattern.test('const r = path.dirname(new URL(import.meta.url).pathname);'));
 
 /* مسیر ویندوزی: `/C:/Users/...` نباید تبدیل به `C:\C:\...` شود */
+/*
+ * ── باگ دور ۴۳: این بررسی خروجی لینوکسی را سخت‌کد کرده بود ─────────────
+ * `fileURLToPath` عمداً **مابسته به سیستم‌عامل** است:
+ *   لینوکس  → `/C:/Users/...`   (اسلش اول می‌ماند)
+ *   ویندوز  → `C:\Users\...`    (حرف درایو، بدون اسلش اول)
+ *
+ * سخت‌کد کردن شکل لینوکسی یعنی تست روی ویندوز همیشه قرمز است — در حالی
+ * که رفتار درست همان است. (همین اشتباه را در بررسی بیت +x هم کردیم.)
+ *
+ * چیزی که واقعاً مهم است: حرف درایو **تکرار نشود** (`C:\C:\`) و مسیر
+ * به همان درایو اشاره کند.
+ */
 const winUrl = 'file:///C:/Users/DELL/Documents/GitHub/Crushed-Stone-and-Sand-Production-Company/scripts/doctor.mjs';
-check('fileURLToPath روی مسیر ویندوزی حرف درایو را سالم می‌دهد',
-  fileURLToPath(new URL(winUrl)) === '/C:/Users/DELL/Documents/GitHub/Crushed-Stone-and-Sand-Production-Company/scripts/doctor.mjs');
+{
+  const got = fileURLToPath(new URL(winUrl));
+  const expected = process.platform === 'win32'
+    ? 'C:\\Users\\DELL\\Documents\\GitHub\\Crushed-Stone-and-Sand-Production-Company\\scripts\\doctor.mjs'
+    : '/C:/Users/DELL/Documents/GitHub/Crushed-Stone-and-Sand-Production-Company/scripts/doctor.mjs';
+  check('fileURLToPath روی مسیر ویندوزی حرف درایو را سالم می‌دهد', got === expected, `${got} ≠ ${expected}`);
+  check('حرف درایو تکرار نشده (نه «C:\\C:\\»)', !/^[A-Za-z]:\\[A-Za-z]:/.test(got), got);
+}
 const buggy = path.win32.resolve('C:\\Users\\DELL\\Documents\\GitHub\\proj',
   '\\C:\\Users\\DELL\\Documents\\GitHub\\Crushed-Stone-and-Sand-Production-Company\\scripts');
 check('بازتولید باگ ویندوزی: مسیر نسبیِ «\\C:\\...» به C:\\C:\\ می‌چسبد',
