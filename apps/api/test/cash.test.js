@@ -204,6 +204,20 @@ const daily = (token, from, to) =>
   check('راپور ماهانه هم همان ۳۵۰۰ را کم می‌کند', aug.expensesUsdAfn === 3500, String(aug.expensesUsdAfn));
   const dash2 = (await api('GET', '/reports/dashboard', undefined, token)).body;
   check('داشبورد هم همان تبدیل را داراست', dash2.month.expensesUsdAfn === 3500, String(dash2.month.expensesUsdAfn));
+  /*
+   * ── باگ (شکار باگ دور ۳۴): راپور سالانه مصرف دالری را کم نمی‌کرد ────────
+   * ماهانه، روزانه و داشبورد همه با نرخ تبدیل کم می‌کردند؛ سالانه نه. یعنی
+   * سود سال ۳۵۰۰ افغانی بیشتر از مجموع سود ماه‌های همان سال بود.
+   */
+  const yr = (await api('GET', '/reports/yearly', undefined, token)).body.rows.find((r) => r.year === 1405);
+  check('راپور سالانه هم دالری را با همان نرخ کم می‌کند', yr && yr.expensesUsdAfn === 3500,
+    JSON.stringify(yr && { usd: yr.expensesUsdAfn }));
+  const months1405 = (await api('GET', '/reports/monthly?year=1405', undefined, token)).body.rows;
+  const sumProfit = Math.round(months1405.reduce((a, r) => a + r.profit, 0) * 100) / 100;
+  const sumLoss = Math.round(months1405.reduce((a, r) => a + r.loss, 0) * 100) / 100;
+  check('سود سالانه = سود ماه‌های همان سال', yr && Math.abs((yr.profit - yr.loss) - (sumProfit - sumLoss)) < 0.02,
+    `سال ${yr && (yr.profit - yr.loss)} ≠ ماه‌ها ${sumProfit - sumLoss}`);
+
   const badSet = await api('PUT', '/settings', { usdInProfit: 'yes' }, token);
   check('مقدار نامعتبر رد می‌شود (۴۰۰)', badSet.status === 400, String(badSet.status));
 

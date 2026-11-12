@@ -405,10 +405,20 @@ export class ReportsController {
       const r: any[] = await p.$queryRawUnsafe(
         `SELECT COALESCE(SUM("amount"),0) t FROM "Receipt" WHERE COALESCE("deletedAt",'')='' AND "date">=? AND "date"<=?`, start, end);
       const sales = num(s[0]?.t); const exp = num(e[0]?.afn); const sal = num(sa[0]?.t);
-      const net = sales - exp - sal;
+      /*
+       * ── باگ (شکار باگ دور ۳۴): مصرف دالری در سود سالانه شمرده نمی‌شد ─────
+       * راپور **ماهانه** (و داشبورد و دفتر صندوق) مصرف دالری را با نرخ تنظیمات
+       * به افغانی تبدیل و از سود کم می‌کند، ولی راپور سالانه هرگز نمی‌کرد: با
+       * «نرخ دالر در سود = روشن» و ۱۰۰۰ دالر مصرف، سود سالانه ۱۰۰۰×نرخ
+       * بیشتر از مجموع سود ماه‌های همان سال بود. حالا همان قاعده‌ی ماهانه.
+       */
+      const usdRow = await this.usdAfn(num(e[0]?.usd));
+      const totalExp = exp + sal + usdRow.usdAfn;
+      const net = sales - totalExp;
       rows.push({
         year: y, start, end, sales: r2(sales), expenses: r2(exp), salaries: r2(sal),
-        totalExpenses: r2(exp + sal), receipts: r2(num(r[0]?.t)), expensesUsd: r2(num(e[0]?.usd)),
+        totalExpenses: r2(totalExp), receipts: r2(num(r[0]?.t)), expensesUsd: r2(num(e[0]?.usd)),
+        expensesUsdAfn: usdRow.usdAfn, usdRate: usdRow.usdRate, usdInProfit: usdRow.usdInProfit,
         profit: net >= 0 ? r2(net) : 0, loss: net < 0 ? r2(-net) : 0,
       });
     }
