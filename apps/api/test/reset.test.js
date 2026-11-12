@@ -240,6 +240,7 @@ const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDa
       backupFile: bakName,
       backupExists: bakPath ? fs.existsSync(bakPath) : null,
       backupSize: bakPath && fs.existsSync(bakPath) ? fs.statSync(bakPath).size : null,
+      rollbackError: String(b.rollbackError || '(none)'),
       messageHead: String(b.message || '').slice(0, 120),
       status: failedReset.status,
     };
