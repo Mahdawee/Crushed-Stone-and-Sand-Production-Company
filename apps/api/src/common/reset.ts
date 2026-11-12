@@ -256,19 +256,50 @@ export async function restoreBackupDetailed(
   const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
   let lastErr = '';
 
+  /*
+   * ⚠ نکته‌ای که در اجرای واقعی ویندوز معلوم شد:
+   * اولین نسخه‌ی این تلاش دوباره، `fs.rmSync(force: true)` را کافی می‌دانست.
+   * ولی `force` فقط ENOENT را نادیده می‌گیرد، نه EBUSY. روی ویندوز خطا
+   * دقیقاً این بود:
+   *
+   *   EBUSY: resource busy or locked,
+   *   unlink 'C:\Users\…\farday.db-shm'
+   *
+   * یعنی کاپیِ فایل اصلی شده بود، ولی فایل `-shm` (حافظه‌ی مشترک SQLite)
+   * هنوز باز بود. پس حذف باید **جداگانه و با تلاش دوباره** باشد، نه داخل
+   * همان try.
+   */
+  const transientCodes = ['EBUSY', 'EPERM', 'EAGAIN', 'EACCES'];
+  /** حذف با تلاش دوباره — `force` فقط ENOENT را می‌گیرد، نه قفل ویندوز */
+  const removeWithRetry = async (file: string): Promise<{ ok: boolean; error?: string }> => {
+    let err = '';
+    for (let i = 0; i < tries; i++) {
+      try { fs.rmSync(file, { force: true }); return { ok: true }; }
+      catch (e: any) {
+        err = `${e?.code || ''} ${e?.message || e}`.trim();
+        if (!transientCodes.includes(String(e?.code || ''))) return { ok: false, error: err };
+        await sleep(waitMs);
+      }
+    }
+    return { ok: false, error: err };
+  };
+
   for (let i = 0; i < tries; i++) {
     try {
       fs.copyFileSync(backupFile, target);
       /* WAL پشتیبان اگر هست همراه می‌آید؛ وگرنه WAL فعلی پاک می‌شود */
       const walBak = backupFile + '-wal';
       if (fs.existsSync(walBak)) fs.copyFileSync(walBak, target + '-wal');
-      else fs.rmSync(target + '-wal', { force: true });
-      fs.rmSync(target + '-shm', { force: true });
+      else {
+        const rw = await removeWithRetry(target + '-wal');
+        if (!rw.ok) { lastErr = rw.error || ''; await sleep(waitMs); continue; }
+      }
+      const rs = await removeWithRetry(target + '-shm');
+      if (!rs.ok) { lastErr = rs.error || ''; await sleep(waitMs); continue; }
       return { ok: true };
     } catch (e: any) {
       lastErr = `${e?.code || ''} ${e?.message || e}`.trim();
-      const transient = ['EBUSY', 'EPERM', 'EAGAIN', 'EACCES'].includes(String(e?.code || ''));
-      if (!transient) break;           /* خطای دیگر: تلاش دوباره بی‌فایده است */
+      if (!transientCodes.includes(String(e?.code || ''))) break;
       await sleep(waitMs);             /* دسته هنوز باز است — صبر و تلاش دوباره */
     }
   }

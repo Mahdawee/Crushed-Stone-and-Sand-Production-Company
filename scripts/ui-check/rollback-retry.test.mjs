@@ -98,6 +98,66 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rbretry-'));
   ok('بی‌نهایت تلاش نمی‌کند (۳ بار)', attempts2 === 3, String(attempts2));
 }
 
+console.log('\n— سناریوی واقعی ویندوز: قفل روی -shm هنگام unlink —');
+/*
+ * این دقیقاً خطایی است که روی windows-latest دیده شد:
+ *
+ *   EBUSY: resource busy or locked,
+ *   unlink 'C:\\Users\\…\\farday.db-shm'
+ *
+ * یعنی کاپی فایل اصلی شده بود ولی فایل حافظه‌ی مشترک SQLite هنوز باز بود.
+ * `fs.rmSync(force:true)` این را نمی‌گیرد — `force` فقط ENOENT را نادیده
+ * می‌گیرد. نسخه‌ی اول کد همین‌جا شکست، پس این باید قفل شود.
+ */
+{
+  const dataDir2 = path.join(tmp, 'data2');
+  fs.mkdirSync(dataDir2, { recursive: true });
+  process.env.FARDAY_DATA_DIR = dataDir2;
+  process.env.FD_DB_FILE = path.join(dataDir2, 'farday.db');
+
+  const bak = path.join(tmp, 'shm-test.db');
+  fs.writeFileSync(bak, 'BACKUP');
+  fs.writeFileSync(path.join(dataDir2, 'farday.db-shm'), 'SHM');
+
+  const realRm = fs.rmSync;
+  let shmAttempts = 0;
+  fs.rmSync = (p, o) => {
+    if (String(p).endsWith('-shm')) {
+      shmAttempts++;
+      if (shmAttempts <= 2) {
+        const e = new Error(`EBUSY: resource busy or locked, unlink '${p}'`);
+        e.code = 'EBUSY';
+        throw e;
+      }
+    }
+    return realRm(p, o);
+  };
+
+  let r;
+  try { r = await restoreBackupDetailed(bak, { tries: 10, waitMs: 5 }); }
+  finally { fs.rmSync = realRm; }
+
+  ok('با EBUSY روی -shm هم برگشت موفق می‌شود', r.ok === true, JSON.stringify(r));
+  /*
+   * ⚠ چرا این عدد مهم است و چرا ۳ نیست:
+   * نسخه‌ی اول کد (بدون removeWithRetry) هم در نهایت سبز می‌شد — چون
+   * حلقه‌ی بیرونی دوباره از اول کاپی می‌کرد. یعنی تست نمی‌توانست «تلاش
+   * دوباره در جای درست» را از «تکرار کل عملیات» تشخیص دهد.
+   *
+   * تفاوت واقعی: با removeWithRetry، حذف -shm دقیقاً ۳ بار (۲ شکست + ۱
+   * موفق) صدا زده می‌شود. بدون آن، هر دورِ حلقه‌ی بیرونی یک بار حذف
+   * می‌کند و چون `continue` می‌زند، 3 بار می‌شود. پس عدد تنها کافی نیست؛
+   * باید مسیر را از روی خودِ کد هم ببینیم.
+   */
+  ok('حذف -shm تلاش دوباره شد (نه رها شدن)', shmAttempts >= 3, String(shmAttempts));
+  const src = fs.readFileSync(path.join(root, 'apps', 'api', 'src', 'common', 'reset.ts'), 'utf8');
+  ok('-shm با removeWithRetry حذف می‌شود', /removeWithRetry\(target \+ '-shm'\)/.test(src));
+  ok('-wal با removeWithRetry حذف می‌شود', /removeWithRetry\(target \+ '-wal'\)/.test(src));
+  ok('دیتابیس با محتوای پشتیبان برگشت', fs.readFileSync(path.join(dataDir2, 'farday.db'), 'utf8') === 'BACKUP');
+
+  delete process.env.FD_DB_FILE;
+}
+
 console.log('\n— خطای غیرگذرا فوراً برمی‌گردد —');
 {
   const bak = path.join(tmp, 'other.db');
