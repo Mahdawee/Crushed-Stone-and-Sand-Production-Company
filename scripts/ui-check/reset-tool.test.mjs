@@ -585,6 +585,95 @@ console.log('\n— جدول‌های لایسنس و شمارنده هم صفر 
 }
 
 /* ================================================================ */
+/*
+ * «برنامه باز است» — تشخیص واقعی (شکار باگ دور ۳۴)
+ *
+ * پیش از این، سرور ابزار `/api/system/info` را می‌پرسید که پشت توکن است؛
+ * پاسخ ۴۰۱ می‌آمد، مقایسه‌ی مسیر دیتابیس همیشه شکست می‌خورد و ابزار **همیشه**
+ * فکر می‌کرد برنامه بسته است — بعد سراغ حالت آفلاین می‌رفت در حالی که
+ * دیتابیس قفل بود. حالا با مسیر عمومی `info-light` تشخیص داده می‌شود.
+ *
+ * این بلوک یک API واقعی روی همان پوشه‌ی داده بالا می‌آورد، پورت را در فایل
+ * `api-port` می‌نویسد (کاری که پوسته‌ی Tauri می‌کند) و می‌پرسد ابزار چه
+ * می‌بیند. سپس با یک API روی پوشه‌ی **دیگر** بررسی می‌کند که ابزار گول
+ * نخورد (دیتابیس دیگری را صفر نکند).
+ */
+console.log('\n— تشخیص «برنامه باز است» —');
+{
+  const apiPort = 4510, toolPort = 4511;
+  const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), 'farday-other-'));
+  const distMain = path.join(root, 'apps', 'api', 'dist', 'main.js');
+  const startApi = (dataDirX, port) => spawn(process.execPath, [distMain], {
+    cwd: root,
+    /* FD_DB_FILE ارثی نباید بماند — وگرنه «داده‌ی دیگر» همان داده‌ی قبلی می‌شود */
+    env: {
+      ...process.env, FD_DATA_DIR: dataDirX, FD_PORT: String(port), FD_LICENSE_DEV: '1',
+      FD_DB_FILE: path.join(dataDirX, 'farday.db'),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const waitHealth = async (port) => {
+    for (let i = 0; i < 160; i++) {
+      try { const r = await fetch(`http://127.0.0.1:${port}/api/health`); if (r.ok) return true; } catch { /* wait */ }
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    return false;
+  };
+  const readState = async (port) => {
+    for (let i = 0; i < 80; i++) {
+      try { const r = await fetch(`http://127.0.0.1:${port}/api/state`); if (r.ok) return r.json(); } catch { /* wait */ }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    return {};
+  };
+
+  if (!fs.existsSync(distMain)) {
+    check('بسته‌ی API برای تست «برنامه باز است» موجود است', false, distMain);
+  } else {
+    fs.writeFileSync(path.join(dir, 'api-port'), String(apiPort));
+    const app = startApi(dir, apiPort);
+    check('API روی همان داده بالا آمد', await waitHealth(apiPort));
+
+    /* info-light باید بدون توکن جواب بدهد */
+    const light = await fetch(`http://127.0.0.1:${apiPort}/api/system/info-light`).then((r) => r.json()).catch(() => ({}));
+    check('info-light بدون توکن مسیر دیتابیس را می‌دهد', String(light?.dbFile || '').endsWith('farday.db'), JSON.stringify(light).slice(0, 120));
+    check('info-light هیچ چیز حساسی ندارد', !('machineKey' in (light || {})) && !('license' in (light || {})));
+
+    const tool = spawn(process.execPath, [path.join(root, 'tools', 'reset-ui', 'server.mjs')], {
+      cwd: root,
+      env: { ...process.env, FD_DATA_DIR: dir, FD_DB_FILE: dbFile, FD_RESET_UI_PORT: String(toolPort) },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const st = await readState(toolPort);
+    check('ابزار می‌فهمد برنامه باز است', st.appOpen === true, `appOpen=${st.appOpen} port=${st.port}`);
+    check('ابزار پورت واقعی برنامه را می‌گوید', Number(st.port) === apiPort, String(st.port));
+    check('در حالت باز، صفر کردن از راه خود برنامه انجام می‌شود', st.apiMode === true);
+    try { tool.kill('SIGKILL'); } catch { /* */ }
+
+    /* حالا یک برنامه‌ی دیگر (داده‌ی دیگر) روی همان پورت ثبت‌شده */
+    const otherPort = 4512;
+    fs.writeFileSync(path.join(dir, 'api-port'), String(otherPort));
+    await waitHealth(apiPort);
+    const other = startApi(otherDir, otherPort);
+    check('API دوم روی داده‌ی دیگر بالا آمد', await waitHealth(otherPort));
+
+    const tool2Port = 4513;
+    const tool2 = spawn(process.execPath, [path.join(root, 'tools', 'reset-ui', 'server.mjs')], {
+      cwd: root,
+      env: { ...process.env, FD_DATA_DIR: dir, FD_DB_FILE: dbFile, FD_RESET_UI_PORT: String(tool2Port) },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const st2 = await readState(tool2Port);
+    check('برنامه‌ی دیگر «برنامه‌ی من باز است» حساب نمی‌شود', st2.appOpen === false, `appOpen=${st2.appOpen}`);
+    try { tool2.kill('SIGKILL'); } catch { /* */ }
+
+    try { app.kill('SIGKILL'); } catch { /* */ }
+    try { other.kill('SIGKILL'); } catch { /* */ }
+    try { fs.rmSync(otherDir, { recursive: true, force: true }); } catch { /* */ }
+  }
+}
+
+/* ================================================================ */
 console.log('\n— نسخه‌ی Node و node:sqlite —');
 {
   const core = await import(`file://${path.join(root, 'tools', 'reset-ui', 'reset-core.mjs')}`);
@@ -612,6 +701,23 @@ console.log('\n— نسخه‌ی Node و node:sqlite —');
     check('صفحه‌ی ابزار مسیرهای گشته‌شده را می‌گیرد', Array.isArray(st3.searched) && st3.searched.length >= 1,
       String(st3.searched?.length));
     check('صفحه‌ی ابزار منبع داده را می‌گوید', typeof st3.dataSource === 'string' && st3.dataSource.length > 0, st3.dataSource);
+  }
+
+  /*
+   * ── باگ دور ۳۴: «برنامه باز است» هرگز تشخیص داده نمی‌شد ────────────────
+   * ابزار با `/api/system/info` می‌پرسید «این دیتابیس همان دیتابیس من است؟»
+   * ولی آن مسیر توکن می‌خواهد و ابزار توکن ندارد؛ پاسخ ۴۰۱ بود، مقایسه همیشه
+   * شکست می‌خورد و ابزار فکر می‌کرد برنامه بسته است. حالا نسخه‌ی سبکِ عمومی
+   * (`info-light`) بدون توکن همان مسیر دیتابیس را می‌دهد.
+   */
+  {
+    check('مسیر عمومیِ info-light در سرور ابزار استفاده می‌شود',
+      /info-light/.test(fs.readFileSync(path.join(root, 'tools', 'reset-ui', 'server.mjs'), 'utf8')));
+    const ctl = fs.readFileSync(path.join(root, 'apps', 'api', 'src', 'modules', 'system.controller.ts'), 'utf8');
+    check('info-light با @Public() علامت خورده (بدون توکن قابل خواندن است)',
+      /@Public\(\)[\s\S]{0,200}infoLight/.test(ctl));
+    check('info-light هیچ چیز حساسی برنمی‌گرداند (نه دستگاه، نه لایسنس)',
+      !/machineKey|license|deviceId/.test((ctl.split('infoLight')[1] || '').split('@Get')[0]));
   }
   const uiSrc = fs.readFileSync(path.join(root, 'tools', 'reset-ui', 'ui.html'), 'utf8');
   check('صفحه جعبه‌ی «نسخه‌ی Node آماده نیست» دارد', /id="runtimeCard"/.test(uiSrc) && /runtimeBox/.test(uiSrc));

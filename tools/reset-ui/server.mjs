@@ -166,7 +166,13 @@ async function appStatus() {
       /* سلامت پاسخ داد؛ حالا ببین همین داده است یا نمونه‌ی دیگری */
       let info = null;
       try {
-        const ir = await fetch(`http://127.0.0.1:${port}/api/system/info`, { signal: AbortSignal.timeout(1500) });
+        /*
+         * `system/info` پشت توکن است و ابزار توکن ندارد؛ پس نسخه‌ی سبکِ
+         * عمومی را می‌پرسیم (`info-light` فقط نام فایل دیتابیس را می‌دهد).
+         * باگ دور ۳۴: با مسیر محافظت‌شده، پاسخ همیشه ۴۰۱ بود و ابزار
+         * «برنامه بسته است» را نتیجه می‌گرفت — حتی وقتی برنامه باز بود.
+         */
+        const ir = await fetch(`http://127.0.0.1:${port}/api/system/info-light`, { signal: AbortSignal.timeout(1500) });
         if (ir.ok) {
           const j = await ir.json().catch(() => ({}));
           info = j?.data ?? j;

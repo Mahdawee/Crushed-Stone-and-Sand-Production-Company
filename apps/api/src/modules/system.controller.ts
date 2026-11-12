@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { db, databaseFile, BACKUP_DIR, resetDb } from '../db';
 import { ensureSchemaAsync, TABLE_LIST } from '../schema';
-import { AuthGuard, ManagerOnly, userOf } from '../common/auth';
+import { AuthGuard, ManagerOnly, Public, userOf } from '../common/auth';
 import { logActivity } from '../common/activity';
 import { settingsService } from '../common/settings';
 import { dataDir } from '../db';
@@ -511,6 +511,26 @@ export class SystemController {
   async repair() {
     await ensureSchemaAsync();
     return this.health();
+  }
+
+  /**
+   * ── باگ (شکار باگ دور ۳۴): «برنامه باز است» هرگز درست تشخیص داده نمی‌شد ─
+   * ابزار «صفر کردن» با `/api/system/info` می‌پرسد «این برنامه به همان دیتابیس
+   * من وصل است؟» تا اگر نمونه‌ی دیگری روی همان پورت بود، دیتابیس **دیگری** را
+   * صفر نکند. ولی این مسیر پشت `AuthGuard` است و ابزار توکن ندارد؛ پاسخ همیشه
+   * ۴۰۱ بود، `info` خالی می‌ماند و `sameDb()` همیشه `false` — یعنی ابزار
+   * همیشه فکر می‌کرد برنامه بسته است و سراغ حالت آفلاین می‌رفت (با دیتابیس
+   * قفل‌شده) در حالی که برنامه باز بود.
+   *
+   * حالا فقط نام فایل دیتابیس/پوشه‌ی داده عمومی است (بدون توکن) تا همان
+   * مقایسه ممکن شود. شناسه‌ی دستگاه، لایسنس و بقیه‌ی اطلاعات در `info`ی
+   * محافظت‌شده می‌مانند؛ این مسیر **هیچ** چیز حساسی برنمی‌گرداند.
+   */
+  @Public()
+  @Get('info-light')
+  async infoLight() {
+    await ensureSchemaAsync();
+    return { dbFile: databaseFile(), dataDir: path.dirname(databaseFile()) };
   }
 
   @Get('info')
