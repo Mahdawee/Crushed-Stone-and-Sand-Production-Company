@@ -1,4 +1,4 @@
-import { IconDatabase, IconDownload } from '../components/icons';
+import { IconDatabase, IconDownload, IconFolder } from '../components/icons';
 import React, { useEffect, useState } from 'react';
 import { api, getToken, API_BASE } from '../lib/api';
 import { useToast, Table, Spinner, InlineStat } from '../components/ui';
@@ -32,6 +32,55 @@ export default function BackupPage() {
       setTimeout(() => URL.revokeObjectURL(url), 4000);
       toast.success('فایل پشتیبان دانلود شد', file);
     } catch (e: any) { toast.error('دانلود نشد', e.message); }
+  };
+
+  /**
+   * ── باز کردن پوشه (C2) ─────────────────────────────────────────────────
+   * پوشه روی همان ماشینی است که سرور اجرا می‌شود، پس سرور Explorer را باز
+   * می‌کند. مسیر از کلاینت فرستاده **نمی‌شود** — فقط کلید (`data`/`backups`).
+   *
+   * اگر سیستم فایل‌منیجر نداشته باشد (نسخه‌ی سروری، بدون محیط گرافیکی)
+   * سرور `ok:false` با پیام برمی‌گرداند و ما مسیر را نشان می‌دهیم تا کاربر
+   * دستی برود — هرگز ادعا نمی‌کنیم «باز شد» وقتی نشده.
+   */
+  const openFolder = async (key: 'data' | 'backups' | 'logs') => {
+    try {
+      const r: any = await api.post(`/system/open-folder/${key}`, {});
+      if (r.ok) { toast.success('پوشه باز شد', r.path); return; }
+      toast.warn(r.via === 'none' ? 'باز کردن خودکار ممکن نشد' : 'فایل‌منیجر پاسخ نداد', r.message || r.path);
+    } catch (e: any) {
+      toast.error('پوشه باز نشد', e.message);
+    }
+  };
+
+  /**
+   * ── فشرده‌ی پشتیبان (C2) ───────────────────────────────────────────────
+   * برای «بفرست به حسابدار» یک فایل بهتر از ده فایل است. نام فایل از
+   * هدر `Content-Disposition` خوانده می‌شود تا همان نامی باشد که سرور
+   * ساخت — نه یک نام حدسی در رابط.
+   */
+  const bundle = async () => {
+    setBusy(true);
+    try {
+      const res = await fetch(`${API_BASE}/system/backup/bundle`, {
+        headers: { 'x-auth-token': getToken() },
+      });
+      if (!res.ok) throw new Error('ساخت فایل فشرده انجام نشد.');
+      const disp = res.headers.get('Content-Disposition') || '';
+      const m = /filename="([^"]+)"/.exec(disp);
+      const name = m ? m[1] : 'farday-bundle.zip';
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      toast.success('فایل فشرده دانلود شد', `${name} — ${(blob.size / 1024).toFixed(0)} KB`);
+    } catch (e: any) {
+      toast.error('فشرده‌سازی نشد', e.message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   /*
@@ -102,6 +151,13 @@ export default function BackupPage() {
             {days === null ? 'هنوز پشتیبان سالمی ساخته نشده' : `${days} روز پیش`} — ۳۰ فایل آخر نگه داشته می‌شود
           </span>
           <div className="list-actions">
+            {/* فشرده: همه‌ی پشتیبان‌ها + دیتابیس زنده + راهنما، در یک فایل */}
+            <button className="btn" onClick={bundle} disabled={busy} title="دانلود همه‌ی پشتیبان‌ها در یک فایل ZIP">
+              <IconDownload size={15} /> دانلود همه (ZIP)
+            </button>
+            <button className="btn" onClick={() => openFolder('backups')} title="باز کردن پوشه‌ی پشتیبان‌ها در ویندوز">
+              <IconFolder size={15} /> باز کردن پوشه
+            </button>
             <button className="btn primary" onClick={make} disabled={busy}><IconDatabase size={15} /> {busy ? 'در حال ساخت…' : 'ساخت پشتیبان تازه'}</button>
           </div>
         </div>

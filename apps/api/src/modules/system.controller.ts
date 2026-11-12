@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, Req, UseGuards, HttpException, Res } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards, HttpException, Res } from '@nestjs/common';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { db, databaseFile, BACKUP_DIR, resetDb } from '../db';
@@ -9,6 +9,8 @@ import { settingsService } from '../common/settings';
 import { dataDir } from '../db';
 import { ensureSqliteEngine, nativePackageName, type EngineStatus } from '../common/sqlite-engine';
 import { checkBackupFile } from '../common/backup-check';
+import { buildZip, safeEntryName } from '../common/zip';
+import { isFolderKey, openFolder } from '../common/open-folder';
 import { SHAPE_VERSION, appVersion, recentUpgrades } from '../common/upgrade';
 import { SOFT_TABLES, deletedCounts } from '../common/soft-delete';
 import { demoCounts, hasRealData, installDemo, removeDemo } from '../common/demo';
@@ -420,6 +422,94 @@ export class SystemController {
     }
     await logActivity({ action: 'backup', entity: 'System', detail: file });
     return { ok: true, file: path.basename(file), dir: BACKUP_DIR(), size: fs.statSync(file).size };
+  }
+
+  /**
+   * ── باز کردن پوشه در فایل‌منیجر (C2) ───────────────────────────────────
+   *
+   * `:key` یکی از `data` | `backups` | `logs` است — **نه یک مسیر**. مسیر از
+   * کلاینت هرگز پذیرفته نمی‌شود؛ وگرنه یک کلیک می‌توانست `C:\Windows` را
+   * باز کند.
+   *
+   * چرا در سرور: پوشه روی همان ماشینی است که سرور اجرا می‌شود، پس در
+   * نسخه‌ی دسکتاپ و وبِ محلی یکی جواب می‌دهد و نیازی به API اضافه نیست.
+   */
+  @Post('open-folder/:key')
+  @ManagerOnly()
+  async openFolder(@Param('key') key: string) {
+    if (!isFolderKey(key)) {
+      throw new HttpException('پوشه‌ی خواسته‌شده شناخته نشد.', 400);
+    }
+    const dir = key === 'data' ? dataDir() : key === 'backups' ? BACKUP_DIR() : path.join(dataDir(), 'logs');
+    /*
+     * پوشه‌ی logs ممکن است هنوز ساخته نشده باشد. ساختنش بی‌خطر است و
+     * بهتر از خطای «پیدا نشد» برای کاربری که فقط می‌خواهد ببیند.
+     */
+    try { if (key === 'logs' && !fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); } catch { /* ignore */ }
+    const r = await openFolder(dir);
+    await logActivity({ action: 'open-folder', entity: 'System', detail: `${key}: ${dir}` });
+    return { ...r, key };
+  }
+
+  /**
+   * ── فشرده‌ی پشتیبان در یک فایل (C2) ────────────────────────────────────
+   *
+   * برای «بفرست به حسابدار / روی فلش ببر» یک فایل بهتر از ده فایل است.
+   * محتوا: دیتابیس زنده (با `wal_checkpoint` تا کاپی سالم باشد) + همه‌ی
+   * پشتیبان‌های موجود + یک `README.txt` که می‌گوید چطور بازگردانی شود —
+   * چون فایل zip ممکن است دست کسی بیفتد که این برنامه را نمی‌شناسد.
+   */
+  @Get('backup/bundle')
+  @ManagerOnly()
+  async backupBundle(@Res() res: any) {
+    await ensureSchemaAsync();
+    try { await db().$executeRawUnsafe('PRAGMA wal_checkpoint(TRUNCATE)'); } catch { /* ignore */ }
+
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const entries: { name: string; data?: Buffer; file?: string }[] = [];
+
+    /* دیتابیس زنده — نامش «live» است تا با فایل‌های پشتیبان قاطی نشود */
+    entries.push({ name: `farday-live-${stamp}.db`, file: databaseFile() });
+
+    const dir = BACKUP_DIR();
+    if (fs.existsSync(dir)) {
+      /*
+       * همه‌ی پشتیبان‌ها، ولی سقف ۳۰ فایل — همان سقفی که ساخت پشتیبان
+       * نگه می‌دارد. بدون سقف، این پاسخ با ۵۰۰ پشتیبان چند صد مگابایت
+       * می‌شد و مرورگر قطع می‌کرد.
+       */
+      const files = fs.readdirSync(dir).filter((f) => f.endsWith('.db')).sort().slice(-30);
+      for (const f of files) {
+        const full = path.join(dir, f);
+        try { entries.push({ name: `backups/${safeEntryName(f)}`, file: full }); } catch { /* ignore */ }
+      }
+    }
+
+    const readme = [
+      'پشتیبان فردای روشن',
+      `تاریخ ساخت: ${new Date().toISOString()}`,
+      '',
+      'این فایل زیپ شامل موارد زیر است:',
+      '  • farday-live-*.db  — دیتابیس در لحظه‌ی ساخت این فایل',
+      '  • backups/*.db      — پشتیبان‌های قبلی',
+      '',
+      'بازگردانی:',
+      '  ۱) برنامه را باز کنید و به صفحه‌ی «پشتیبان‌گیری» بروید.',
+      '  ۲) فایل مورد نظر را در پوشه‌ی پشتیبان کاپی کنید:',
+      '     %APPDATA%\af.farday.roshan\backups',
+      '  ۳) فهرست را تازه کنید و روی «بازگردانی» بزنید.',
+      '',
+      'دیتابیس را هرگز وقتی برنامه باز است دستی تعویض نکنید.',
+    ].join('\r\n');
+    entries.push({ name: 'README.txt', data: Buffer.from(readme, 'utf8') });
+
+    const zip = buildZip(entries);
+    const name = `farday-bundle-${stamp}.zip`;
+    await logActivity({ action: 'backup-bundle', entity: 'System', detail: `${name} (${entries.length} فایل)` });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+    res.setHeader('Content-Length', String(zip.length));
+    return res.end(zip);
   }
 
   @Post('restore')

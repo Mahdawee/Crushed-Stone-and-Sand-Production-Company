@@ -450,6 +450,8 @@ export default function SettingsPage() {
  */
 function AboutCard({ info, onRefresh }: { info: any; onRefresh: () => Promise<void> | void }) {
   const [busy, setBusy] = React.useState(false);
+  /* AboutCard یک کامپوننت جداست، پس toast را خودش می‌گیرد (نه از والد) */
+  const toast = useToast();
   const rt = info?.runtime;
 
   const checks: { label: string; ok: boolean | null; detail: string; fix?: string }[] = [
@@ -508,7 +510,31 @@ function AboutCard({ info, onRefresh }: { info: any; onRefresh: () => Promise<vo
         <dl className="kv" style={{ marginBottom: 12 }}>
           <dt>نسخه‌ی برنامه</dt><dd className="mono small" dir="ltr">{info?.version || '—'}</dd>
           <dt>ساختار داده</dt><dd className="mono small" dir="ltr">{info?.schemaVersion ?? '—'}</dd>
-          <dt>پوشه‌ی داده</dt><dd className="mono small" dir="ltr" style={{ wordBreak: 'break-all' }}>{info?.dataDir || '—'}</dd>
+          <dt>پوشه‌ی داده</dt>
+          <dd className="mono small" dir="ltr" style={{ wordBreak: 'break-all' }}>
+            {info?.dataDir || '—'}
+            {/*
+             * ── باز کردن پوشه (C2) ───────────────────────────────────────
+             * پیش از این، مسیر نمایش داده می‌شد ولی راهی برای رفتن به آن
+             * نبود؛ کاربر باید دستی در Explorer مسیر را می‌چسباند — و
+             * `%APPDATA%` را کمتر کسی می‌داند. سرور روی همان ماشین است،
+             * پس Explorer را باز می‌کند. مسیر از کلاینت نمی‌رود؛ فقط کلید.
+             */}
+            <button
+              className="btn sm"
+              style={{ marginInlineStart: 8 }}
+              onClick={async () => {
+                try {
+                  const r: any = await api.post('/system/open-folder/data', {});
+                  if (r.ok) toast.success('پوشه باز شد', r.path);
+                  else toast.warn('باز کردن خودکار ممکن نشد', r.message || r.path);
+                } catch (e: any) { toast.error('پوشه باز نشد', e.message); }
+              }}
+              title="باز کردن پوشه‌ی داده در ویندوز"
+            >
+              باز کردن پوشه
+            </button>
+          </dd>
           <dt>حجم دیتابیس</dt><dd>{info?.dbSize ? `${(Number(info.dbSize) / 1024).toFixed(0)} KB` : '—'}</dd>
         </dl>
 
